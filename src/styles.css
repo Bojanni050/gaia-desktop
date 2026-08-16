@@ -1,0 +1,438 @@
+/* Gaia Desktop — conversation-first, calm, dark. The orb breathes; it never flashes. */
+
+:root {
+  --bg: #0b0c0f;
+  --bg-panel: #101218;
+  --bg-raised: #161923;
+  --text: #e8e6e1;
+  --text-faint: #8a8f98;
+  --accent: #d4a84b;
+  --error: #c96a5f;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --sans: 'Segoe UI', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  overflow: hidden;
+}
+
+.shell {
+  display: flex;
+  height: 100vh;
+}
+
+/* ---------------------------------------------------------------- sidebar */
+.sidebar {
+  width: 250px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 1px solid #1c1f28;
+  padding: 18px 12px 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 16px;
+}
+
+.brand-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f0cd8a, var(--accent) 60%, #8a6a26);
+}
+
+.brand-name {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+}
+
+.new-thread-btn {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid #262a36;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.new-thread-btn:hover {
+  border-color: var(--accent);
+}
+
+.thread-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 14px;
+}
+
+.thread-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-item:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.thread-item.active {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #1c1f28;
+}
+
+.presence-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-faint);
+}
+
+.presence-chip:hover {
+  background: var(--bg-raised);
+}
+
+.presence-chip-label {
+  font-family: var(--serif);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.settings-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.settings-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------- main */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.presence-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 26px 6px;
+}
+
+.presence-label {
+  font-family: var(--serif);
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+.presence-server {
+  font-size: 0.75rem;
+  color: #5c6068;
+  margin-left: auto;
+}
+
+/* -------------------------------------------------------------------- orb */
+.orb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex: none;
+  animation: breathe 4.5s ease-in-out infinite;
+}
+
+.orb-available {
+  background: radial-gradient(circle at 35% 35%, #f0cd8a, var(--accent) 60%, #8a6a26);
+}
+
+.orb-connecting {
+  background: radial-gradient(circle at 35% 35%, #e8d9a8, #b39a4e 60%, #6f5d28);
+  animation-duration: 2s;
+}
+
+.orb-disconnected {
+  background: radial-gradient(circle at 35% 35%, #d69a92, var(--error) 60%, #6e342d);
+  animation: none;
+}
+
+.orb-localOnly,
+.orb-quiet {
+  background: radial-gradient(circle at 35% 35%, #9ba0a8, #6a6f78 60%, #3c4048);
+  animation-duration: 7s;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------- conversation */
+.conversation-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.welcome {
+  margin: auto;
+  text-align: center;
+}
+
+.welcome-line {
+  font-family: var(--serif);
+  font-size: 1.3rem;
+  color: var(--text);
+}
+
+.welcome-hint {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+.message {
+  max-width: 72%;
+  line-height: 1.55;
+}
+
+.message-user {
+  align-self: flex-end;
+}
+
+.message-user .message-body {
+  background: var(--bg-raised);
+  border: 1px solid #262a36;
+  border-radius: 12px 12px 3px 12px;
+  padding: 10px 14px;
+}
+
+.message-assistant {
+  align-self: flex-start;
+}
+
+.message-assistant .message-body {
+  font-family: var(--serif);
+  font-size: 0.98rem;
+  white-space: pre-wrap;
+}
+
+.message-failed .message-body {
+  color: var(--error);
+  font-style: italic;
+}
+
+.message-thinking {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* -------------------------------------------------------------- composer */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px 26px 20px;
+}
+
+.composer-input {
+  flex: 1;
+  font: inherit;
+  font-family: var(--sans);
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid #262a36;
+  border-radius: 12px;
+  padding: 11px 14px;
+  resize: none;
+  outline: none;
+  max-height: 180px;
+}
+
+.composer-input:focus {
+  border-color: #3a3f4e;
+}
+
+.composer-send {
+  font: inherit;
+  color: #0b0c0f;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.composer-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* -------------------------------------------------------------- settings */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 8, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.settings-panel {
+  width: 460px;
+  max-width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid #262a36;
+  border-radius: 14px;
+  padding: 22px 26px;
+}
+
+.settings-panel h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  margin: 0 0 6px;
+}
+
+.settings-panel h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin: 18px 0 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.field input[type='url'],
+.field input[type='password'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid #262a36;
+  border-radius: 8px;
+  padding: 8px 10px;
+  outline: none;
+}
+
+.field-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-panel button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid #262a36;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.settings-panel button.primary {
+  background: var(--accent);
+  color: #0b0c0f;
+  border: none;
+}
+
+.capability-line {
+  font-size: 0.85rem;
+  color: var(--text-faint);
+  margin: 4px 0;
+}
+
+.test-result {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.test-online {
+  color: #7dbb8f;
+}
+
+.test-offline,
+.test-error {
+  color: var(--error);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}

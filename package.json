@@ -1,0 +1,23 @@
+{
+  "name": "gaia-desktop-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gaia Desktop's own interface — a first-class client of Gaia Cloud, never a wrapper around Gaia Web.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}
