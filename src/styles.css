@@ -296,11 +296,26 @@ body {
 .settings-actions button, .settings-panel .field-row button {
   font-family: var(--sans); font-size: 0.88rem; padding: 9px 16px; cursor: pointer;
   background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong);
-  border-radius: 11px; transition: background-color 0.2s ease, border-color 0.2s ease;
+  border-radius: 11px; transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, opacity 0.25s ease;
 }
 .settings-panel .primary {
   background: var(--accent); color: #201B13; border: none;
 }
-.settings-panel .primary:hover { background: #D9B27A; }
+.settings-panel .primary:hover:not(:disabled) { background: #D9B27A; }
 .settings-actions button:not(.primary):hover { background: var(--surface-3); }
 .settings-actions button.primary:disabled { opacity: 0.4; cursor: default; }
+
+/* Save button: calm, dimension-stable feedback — no jump, no flash.
+   The label crossfades; the button eases into a soft saved state and
+   quietly returns to normal. */
+.save-btn { min-width: 116px; }
+.save-btn .save-label {
+  display: inline-block;
+  transition: opacity 0.3s ease;
+}
+.save-btn.saved {
+  background: #4E6B4A; /* muted forest — present, not loud */
+  color: #EFE9DC;
+  transition: background-color 0.45s ease;
+}
+.save-btn.saved:hover { background: #4E6B4A; }

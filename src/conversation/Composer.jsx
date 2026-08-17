@@ -50,7 +50,7 @@ export default function Composer({ onSend, busy, onDraftChange }) {
           className="composer-send"
           onClick={submit}
           disabled={!text.trim() || busy}
-          aria-label="Send"
+          aria-label={L.send}
         >
           <ArrowUp size={18} />
         </button>

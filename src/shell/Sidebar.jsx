@@ -42,7 +42,7 @@ export default function Sidebar({
                 e.stopPropagation();
                 onDelete(t.id);
               }}
-              aria-label="Delete conversation"
+              aria-label={L.deleteConversation}
             >
               <Trash2 size={14} />
             </button>
@@ -52,7 +52,7 @@ export default function Sidebar({
 
       <div className="sidebar-foot">
         <button className="settings-open-btn" onClick={onOpenSettings}>
-          <Settings size={13} /> Settings
+          <Settings size={13} /> {L.settings}
         </button>
         <div className="lang-switcher">
           <button

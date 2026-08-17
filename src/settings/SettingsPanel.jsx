@@ -2,9 +2,13 @@
  * Settings — this device's behaviour only: which Gaia Cloud server to reach,
  * notifications, quiet presence, and the local capability surfaces (audio,
  * capture). Nothing cognitive ever appears here.
+ *
+ * Saving gives calm feedback: the button keeps its width, settles into a
+ * soft "saved" state and quietly returns — never a jump or a flash.
  */
 import React, { useEffect, useState } from 'react';
 import { settingsApi, serverApi, audioApi, captureApi } from '../server/api';
+import { L } from '../lib/lexicon';
 
 export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   const [settings, setSettings] = useState(null);
@@ -12,7 +16,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   const [captureSources, setCaptureSources] = useState([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
@@ -28,7 +32,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   if (!settings) {
     return (
       <div className="settings-overlay">
-        <div className="settings-panel">Loading…</div>
+        <div className="settings-panel">…</div>
       </div>
     );
   }
@@ -36,12 +40,15 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   const patch = (part) => setSettings((prev) => ({ ...prev, ...part }));
 
   const save = async () => {
-    setSaving(true);
+    if (saveState === 'saving') return;
+    setSaveState('saving');
     try {
       const saved = await settingsApi.save(settings);
       setSettings(saved);
-    } finally {
-      setSaving(false);
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 1800);
+    } catch (_) {
+      setSaveState('idle');
     }
   };
 
@@ -62,12 +69,12 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-        <h2>Settings</h2>
+        <h2>{L.settingsTitle}</h2>
 
         <section>
-          <h3>Gaia Cloud</h3>
+          <h3>{L.settingsCloud}</h3>
           <label className="field">
-            <span>Server URL</span>
+            <span>{L.settingsServerUrl}</span>
             <input
               type="url"
               value={settings.server?.baseUrl || ''}
@@ -76,7 +83,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
             />
           </label>
           <label className="field">
-            <span>Auth token</span>
+            <span>{L.settingsAuthToken}</span>
             <div className="token-row">
               <input
                 type={showToken ? 'text' : 'password'}
@@ -87,49 +94,59 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
                 type="button"
                 className="token-toggle"
                 onClick={() => setShowToken((prev) => !prev)}
-                title={showToken ? 'Hide token' : 'Show token'}
               >
-                {showToken ? 'Hide' : 'Show'}
+                {showToken ? '✓' : '○'}
               </button>
             </div>
           </label>
           <div className="field-row">
             <button onClick={testConnection} disabled={testing}>
-              {testing ? 'Testing…' : 'Test connection'}
+              {testing ? L.settingsTesting : L.settingsTest}
             </button>
             {testResult && <span className={`test-result test-${testResult}`}>{String(testResult)}</span>}
           </div>
         </section>
 
         <section>
-          <h3>Behaviour</h3>
+          <h3>{L.settingsBehaviour}</h3>
           <label className="field field-toggle">
             <input
               type="checkbox"
               checked={settings.notifications?.enabled ?? true}
               onChange={(e) => patch({ notifications: { enabled: e.target.checked } })}
             />
-            <span>Notifications</span>
+            <span>{L.settingsNotifications}</span>
           </label>
           <label className="field field-toggle">
             <input type="checkbox" checked={quiet} onChange={(e) => onQuietChange(e.target.checked)} />
-            <span>Quiet presence (do not disturb)</span>
+            <span>{L.settingsQuiet}</span>
           </label>
         </section>
 
         <section>
-          <h3>Local capabilities</h3>
-          <p className="capability-line">Microphone: {audio ? audio.permission : 'unknown'}</p>
+          <h3>{L.settingsCapabilities}</h3>
           <p className="capability-line">
-            Capture sources: {captureSources.length === 0 ? 'none registered yet' : captureSources.map((s) => s.name).join(', ')}
+            {L.settingsMicrophone}: {audio ? audio.permission : '—'}
+          </p>
+          <p className="capability-line">
+            {L.settingsCaptureSources}:{' '}
+            {captureSources.length === 0
+              ? L.settingsCaptureNone
+              : captureSources.map((s) => s.name).join(', ')}
           </p>
         </section>
 
         <div className="settings-actions">
-          <button className="primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+          <button
+            className={`primary save-btn${saveState === 'saved' ? ' saved' : ''}`}
+            onClick={save}
+            disabled={saveState !== 'idle'}
+          >
+            <span className="save-label">
+              {saveState === 'saving' ? L.settingsSaving : saveState === 'saved' ? L.settingsSaved : L.settingsSave}
+            </span>
           </button>
-          <button onClick={onClose}>Close</button>
+          <button onClick={onClose}>{L.settingsClose}</button>
         </div>
       </div>
     </div>
