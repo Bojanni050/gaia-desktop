@@ -373,7 +373,8 @@ body {
 }
 
 .field input[type='url'],
-.field input[type='password'] {
+.field input[type='password'],
+.field input[type='text'] {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -381,6 +382,31 @@ body {
   border-radius: 8px;
   padding: 8px 10px;
   outline: none;
+}
+
+.token-row {
+  display: flex;
+  gap: 8px;
+}
+
+.token-row input {
+  flex: 1;
+}
+
+.token-toggle {
+  flex: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  border: 1px solid #262a36;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.token-toggle:hover {
+  color: var(--text);
 }
 
 .field-toggle {

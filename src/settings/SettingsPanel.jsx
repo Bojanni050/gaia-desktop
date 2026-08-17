@@ -13,6 +13,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -76,11 +77,21 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
           </label>
           <label className="field">
             <span>Auth token</span>
-            <input
-              type="password"
-              value={settings.server?.authToken || ''}
-              onChange={(e) => patch({ server: { ...settings.server, authToken: e.target.value || null } })}
-            />
+            <div className="token-row">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={settings.server?.authToken || ''}
+                onChange={(e) => patch({ server: { ...settings.server, authToken: e.target.value || null } })}
+              />
+              <button
+                type="button"
+                className="token-toggle"
+                onClick={() => setShowToken((prev) => !prev)}
+                title={showToken ? 'Hide token' : 'Show token'}
+              >
+                {showToken ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </label>
           <div className="field-row">
             <button onClick={testConnection} disabled={testing}>
