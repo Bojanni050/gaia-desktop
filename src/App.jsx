@@ -1,60 +1,73 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Sidebar from './shell/Sidebar';
-import PresenceBar from './presence/PresenceBar';
 import Conversation from './conversation/Conversation';
-import Composer from './conversation/Composer';
 import SettingsPanel from './settings/SettingsPanel';
 import { serverApi, presenceApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
-import { mapConnectionToPresence } from './presence/PresenceOrb';
+import { L } from './lib/lexicon';
 
+/**
+ * The desktop shell — the web's grid, the web's calm. Presence here is the
+ * orb's breath (quiet / listening / thinking), plus the health whisper when
+ * Gaia's server is beyond reach. Never a status dashboard.
+ */
 export default function App() {
   const status = useServerStatus(serverApi);
   const [quiet, setQuietState] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [serverUrl, setServerUrl] = useState(null);
+  const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
 
   useEffect(() => {
-    let active = true;
-    presenceApi.get().then(() => {}).catch(() => {});
-    serverApi
-      .getStatus()
-      .then((payload) => {
-        if (active) setServerUrl(payload?.serverUrl || null);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
+    presenceApi.get().catch(() => {});
   }, []);
 
-  const presence = quiet ? 'quiet' : mapConnectionToPresence(status);
+  const handleLangChange = useCallback((next) => {
+    localStorage.setItem('gaia.lang', next);
+    setLang(next);
+  }, []);
 
-  const handleQuiet = (next) => {
+  const handleQuiet = useCallback((next) => {
     setQuietState(next);
     presenceApi.setQuiet(next).catch(() => {});
-  };
+  }, []);
+
+  // The orb rests quiet by default; Gaia is present, not performative.
+  const presenceState = 'quiet';
+  const whisper =
+    status === 'offline' ? L.healthWhisper : null;
 
   return (
-    <div className="shell">
+    <div className="gaia-shell">
       <Sidebar
         threads={conversation.threads}
         activeId={conversation.activeId}
-        presence={presence}
+        lang={lang}
         onSelect={conversation.openThread}
         onNew={conversation.newThread}
+        onDelete={conversation.deleteThread}
+        onLangChange={handleLangChange}
         onOpenSettings={() => setSettingsOpen(true)}
-        onToggleQuiet={() => handleQuiet(!quiet)}
       />
-      <main className="main">
-        <PresenceBar presence={presence} serverUrl={serverUrl} />
-        <Conversation thread={conversation.active} busy={conversation.busy} presence={presence} />
-        <Composer onSend={conversation.send} busy={conversation.busy} />
+
+      <main className="gaia-main">
+        <Conversation
+          thread={conversation.active}
+          busy={conversation.busy}
+          presenceState={presenceState}
+          whisper={whisper}
+          onSend={conversation.send}
+          onRetry={conversation.retry}
+        />
       </main>
+
       {settingsOpen && (
-        <SettingsPanel onClose={() => setSettingsOpen(false)} quiet={quiet} onQuietChange={handleQuiet} />
+        <SettingsPanel
+          onClose={() => setSettingsOpen(false)}
+          quiet={quiet}
+          onQuietChange={handleQuiet}
+        />
       )}
     </div>
   );

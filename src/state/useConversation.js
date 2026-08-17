@@ -29,28 +29,18 @@ export function useConversation(server) {
     setActiveId(id);
   }, []);
 
-  const send = useCallback(
-    async (rawText) => {
-      const content = rawText.trim();
-      if (!content || busy) return;
+  const deleteThread = useCallback((id) => {
+    setThreads((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      setActiveId((current) => (current === id ? next[0]?.id ?? null : current));
+      return next;
+    });
+  }, []);
 
-      const base = active || { id: localId(), title: null, messages: [] };
-      const threadId = base.id;
-      const userMessage = { id: localId(), role: 'user', content };
-      const history = [...base.messages, userMessage];
-
-      setThreads((prev) => {
-        const exists = prev.some((t) => t.id === threadId);
-        const thread = {
-          id: threadId,
-          title: base.title || content.slice(0, 48),
-          messages: history,
-        };
-        return exists ? prev.map((t) => (t.id === threadId ? thread : t)) : [thread, ...prev];
-      });
-      setActiveId(threadId);
+  /** Perform a turn for an already-built history and append the reply. */
+  const runTurn = useCallback(
+    async (threadId, history) => {
       setBusy(true);
-
       try {
         const response = await server.request(buildTurnRequest(history));
         const reply = parseReply(response);
@@ -74,8 +64,49 @@ export function useConversation(server) {
         setBusy(false);
       }
     },
-    [active, busy, server]
+    [server]
   );
 
-  return { threads, active, activeId, busy, newThread, openThread, send };
+  const send = useCallback(
+    (rawText) => {
+      const content = rawText.trim();
+      if (!content || busy) return;
+
+      const base = active || { id: localId(), title: null, messages: [] };
+      const threadId = base.id;
+      const userMessage = { id: localId(), role: 'user', content };
+      const history = [...base.messages, userMessage];
+
+      setThreads((prev) => {
+        const exists = prev.some((t) => t.id === threadId);
+        const thread = {
+          id: threadId,
+          title: base.title || content.slice(0, 48),
+          messages: history,
+        };
+        return exists ? prev.map((t) => (t.id === threadId ? thread : t)) : [thread, ...prev];
+      });
+      setActiveId(threadId);
+      return runTurn(threadId, history);
+    },
+    [active, busy, runTurn]
+  );
+
+  /** Retry a failed assistant message: drop it and everything after, resend. */
+  const retry = useCallback(
+    (messageId) => {
+      const thread = threads.find((t) => t.id === activeId);
+      if (!thread || busy) return;
+      const index = thread.messages.findIndex((m) => m.id === messageId);
+      if (index === -1) return;
+      const history = thread.messages.slice(0, index);
+      if (!history.some((m) => m.role === 'user')) return;
+
+      setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, messages: history } : t)));
+      return runTurn(thread.id, history);
+    },
+    [threads, activeId, busy, runTurn]
+  );
+
+  return { threads, active, activeId, busy, newThread, openThread, deleteThread, send, retry };
 }

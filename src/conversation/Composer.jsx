@@ -1,46 +1,60 @@
 import React, { useRef, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
+import { L } from '../lib/lexicon';
 
-export default function Composer({ onSend, busy }) {
-  const [value, setValue] = useState('');
-  const areaRef = useRef(null);
+/**
+ * Composer — the web's pill, ported: Enter sends, Shift+Enter is a newline,
+ * focus gathers a soft accent ring.
+ */
+export default function Composer({ onSend, busy, onDraftChange }) {
+  const [text, setText] = useState('');
+  const taRef = useRef(null);
 
-  const submit = () => {
-    const text = value.trim();
-    if (!text || busy) return;
-    onSend(text);
-    setValue('');
-    if (areaRef.current) areaRef.current.style.height = 'auto';
+  const grow = (el) => {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   };
 
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
+  const submit = () => {
+    const t = text.trim();
+    if (!t || busy) return;
+    onSend(t);
+    setText('');
+    if (taRef.current) taRef.current.style.height = 'auto';
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       submit();
     }
   };
 
-  const handleChange = (event) => {
-    setValue(event.target.value);
-    const el = event.target;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
-  };
-
   return (
-    <div className="composer">
-      <textarea
-        ref={areaRef}
-        className="composer-input"
-        value={value}
-        placeholder={busy ? 'Gaia is thinking…' : 'Say something'}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        rows={1}
-        data-testid="composer"
-      />
-      <button className="composer-send" onClick={submit} disabled={busy || !value.trim()}>
-        Send
-      </button>
+    <div className="composer-wrap">
+      <div className="composer">
+        <textarea
+          ref={taRef}
+          className="composer-input"
+          placeholder={busy ? '…' : L.composerPlaceholder}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            grow(e.target);
+            if (onDraftChange) onDraftChange(e.target.value.trim().length > 0);
+          }}
+          onKeyDown={onKey}
+          rows={1}
+        />
+        <button
+          className="composer-send"
+          onClick={submit}
+          disabled={!text.trim() || busy}
+          aria-label="Send"
+        >
+          <ArrowUp size={18} />
+        </button>
+      </div>
     </div>
   );
 }
