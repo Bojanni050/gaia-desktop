@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildTurnRequest, parseReply } from './contract';
+import {
+  buildTurnRequest,
+  parseReply,
+  buildHistoryListRequest,
+  buildHistoryGetRequest,
+  buildHistoryDeleteRequest,
+  parseHistoryList,
+  parseHistoryConversation,
+} from './contract';
 
 describe('buildTurnRequest', () => {
   it('wraps message history in a conversation/turn envelope', () => {
@@ -42,6 +50,50 @@ describe('buildTurnRequest', () => {
       { id: '3', role: 'user', content: 'second, no attachment this time' },
     ]);
     expect(request.body.attachmentIds).toBeUndefined();
+  });
+
+  it('includes conversationId when given', () => {
+    const request = buildTurnRequest([{ id: '1', role: 'user', content: 'hi' }], 'thread-42');
+    expect(request.body.conversationId).toBe('thread-42');
+  });
+
+  it('omits conversationId when not given', () => {
+    const request = buildTurnRequest([{ id: '1', role: 'user', content: 'hi' }]);
+    expect(request.body.conversationId).toBeUndefined();
+  });
+});
+
+describe('history contract', () => {
+  it('buildHistoryListRequest is a plain GET, no body', () => {
+    expect(buildHistoryListRequest()).toEqual({ method: 'get', path: 'conversations' });
+  });
+
+  it('buildHistoryGetRequest addresses one conversation by id', () => {
+    expect(buildHistoryGetRequest('conv-1')).toEqual({ method: 'get', path: 'conversations/conv-1' });
+  });
+
+  it('buildHistoryDeleteRequest is a DELETE to the same path', () => {
+    expect(buildHistoryDeleteRequest('conv-1')).toEqual({ method: 'delete', path: 'conversations/conv-1' });
+  });
+
+  it('parseHistoryList reads the conversations array', () => {
+    const list = parseHistoryList({ body: { conversations: [{ id: 'a' }] } });
+    expect(list).toEqual([{ id: 'a' }]);
+  });
+
+  it('parseHistoryList defaults to [] for a malformed response', () => {
+    expect(parseHistoryList({ body: {} })).toEqual([]);
+    expect(parseHistoryList({})).toEqual([]);
+  });
+
+  it('parseHistoryConversation reads meta and messages', () => {
+    const result = parseHistoryConversation({ body: { meta: { id: 'a' }, messages: [{ role: 'user', content: 'hi' }] } });
+    expect(result.meta).toEqual({ id: 'a' });
+    expect(result.messages).toEqual([{ role: 'user', content: 'hi' }]);
+  });
+
+  it('parseHistoryConversation throws when messages is missing', () => {
+    expect(() => parseHistoryConversation({ body: {} })).toThrow();
   });
 });
 

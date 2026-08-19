@@ -3,6 +3,7 @@ import Sidebar from './shell/Sidebar';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
 import LibraryPanel from './library/LibraryPanel';
+import HistoryPanel from './history/HistoryPanel';
 import { serverApi, presenceApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
@@ -18,6 +19,7 @@ export default function App() {
   const [quiet, setQuietState] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
 
@@ -52,6 +54,7 @@ export default function App() {
         onLangChange={handleLangChange}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenLibrary={() => setLibraryOpen(true)}
+        onOpenHistory={() => setHistoryOpen(true)}
       />
 
       <main className="gaia-main">
@@ -74,6 +77,13 @@ export default function App() {
       )}
 
       {libraryOpen && <LibraryPanel onClose={() => setLibraryOpen(false)} />}
+
+      {historyOpen && (
+        <HistoryPanel
+          onClose={() => setHistoryOpen(false)}
+          onOpenConversation={conversation.hydrateThread}
+        />
+      )}
     </div>
   );
 }

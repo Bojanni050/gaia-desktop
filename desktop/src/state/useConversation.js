@@ -29,6 +29,28 @@ export function useConversation(server) {
     setActiveId(id);
   }, []);
 
+  /**
+   * Loads a conversation the History panel fetched from Gaia Cloud
+   * (historyApi.get) into the active thread list, keyed by the same id
+   * the server already knows it by — so continuing the conversation from
+   * here appends to the same saved transcript rather than starting a new
+   * one. Replaces the thread if it's already open (e.g. re-opening after
+   * it fell out of the in-session list).
+   */
+  const hydrateThread = useCallback((id, messages) => {
+    const firstUser = messages.find((m) => m.role === 'user');
+    const thread = {
+      id,
+      title: firstUser ? firstUser.content.slice(0, 48) : null,
+      messages: messages.map((m) => ({ ...m, id: localId() })),
+    };
+    setThreads((prev) => {
+      const exists = prev.some((t) => t.id === id);
+      return exists ? prev.map((t) => (t.id === id ? thread : t)) : [thread, ...prev];
+    });
+    setActiveId(id);
+  }, []);
+
   const deleteThread = useCallback((id) => {
     setThreads((prev) => {
       const next = prev.filter((t) => t.id !== id);
@@ -42,7 +64,10 @@ export function useConversation(server) {
     async (threadId, history) => {
       setBusy(true);
       try {
-        const response = await server.request(buildTurnRequest(history));
+        // threadId doubles as the server's conversationId — Gaia Cloud
+        // saves/appends the transcript under it (conversationStore.js),
+        // which is what lets History reopen this same thread later.
+        const response = await server.request(buildTurnRequest(history, threadId));
         const reply = parseReply(response);
         setThreads((prev) =>
           prev.map((t) =>
@@ -118,5 +143,5 @@ export function useConversation(server) {
     [threads, activeId, busy, runTurn]
   );
 
-  return { threads, active, activeId, busy, newThread, openThread, deleteThread, send, retry };
+  return { threads, active, activeId, busy, newThread, openThread, deleteThread, hydrateThread, send, retry };
 }

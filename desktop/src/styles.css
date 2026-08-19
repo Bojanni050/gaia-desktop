@@ -361,6 +361,7 @@ body {
 }
 .library-item-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .library-item-name {
+  display: flex; align-items: center; gap: 6px;
   font-family: var(--sans); font-size: 0.86rem; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -374,3 +375,7 @@ body {
 }
 .library-icon-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
 .library-icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* history reuses the library item look; the whole row is the "open" action */
+.history-item { cursor: pointer; transition: border-color 0.2s ease; }
+.history-item:hover { border-color: var(--accent-line); }

@@ -8,6 +8,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import {
+  buildHistoryListRequest,
+  buildHistoryGetRequest,
+  buildHistoryDeleteRequest,
+  parseHistoryList,
+  parseHistoryConversation,
+} from '../state/contract';
 
 export const serverApi = {
   getConfig: () => invoke('server_get_config'),
@@ -61,6 +68,18 @@ export const libraryApi = {
     await invoke('library_download_file', { id, savePath: path });
     return true;
   },
+};
+
+/**
+ * Chat history — conversations Gaia Cloud has already saved (see
+ * conversationStore.js's fire-and-forget save on every turn). Plain JSON
+ * over the existing server_request seam; no dedicated Rust command
+ * needed, unlike the library's file bytes.
+ */
+export const historyApi = {
+  list: () => serverApi.request(buildHistoryListRequest()).then(parseHistoryList),
+  get: (id) => serverApi.request(buildHistoryGetRequest(id)).then(parseHistoryConversation),
+  remove: (id) => serverApi.request(buildHistoryDeleteRequest(id)),
 };
 
 export const notify = (options) => invoke('notify', { options });
