@@ -28,3 +28,22 @@ npm run build:desktop    # tauri build
 ```
 
 Inside `desktop/`: `npm run dev` (Vite dev server), `npm test` (vitest).
+
+## Releasing
+
+Push a version tag to build and publish a Windows installer:
+
+```bash
+git tag v0.1.0
+git push --tags
+```
+
+`.github/workflows/release.yml` builds on `windows-latest`, runs
+`desktop/`'s test suite, then `npm run build:desktop`, and attaches the
+resulting MSI + NSIS installers to a **draft** GitHub Release (review and
+publish it by hand — nothing goes live automatically). Also runnable
+manually via `workflow_dispatch` from the Actions tab, without a tag.
+
+Windows only for now, no code signing — the installer will show an
+"unknown publisher" warning until a certificate is added. macOS/Linux
+targets can be added as additional platform jobs later if needed.
