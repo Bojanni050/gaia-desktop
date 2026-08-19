@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Copy, Paperclip, RotateCw, Trash2 } from 'lucide-react';
 import { L } from '../lib/lexicon';
+import Markdown from './Markdown';
 
 /**
  * MessageView — the web's message anatomy, ported: user bubbles right in
@@ -24,7 +25,7 @@ export default function MessageView({ message, onRetry, onDelete }) {
           {isUser ? (
             <p className="user-text">{message.content}</p>
           ) : (
-            message.content
+            <Markdown>{message.content}</Markdown>
           )}
         </div>
 
