@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Gaia Desktop. The desktop is presence and local capabilities only; cognition lives on Gaia Server.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "window-state:default",
+    "notification:default"
+  ]
+}

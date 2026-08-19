@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Desktop UI build output
+desktop/dist/
+
+# Tauri/Rust build artifacts
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/WixTools/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# System files
+.DS_Store
