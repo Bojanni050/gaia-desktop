@@ -16,6 +16,7 @@ pub mod audio;
 pub mod capture;
 pub mod communication;
 pub mod error;
+pub mod library;
 pub mod notifications;
 pub mod presence;
 pub mod settings;
@@ -27,6 +28,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -66,6 +68,11 @@ pub fn run() {
             // audio
             audio::audio_get_status,
             audio::audio_set_permission,
+            // library
+            library::library_upload_file,
+            library::library_list_files,
+            library::library_download_file,
+            library::library_delete_file,
             // notifications
             notifications::notify,
             // settings

@@ -193,6 +193,24 @@ body {
 }
 .msg-action:hover { color: var(--text); background: var(--surface-2); }
 
+/* attachment chips — composer (pending) and message bubble (sent) */
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+.composer-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 8px; }
+.attachment-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--surface-3); border: 1px solid var(--border-strong);
+  color: var(--text-faint); font-family: var(--sans); font-size: 0.76rem;
+  padding: 4px 8px 4px 7px; border-radius: 999px; max-width: 220px;
+}
+.attachment-chip span, .attachment-chip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip-static { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text-faint); }
+.attachment-chip-remove {
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  padding: 1px; border-radius: 50%; flex-shrink: 0;
+}
+.attachment-chip-remove:hover { color: var(--text); background: var(--surface-2); }
+
 /* thinking indicator */
 .thinking-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
 .thinking-word { font-family: var(--serif); font-style: italic; color: var(--text-faint); font-size: 0.95rem; }
@@ -219,6 +237,13 @@ body {
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 .composer:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px rgba(203, 163, 106, 0.07); }
+.composer-attach {
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+  background: none; color: var(--text-faint); border: none; border-radius: 12px; cursor: pointer;
+  flex-shrink: 0; transition: color 0.2s ease, background-color 0.2s ease;
+}
+.composer-attach:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+.composer-attach:disabled { opacity: 0.4; cursor: default; }
 .composer-input {
   flex: 1; background: none; border: none; outline: none; resize: none;
   color: var(--text); font-family: var(--sans); font-size: 1rem; line-height: 1.6;
@@ -319,3 +344,33 @@ body {
   transition: background-color 0.45s ease;
 }
 .save-btn.saved:hover { background: #4E6B4A; }
+
+/* ---------------------------------------------------------------- library (same overlay language as settings) */
+.library-panel { width: 440px; }
+.library-hint { font-size: 0.83rem; color: var(--text-faint); font-family: var(--sans); margin: 0 0 16px; }
+.library-upload-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  justify-content: center; margin-bottom: 16px;
+}
+.library-empty { font-size: 0.85rem; color: var(--text-faint); font-family: var(--sans); text-align: center; padding: 18px 0; }
+.library-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.library-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 11px; border-radius: 10px; background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.library-item-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.library-item-name {
+  font-family: var(--sans); font-size: 0.86rem; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.library-item-meta { font-family: var(--sans); font-size: 0.74rem; color: var(--text-faint); }
+.library-item-actions { display: flex; gap: 4px; flex: none; }
+.library-icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; border-radius: 8px;
+  background: transparent; border: 1px solid transparent; color: var(--text-faint);
+  cursor: pointer; transition: background-color 0.2s ease, color 0.2s ease;
+}
+.library-icon-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.library-icon-btn:disabled { opacity: 0.4; cursor: default; }

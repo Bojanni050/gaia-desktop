@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Sidebar from './shell/Sidebar';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
+import LibraryPanel from './library/LibraryPanel';
 import { serverApi, presenceApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
@@ -16,6 +17,7 @@ export default function App() {
   const status = useServerStatus(serverApi);
   const [quiet, setQuietState] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
 
@@ -49,6 +51,7 @@ export default function App() {
         onDelete={conversation.deleteThread}
         onLangChange={handleLangChange}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenLibrary={() => setLibraryOpen(true)}
       />
 
       <main className="gaia-main">
@@ -69,6 +72,8 @@ export default function App() {
           onQuietChange={handleQuiet}
         />
       )}
+
+      {libraryOpen && <LibraryPanel onClose={() => setLibraryOpen(false)} />}
     </div>
   );
 }

@@ -68,13 +68,23 @@ export function useConversation(server) {
   );
 
   const send = useCallback(
-    (rawText) => {
+    (rawText, attachments = []) => {
       const content = rawText.trim();
       if (!content || busy) return;
 
       const base = active || { id: localId(), title: null, messages: [] };
       const threadId = base.id;
-      const userMessage = { id: localId(), role: 'user', content };
+      // `attachments` (full metadata) is kept for rendering the chip in
+      // MessageView; `attachmentIds` is the only part buildTurnRequest
+      // actually sends on — file bytes never pass through this hook, they
+      // already reached the library at upload time.
+      const userMessage = {
+        id: localId(),
+        role: 'user',
+        content,
+        attachments,
+        attachmentIds: attachments.map((a) => a.id),
+      };
       const history = [...base.messages, userMessage];
 
       setThreads((prev) => {

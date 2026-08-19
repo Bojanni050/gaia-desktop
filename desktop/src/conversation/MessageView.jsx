@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Copy, RotateCw, Trash2 } from 'lucide-react';
+import { Check, Copy, Paperclip, RotateCw, Trash2 } from 'lucide-react';
 import { L } from '../lib/lexicon';
 
 /**
@@ -27,6 +27,17 @@ export default function MessageView({ message, onRetry, onDelete }) {
             message.content
           )}
         </div>
+
+        {isUser && message.attachments?.length > 0 && (
+          <div className="msg-attachments">
+            {message.attachments.map((a) => (
+              <span key={a.id} className="attachment-chip attachment-chip-static">
+                <Paperclip size={11} />
+                {a.filename}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="msg-actions">
           {message.content && (

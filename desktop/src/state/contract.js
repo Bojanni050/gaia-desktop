@@ -7,13 +7,18 @@
  * only the transport beneath this seam changes.
  */
 export function buildTurnRequest(messages) {
-  return {
-    method: 'post',
-    path: 'conversation/turn',
-    body: {
-      messages: messages.map(({ role, content }) => ({ role, content })),
-    },
+  const body = {
+    messages: messages.map(({ role, content }) => ({ role, content })),
   };
+  // Attachments belong to whichever user turn just triggered this request —
+  // never re-sent for older turns already in history, and never carrying
+  // the file bytes themselves (those already live in the library from
+  // upload; only their ids cross this seam).
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user' && Array.isArray(last.attachmentIds) && last.attachmentIds.length > 0) {
+    body.attachmentIds = last.attachmentIds;
+  }
+  return { method: 'post', path: 'conversation/turn', body };
 }
 
 export function parseReply(response) {
