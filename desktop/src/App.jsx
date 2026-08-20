@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Sidebar from './shell/Sidebar';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
 import LibraryPanel from './library/LibraryPanel';
-import { serverApi, presenceApi, historyApi } from './server/api';
+import { serverApi, presenceApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
 import { L } from './lib/lexicon';
@@ -25,48 +25,22 @@ export default function App() {
     presenceApi.get().catch(() => {});
   }, []);
 
-  // Refs so the poll below can read current state without re-creating its
-  // interval on every message/busy tick.
-  const activeRef = useRef(null);
-  useEffect(() => { activeRef.current = conversation.active; }, [conversation.active]);
-  const busyRef = useRef(false);
-  useEffect(() => { busyRef.current = conversation.busy; }, [conversation.busy]);
-
-  /**
-   * Resumes whichever conversation gaia-api considers most recently
-   * updated (historyApi.list is newest-first) if it differs from what's
-   * open here. Called once on launch and then on a poll interval, so
-   * switching between gaia-desktop and gaia-web picks up whatever the
-   * *other* client most recently did — there is no push channel between
-   * clients, so this poll is the whole "shared session" mechanism for now.
-   *
-   * Two guards keep it from clobbering local, not-yet-saved state:
-   *   - a turn in flight here is never interrupted
-   *   - a thread just started via "New page" (no messages sent yet, so it
-   *     isn't in gaia-api's list at all) is left alone rather than being
-   *     silently replaced by whatever another client last touched
-   */
-  const syncMostRecentConversation = useCallback(async () => {
-    if (busyRef.current) return;
-    const list = await historyApi.list();
-    if (list.length === 0) return;
-    const [mostRecent] = list;
-    const current = activeRef.current;
-    if (current && current.id === mostRecent.id) return;
-    if (current && current.messages.length === 0) return;
-
-    const { messages } = await historyApi.get(mostRecent.id);
-    conversation.hydrateThread(mostRecent.id, messages);
-  }, [conversation.hydrateThread]);
-
+  // Bumped on every 'conversation.history.changed' server event (pushed via
+  // ServerLink::spawn_event_bridge, backed by gaia-api's SSE endpoint) so
+  // HistorySection can refresh its already-loaded list live — e.g. gaia-web
+  // just saved a conversation this desktop app should now be able to see.
+  // Deliberately does not touch the active thread: switching what's on
+  // screen out from under someone is not what "keep history in sync" means.
+  const [historyVersion, setHistoryVersion] = useState(0);
   useEffect(() => {
-    let cancelled = false;
-    syncMostRecentConversation().catch(() => { /* no history yet, or unreachable — start fresh */ });
-    const interval = setInterval(() => {
-      if (!cancelled) syncMostRecentConversation().catch(() => {});
-    }, 20000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [syncMostRecentConversation]);
+    let unlisten;
+    serverApi.onServerEvent((event) => {
+      if (event?.topic === 'conversation.history.changed') {
+        setHistoryVersion((v) => v + 1);
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { if (unlisten) unlisten(); };
+  }, []);
 
   const handleLangChange = useCallback((next) => {
     localStorage.setItem('gaia.lang', next);
@@ -96,6 +70,7 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenLibrary={() => setLibraryOpen(true)}
         onOpenHistoryConversation={conversation.hydrateThread}
+        historyVersion={historyVersion}
       />
 
       <main className="gaia-main">

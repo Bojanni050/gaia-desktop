@@ -51,6 +51,9 @@ pub fn run() {
 
             // Keep connection status and presence fresh in the background.
             communication::ServerLink::spawn_health_loop(app.handle().clone());
+            // Relay realtime server events (e.g. conversation-history
+            // changes from another client) as they arrive.
+            communication::ServerLink::spawn_event_bridge(app.handle().clone());
 
             Ok(())
         })
@@ -61,6 +64,7 @@ pub fn run() {
             communication::server_get_status,
             communication::server_test_connection,
             communication::server_request,
+            communication::server_stream_turn,
             // capture
             capture::capture_list_sources,
             capture::capture_now,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildTurnRequest,
+  buildStreamTurnBody,
   parseReply,
   buildHistoryListRequest,
   buildHistoryGetRequest,
@@ -60,6 +61,28 @@ describe('buildTurnRequest', () => {
   it('omits conversationId when not given', () => {
     const request = buildTurnRequest([{ id: '1', role: 'user', content: 'hi' }]);
     expect(request.body.conversationId).toBeUndefined();
+  });
+});
+
+describe('buildStreamTurnBody', () => {
+  it('produces the same body shape as buildTurnRequest, with no method/path envelope', () => {
+    const messages = [
+      { id: '1', role: 'user', content: 'hello', attachmentIds: ['f1'] },
+      { id: '2', role: 'assistant', content: 'hi' },
+    ];
+    const request = buildTurnRequest(messages, 'thread-1');
+    const streamBody = buildStreamTurnBody(messages, 'thread-1');
+    expect(streamBody).toEqual(request.body);
+  });
+
+  it('includes conversationId and attachmentIds under the same rules as buildTurnRequest', () => {
+    const body = buildStreamTurnBody(
+      [{ id: '1', role: 'user', content: 'hi', attachmentIds: ['f1'] }],
+      'thread-9'
+    );
+    expect(body.conversationId).toBe('thread-9');
+    expect(body.attachmentIds).toEqual(['f1']);
+    expect(Object.keys(body.messages[0])).toEqual(['role', 'content']);
   });
 });
 

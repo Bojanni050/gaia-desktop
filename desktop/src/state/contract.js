@@ -15,7 +15,7 @@
  *   shouldn't be saved (there currently isn't one, but the contract
  *   doesn't require it).
  */
-export function buildTurnRequest(messages, conversationId) {
+function buildTurnBody(messages, conversationId) {
   const body = {
     messages: messages.map(({ role, content }) => ({ role, content })),
   };
@@ -28,7 +28,24 @@ export function buildTurnRequest(messages, conversationId) {
   if (last && last.role === 'user' && Array.isArray(last.attachmentIds) && last.attachmentIds.length > 0) {
     body.attachmentIds = last.attachmentIds;
   }
-  return { method: 'post', path: 'conversation/turn', body };
+  return body;
+}
+
+export function buildTurnRequest(messages, conversationId) {
+  return { method: 'post', path: 'conversation/turn', body: buildTurnBody(messages, conversationId) };
+}
+
+/**
+ * The streaming path's body — same shape as buildTurnRequest's, minus the
+ * ServerRequest envelope (server_stream_turn posts straight to
+ * `conversation/turn`, there's no method/path to carry). Note:
+ * attachmentIds is included for shape-consistency but currently has no
+ * effect server-side — performStreamingTurn doesn't resolve attachments
+ * into the prompt the way the non-streaming path does (gaia-api/src/
+ * server.js); a pre-existing gap shared with Web, not introduced here.
+ */
+export function buildStreamTurnBody(messages, conversationId) {
+  return buildTurnBody(messages, conversationId);
 }
 
 export function parseReply(response) {
@@ -39,7 +56,7 @@ export function parseReply(response) {
   throw new Error('Gaia Server returned no reply');
 }
 
-// --- chat history (history/HistoryPanel.jsx) ------------------------------
+// --- chat history (history/HistorySection.jsx) -----------------------------
 // Plain JSON, reached through the same generic server_request seam as a
 // turn — unlike the library, nothing here is a file upload.
 

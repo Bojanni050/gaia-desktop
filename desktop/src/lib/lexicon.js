@@ -4,8 +4,8 @@
  */
 export const LANGUAGES = {
   nl: {
-    newPage: 'Begin een pagina',
-    untitled: 'Naamloze pagina',
+    newPage: 'Nieuw gesprek',
+    untitled: 'Naamloos gesprek',
     composerPlaceholder: 'Zeg wat je wilt, of denk hardop…',
     healthWhisper:
       'Ik kan mijn denkmotor momenteel niet bereiken. Neem je tijd — ik ben er als je klaar bent om het opnieuw te proberen.',
@@ -59,8 +59,8 @@ export const LANGUAGES = {
     turnFallback: 'Er ging hier iets mis. Je bericht staat er nog.',
   },
   en: {
-    newPage: 'Begin a page',
-    untitled: 'Untitled page',
+    newPage: 'New conversation',
+    untitled: 'Untitled conversation',
     composerPlaceholder: 'Say anything, or just think out loud…',
     healthWhisper: "I can't reach my reason engine right now. Take your time — I'm here when you're ready to try again.",
     retry: 'Retry',

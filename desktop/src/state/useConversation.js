@@ -6,7 +6,7 @@
  * reasoning never run here.
  */
 import { useCallback, useState } from 'react';
-import { buildTurnRequest, parseReply } from './contract';
+import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
 
 let counter = 1;
@@ -16,6 +16,11 @@ export function useConversation(server) {
   const [threads, setThreads] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [busy, setBusy] = useState(false);
+  // True once the assistant's reply has started arriving — distinct from
+  // `busy` (which also covers the pre-first-token wait) so Conversation.jsx
+  // can swap the thinking indicator for the live-updating message at the
+  // right moment, not a beat too early or too late.
+  const [streaming, setStreaming] = useState(false);
 
   const active = threads.find((t) => t.id === activeId) || null;
 
@@ -59,34 +64,76 @@ export function useConversation(server) {
     });
   }, []);
 
-  /** Perform a turn for an already-built history and append the reply. */
+  /**
+   * Perform a turn for an already-built history, streaming the reply in as
+   * it arrives. The assistant message is created empty on the first delta
+   * (not before — until then the thinking indicator is still the honest
+   * state) and grown in place from there.
+   */
   const runTurn = useCallback(
     async (threadId, history) => {
       setBusy(true);
+      const assistantId = localId();
+      // Tracked outside the state updaters below (which must stay pure —
+      // React StrictMode double-invokes them in dev, so mutating a closure
+      // variable from inside one would drop or duplicate the first delta).
+      // "does the thread already have this message" is instead derived
+      // fresh from `prev` each time, making both updaters idempotent.
+      let receivedAny = false;
+
+      const appendToAssistant = (text) => {
+        if (!text) return;
+        receivedAny = true;
+        setStreaming(true);
+        setThreads((prev) =>
+          prev.map((t) => {
+            if (t.id !== threadId) return t;
+            const exists = t.messages.some((m) => m.id === assistantId);
+            if (!exists) {
+              return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: text }] };
+            }
+            return {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === assistantId ? { ...m, content: m.content + text } : m
+              ),
+            };
+          })
+        );
+      };
+
       try {
         // threadId doubles as the server's conversationId — Gaia Cloud
         // saves/appends the transcript under it (conversationStore.js),
         // which is what lets History reopen this same thread later.
-        const response = await server.request(buildTurnRequest(history, threadId));
-        const reply = parseReply(response);
-        setThreads((prev) =>
-          prev.map((t) =>
-            t.id === threadId
-              ? { ...t, messages: [...t.messages, { id: localId(), role: 'assistant', content: reply }] }
-              : t
-          )
-        );
+        const body = buildStreamTurnBody(history, threadId);
+        const fullReply = await server.streamTurn(body, (delta) => appendToAssistant(delta.content));
+        // A turn that streamed no content deltas at all (empty reply) is a
+        // server-contract violation, same as the old parseReply's check —
+        // surface it as a failure rather than leaving a blank bubble.
+        if (!receivedAny || !fullReply) {
+          throw new Error('Gaia Server returned no reply');
+        }
       } catch (error) {
         const phrase = phraseTurnError(error);
         setThreads((prev) =>
-          prev.map((t) =>
-            t.id === threadId
-              ? { ...t, messages: [...t.messages, { id: localId(), role: 'assistant', content: phrase, failed: true }] }
-              : t
-          )
+          prev.map((t) => {
+            if (t.id !== threadId) return t;
+            const exists = t.messages.some((m) => m.id === assistantId);
+            if (exists) {
+              return {
+                ...t,
+                messages: t.messages.map((m) =>
+                  m.id === assistantId ? { ...m, content: phrase, failed: true } : m
+                ),
+              };
+            }
+            return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: phrase, failed: true }] };
+          })
         );
       } finally {
         setBusy(false);
+        setStreaming(false);
       }
     },
     [server]
@@ -143,5 +190,5 @@ export function useConversation(server) {
     [threads, activeId, busy, runTurn]
   );
 
-  return { threads, active, activeId, busy, newThread, openThread, deleteThread, hydrateThread, send, retry };
+  return { threads, active, activeId, busy, streaming, newThread, openThread, deleteThread, hydrateThread, send, retry };
 }

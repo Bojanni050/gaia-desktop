@@ -11,7 +11,7 @@ import { getGreeting } from '../lib/greeting';
  * moment (orb + greeting), messages, the thinking row, and the composer
  * dock with Gaia's presence above it.
  */
-export default function Conversation({ thread, busy, presenceState, whisper, onSend, onRetry }) {
+export default function Conversation({ thread, busy, streaming, presenceState, whisper, onSend, onRetry }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const messages = thread?.messages || [];
@@ -20,14 +20,20 @@ export default function Conversation({ thread, busy, presenceState, whisper, onS
   const greeting = useMemo(() => getGreeting(), []);
   const [hasDraft, setHasDraft] = useState(false);
 
+  // A streaming reply grows the last message's content in place rather than
+  // adding new messages, so messages.length alone won't re-run this effect
+  // while it's arriving — the last message's length stands in for "did the
+  // visible content just grow" during a stream.
+  const lastContentLength = messages[messages.length - 1]?.content?.length || 0;
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (messages.length > prevLenRef.current || isAtBottomRef.current) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'auto' : 'smooth' });
     }
     prevLenRef.current = messages.length;
-  }, [messages.length, busy]);
+  }, [messages.length, busy, lastContentLength, streaming]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -64,7 +70,7 @@ export default function Conversation({ thread, busy, presenceState, whisper, onS
               {messages.map((m) => (
                 <MessageView key={m.id} message={m} onRetry={onRetry} />
               ))}
-              {busy && (
+              {busy && !streaming && (
                 <div className="thinking-row">
                   <Presence isThinking={true} type="general" state="thinking" size={26} />
                 </div>

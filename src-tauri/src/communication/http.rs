@@ -10,12 +10,26 @@ use reqwest::{Client, Method, RequestBuilder};
 use serde_json::Value;
 use url::Url;
 
+use tokio::sync::mpsc;
+
 use super::client::{
-    GaiaServerClient, HealthReport, ServerEventStream, ServerRequest, ServerResponse,
+    GaiaServerClient, HealthReport, ServerEventStream, ServerRequest, ServerResponse, TurnDelta,
+    TurnDeltaStream,
 };
+use super::events::{ServerEvent, ServerEventEnvelope};
 use super::CommunicationError;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// A streaming turn covers the whole reply, not just a round-trip — recall
+/// and reasoning on the server side can legitimately take minutes. Applied
+/// per-request, overriding REQUEST_TIMEOUT for this call only.
+const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
+/// The realtime events connection (`conversations/events`) is meant to sit
+/// open for the life of the app, not one request/response — long enough
+/// that it should never legitimately hit this ceiling; gaia-api's own
+/// heartbeat (every 20s, historyRoutes.js) is what actually detects a dead
+/// connection well before this would.
+const EVENTS_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 pub struct HttpGaiaClient {
     base: Url,
@@ -94,12 +108,158 @@ impl GaiaServerClient for HttpGaiaClient {
     }
 
     async fn subscribe_events(&self) -> Result<ServerEventStream, CommunicationError> {
-        // Seam for the future WebSocket transport. The contract, channel type
-        // and event envelope already exist; only the connection is missing.
-        Err(CommunicationError::WebSocketUnavailable)
+        // Backed by gaia-api's `conversations/events` SSE endpoint
+        // (historyRoutes.js) rather than a WebSocket — same seam, simpler
+        // transport, no server-side change needed to add a real WebSocket
+        // later behind this same trait method.
+        let url = self.endpoint("conversations/events")?;
+        let builder = self.authorize(self.http.get(url)).timeout(EVENTS_TIMEOUT);
+
+        let mut response = builder.send().await.map_err(map_transport)?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            return Err(CommunicationError::Server { status });
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            loop {
+                match response.chunk().await {
+                    Ok(Some(bytes)) => {
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        while let Some(pos) = buffer.find("\n\n") {
+                            let frame: String = buffer.drain(..pos + 2).collect();
+                            if let Some(event) = parse_conversation_event(&frame) {
+                                if tx.send(event).is_err() {
+                                    return; // receiver dropped
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => return,  // connection closed — caller reconnects
+                    Err(_) => return,    // transport error — caller reconnects
+                }
+            }
+        });
+
+        Ok(rx)
     }
+
+    async fn stream_turn(&self, mut body: Value) -> Result<TurnDeltaStream, CommunicationError> {
+        if let Value::Object(map) = &mut body {
+            map.insert("stream".to_string(), Value::Bool(true));
+        }
+        let url = self.endpoint("conversation/turn")?;
+        // Overrides the client's default REQUEST_TIMEOUT, which is sized for
+        // a quick request/response and would otherwise cut off a long-running
+        // turn (recall/reasoning can legitimately take minutes) mid-stream.
+        let builder = self
+            .authorize(self.http.post(url))
+            .timeout(STREAM_TIMEOUT)
+            .json(&body);
+
+        let mut response = builder.send().await.map_err(map_transport)?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            return Err(CommunicationError::Server { status });
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            loop {
+                match response.chunk().await {
+                    Ok(Some(bytes)) => {
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        // SSE frames are separated by a blank line; a chunk
+                        // boundary may land mid-frame, so only consume
+                        // complete frames and leave the rest buffered.
+                        while let Some(pos) = buffer.find("\n\n") {
+                            let frame: String = buffer.drain(..pos + 2).collect();
+                            match parse_sse_frame(&frame) {
+                                Some(Ok(Some(delta))) => {
+                                    if tx.send(Ok(delta)).is_err() {
+                                        return; // receiver dropped
+                                    }
+                                }
+                                Some(Ok(None)) => return, // [DONE]
+                                Some(Err(e)) => {
+                                    let _ = tx.send(Err(e));
+                                    return;
+                                }
+                                None => {} // frame carried nothing worth relaying
+                            }
+                        }
+                    }
+                    Ok(None) => return, // connection closed cleanly
+                    Err(e) => {
+                        let _ = tx.send(Err(map_transport(e)));
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(rx)
+    }
+}
+
+/// Parses one SSE frame (everything up to, but not including, its
+/// trailing blank line) into a delta. `None` means the frame carried
+/// nothing this client relays (a comment, an empty keep-alive); `Some(Ok(None))`
+/// means the server's `[DONE]` sentinel — the stream is over, not an error.
+fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, CommunicationError>> {
+    let data = frame.lines().find_map(|line| line.strip_prefix("data: "))?;
+    if data == "[DONE]" {
+        return Some(Ok(None));
+    }
+    let value: Value = match serde_json::from_str(data) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(CommunicationError::Transport(e.to_string()))),
+    };
+    let delta = value
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("delta"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let content = delta
+        .get("content")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let reasoning_content = delta
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    if content.is_none() && reasoning_content.is_none() {
+        return None;
+    }
+    Some(Ok(Some(TurnDelta {
+        content,
+        reasoning_content,
+    })))
 }
 
 fn map_transport(error: reqwest::Error) -> CommunicationError {
     CommunicationError::Transport(error.to_string())
+}
+
+/// Parses one SSE frame from `conversations/events` into a [`ServerEvent`].
+/// gaia-api sends `event: changed` on every save/delete and `:heartbeat`/
+/// `:ok` comment-only frames in between (historyRoutes.js) — only the
+/// former is worth relaying, so anything else (including a malformed
+/// frame) is silently dropped rather than surfaced as an error: a missed
+/// heartbeat is not a failure the frontend needs to know about.
+fn parse_conversation_event(frame: &str) -> Option<ServerEvent> {
+    let is_changed = frame
+        .lines()
+        .any(|line| line.trim() == "event: changed");
+    if !is_changed {
+        return None;
+    }
+    Some(ServerEvent::from(ServerEventEnvelope {
+        topic: "conversation.history.changed".to_string(),
+        payload: Value::Null,
+    }))
 }

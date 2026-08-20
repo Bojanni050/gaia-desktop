@@ -14,7 +14,9 @@ mod events;
 mod http;
 mod status;
 
-pub use client::{GaiaServerClient, HealthReport, ServerMethod, ServerRequest, ServerResponse};
+pub use client::{
+    GaiaServerClient, HealthReport, ServerMethod, ServerRequest, ServerResponse, TurnDelta,
+};
 pub use config::ServerConfig;
 pub use events::{ServerEvent, ServerEventEnvelope};
 pub use http::HttpGaiaClient;
@@ -24,15 +26,30 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use serde::Serialize;
+use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Tauri event emitted whenever the connection status changes.
 pub const STATUS_EVENT: &str = "server://status";
 
+/// Tauri event emitted for each incremental piece of a streaming turn.
+pub const TURN_DELTA_EVENT: &str = "server://turn-delta";
+
+/// Tauri event emitted for each realtime [`ServerEvent`] relayed from
+/// `GaiaServerClient::subscribe_events` — today, conversation-history
+/// changes another client (gaia-web or another gaia-desktop instance)
+/// made, so this app's History list can refresh without polling.
+pub const SERVER_EVENT: &str = "server://event";
+
 /// How often the background health loop probes Gaia Server.
 const HEALTH_INTERVAL: Duration = Duration::from_secs(30);
 /// Timeout for a single health probe.
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+/// Delay before retrying the realtime-events connection after it drops or
+/// fails to establish (server not configured yet, momentarily offline,
+/// connection reset, ...) — deliberately short since reconnecting is cheap
+/// and there's no backoff ceiling worth the added complexity at this scale.
+const EVENTS_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommunicationError {
@@ -159,6 +176,36 @@ impl ServerLink {
         client.request(request).await
     }
 
+    /// Perform a streaming turn, emitting [`TURN_DELTA_EVENT`] for each
+    /// incremental piece as it arrives, and returning the full assistant
+    /// text (content deltas only — reasoning deltas are relayed for display
+    /// but not part of the reply) once the stream ends.
+    pub async fn stream_turn(
+        &self,
+        app: &AppHandle,
+        body: Value,
+        request_id: String,
+    ) -> Result<String, CommunicationError> {
+        let client = self.client().ok_or(CommunicationError::NotConfigured)?;
+        let mut deltas = client.stream_turn(body).await?;
+        let mut full_reply = String::new();
+        while let Some(delta) = deltas.recv().await {
+            let delta = delta?;
+            if let Some(content) = &delta.content {
+                full_reply.push_str(content);
+            }
+            let _ = app.emit(
+                TURN_DELTA_EVENT,
+                &TurnDeltaPayload {
+                    request_id: request_id.clone(),
+                    content: delta.content,
+                    reasoning_content: delta.reasoning_content,
+                },
+            );
+        }
+        Ok(full_reply)
+    }
+
     /// Spawn the background health loop that keeps the status fresh.
     pub fn spawn_health_loop(app: AppHandle) {
         tauri::async_runtime::spawn(async move {
@@ -170,6 +217,37 @@ impl ServerLink {
             }
         });
     }
+
+    /// Spawn the background bridge that relays realtime [`ServerEvent`]s as
+    /// [`SERVER_EVENT`] Tauri events. Reconnects on its own — whenever the
+    /// subscription ends (dropped connection, not configured yet, transport
+    /// error) it waits [`EVENTS_RECONNECT_DELAY`] and tries again, for the
+    /// lifetime of the app.
+    pub fn spawn_event_bridge(app: AppHandle) {
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let client = app.state::<ServerLink>().client();
+                let Some(client) = client else {
+                    tokio::time::sleep(EVENTS_RECONNECT_DELAY).await;
+                    continue;
+                };
+                match client.subscribe_events().await {
+                    Ok(mut events) => {
+                        while let Some(event) = events.recv().await {
+                            let _ = app.emit(SERVER_EVENT, &event);
+                        }
+                        // Channel closed — connection ended; fall through to
+                        // the reconnect delay below and try again.
+                    }
+                    Err(_) => {
+                        // Not configured, offline, or the endpoint rejected
+                        // us — same reconnect path either way.
+                    }
+                }
+                tokio::time::sleep(EVENTS_RECONNECT_DELAY).await;
+            }
+        });
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -177,6 +255,16 @@ impl ServerLink {
 pub struct ServerStatusPayload {
     status: ConnectionStatus,
     server_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnDeltaPayload {
+    request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
 }
 
 #[tauri::command]
@@ -219,4 +307,19 @@ pub async fn server_request(
     request: ServerRequest,
 ) -> Result<ServerResponse, crate::error::DesktopError> {
     Ok(link.request(request).await?)
+}
+
+/// Streams one turn against `conversation/turn`. `body` is the same turn
+/// payload `server_request` would carry (see contract.js's
+/// `buildStreamTurnBody`); `request_id` lets the frontend match incoming
+/// [`TURN_DELTA_EVENT`]s to this call, since it returns only once the
+/// stream has ended. Resolves with the full assistant reply.
+#[tauri::command]
+pub async fn server_stream_turn(
+    app: AppHandle,
+    link: tauri::State<'_, ServerLink>,
+    body: Value,
+    request_id: String,
+) -> Result<String, crate::error::DesktopError> {
+    Ok(link.stream_turn(&app, body, request_id).await?)
 }

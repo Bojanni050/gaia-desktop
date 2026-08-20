@@ -1,11 +1,13 @@
 import React from 'react';
-import { History, Library, Plus, Settings, Trash2 } from 'lucide-react';
+import { Library, Plus, Settings, Trash2 } from 'lucide-react';
 import { L } from '../lib/lexicon';
+import HistorySection from '../history/HistorySection';
 
 /**
  * Sidebar — the web's Threads look, ported: brand orb, the italic serif
- * new-page button, the thread list with hover-delete, the NL/EN switcher
- * and the quiet foot lines. The settings button is the desktop's own.
+ * new-conversation button, the thread list with hover-delete, the
+ * collapsible History section beneath it, the NL/EN switcher and the quiet
+ * foot lines. The settings button is the desktop's own.
  */
 export default function Sidebar({
   threads,
@@ -17,7 +19,8 @@ export default function Sidebar({
   onLangChange,
   onOpenSettings,
   onOpenLibrary,
-  onOpenHistory,
+  onOpenHistoryConversation,
+  historyVersion,
 }) {
   return (
     <nav className="sidebar">
@@ -52,10 +55,9 @@ export default function Sidebar({
         ))}
       </div>
 
+      <HistorySection onOpenConversation={onOpenHistoryConversation} refreshToken={historyVersion} />
+
       <div className="sidebar-foot">
-        <button className="settings-open-btn" onClick={onOpenHistory}>
-          <History size={13} /> {L.history}
-        </button>
         <button className="settings-open-btn" onClick={onOpenLibrary}>
           <Library size={13} /> {L.library}
         </button>

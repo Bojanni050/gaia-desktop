@@ -16,6 +16,8 @@ import {
   parseHistoryConversation,
 } from '../state/contract';
 
+let streamRequestCounter = 0;
+
 export const serverApi = {
   getConfig: () => invoke('server_get_config'),
   applyConfig: (config) => invoke('server_set_config', { config }),
@@ -23,6 +25,33 @@ export const serverApi = {
   testConnection: () => invoke('server_test_connection'),
   request: (request) => invoke('server_request', { request }),
   onStatus: (handler) => listen('server://status', (event) => handler(event.payload)),
+  /**
+   * Realtime events relayed from Gaia Cloud (ServerLink::spawn_event_bridge,
+   * backed by gaia-api's `conversations/events` SSE endpoint) — today just
+   * `{ topic: 'conversation.history.changed', payload: null }` whenever any
+   * client saves or deletes a conversation, so History can refresh without
+   * polling. `handler` receives the raw `ServerEvent` envelope.
+   */
+  onServerEvent: (handler) => listen('server://event', (event) => handler(event.payload)),
+  /**
+   * Streams one turn (Rust's `server_stream_turn`, over gaia-api's SSE
+   * path — turn.js's performStreamingTurn). `onDelta` is called with
+   * `{ content, reasoningContent }` as each piece arrives; resolves with
+   * the full assistant text once the stream ends, rejects the same way
+   * `request` does on any transport/server failure.
+   */
+  streamTurn: async (body, onDelta) => {
+    const requestId = `turn-${Date.now()}-${streamRequestCounter++}`;
+    const unlisten = await listen('server://turn-delta', (event) => {
+      if (event.payload?.requestId !== requestId) return;
+      onDelta(event.payload);
+    });
+    try {
+      return await invoke('server_stream_turn', { body, requestId });
+    } finally {
+      unlisten();
+    }
+  },
 };
 
 export const presenceApi = {

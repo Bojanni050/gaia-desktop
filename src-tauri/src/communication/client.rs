@@ -70,6 +70,24 @@ pub struct HealthReport {
 /// tomorrow, SSE the day after) stays swappable.
 pub type ServerEventStream = mpsc::UnboundedReceiver<ServerEvent>;
 
+/// One incremental piece of a streamed turn — assistant content or
+/// reasoning content, exactly as Gaia Server's SSE frames distinguish them
+/// (gaia-api's turn.js `writeSseDelta`). Opaque otherwise: relayed text,
+/// never interpreted here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+}
+
+/// Receiver for a streamed turn's incremental deltas. Closes when the
+/// server sends `[DONE]` or the connection ends; a delivered `Err` means
+/// the stream failed mid-flight (the channel still closes right after).
+pub type TurnDeltaStream = mpsc::UnboundedReceiver<Result<TurnDelta, CommunicationError>>;
+
 /// The single seam to Gaia Server.
 ///
 /// Implementations must be transport-only: they move bytes, they never
@@ -83,9 +101,17 @@ pub trait GaiaServerClient: Send + Sync {
     /// Perform a generic request and return the raw server response.
     async fn request(&self, request: ServerRequest) -> Result<ServerResponse, CommunicationError>;
 
-    /// Subscribe to realtime server events.
-    ///
-    /// Phase 1 implementations may return [`CommunicationError::WebSocketUnavailable`];
-    /// the seam exists so a WebSocket client can slot in without refactor.
+    /// Subscribe to realtime server events. `HttpGaiaClient` backs this with
+    /// gaia-api's `conversations/events` SSE endpoint; a future WebSocket
+    /// transport can slot in behind the same trait method without a caller
+    /// changing.
     async fn subscribe_events(&self) -> Result<ServerEventStream, CommunicationError>;
+
+    /// Perform a streaming turn against `conversation/turn` (Gaia Server's
+    /// SSE path — gaia-api's turn.js `performStreamingTurn`). `body` is the
+    /// same turn payload `request` would send, minus the `stream` flag,
+    /// which implementations set themselves. Returns once the connection is
+    /// established; deltas arrive on the returned channel as the server
+    /// sends them.
+    async fn stream_turn(&self, body: Value) -> Result<TurnDeltaStream, CommunicationError>;
 }
