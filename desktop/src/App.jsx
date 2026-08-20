@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Sidebar from './shell/Sidebar';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
@@ -25,21 +25,48 @@ export default function App() {
     presenceApi.get().catch(() => {});
   }, []);
 
-  // Auto-resume: on launch, reopen the most recently active conversation
-  // (historyApi.list is already sorted newest-first by gaia-api) instead of
-  // starting blank every time. Only "New page" mints a fresh thread id
-  // after this — see Sidebar's onNew.
+  // Refs so the poll below can read current state without re-creating its
+  // interval on every message/busy tick.
+  const activeRef = useRef(null);
+  useEffect(() => { activeRef.current = conversation.active; }, [conversation.active]);
+  const busyRef = useRef(false);
+  useEffect(() => { busyRef.current = conversation.busy; }, [conversation.busy]);
+
+  /**
+   * Resumes whichever conversation gaia-api considers most recently
+   * updated (historyApi.list is newest-first) if it differs from what's
+   * open here. Called once on launch and then on a poll interval, so
+   * switching between gaia-desktop and gaia-web picks up whatever the
+   * *other* client most recently did — there is no push channel between
+   * clients, so this poll is the whole "shared session" mechanism for now.
+   *
+   * Two guards keep it from clobbering local, not-yet-saved state:
+   *   - a turn in flight here is never interrupted
+   *   - a thread just started via "New page" (no messages sent yet, so it
+   *     isn't in gaia-api's list at all) is left alone rather than being
+   *     silently replaced by whatever another client last touched
+   */
+  const syncMostRecentConversation = useCallback(async () => {
+    if (busyRef.current) return;
+    const list = await historyApi.list();
+    if (list.length === 0) return;
+    const [mostRecent] = list;
+    const current = activeRef.current;
+    if (current && current.id === mostRecent.id) return;
+    if (current && current.messages.length === 0) return;
+
+    const { messages } = await historyApi.get(mostRecent.id);
+    conversation.hydrateThread(mostRecent.id, messages);
+  }, [conversation.hydrateThread]);
+
   useEffect(() => {
     let cancelled = false;
-    historyApi.list().then(async (list) => {
-      if (cancelled || list.length === 0) return;
-      const [mostRecent] = list;
-      const { messages } = await historyApi.get(mostRecent.id);
-      if (cancelled) return;
-      conversation.hydrateThread(mostRecent.id, messages);
-    }).catch(() => { /* no history yet, or unreachable — start fresh */ });
-    return () => { cancelled = true; };
-  }, [conversation.hydrateThread]);
+    syncMostRecentConversation().catch(() => { /* no history yet, or unreachable — start fresh */ });
+    const interval = setInterval(() => {
+      if (!cancelled) syncMostRecentConversation().catch(() => {});
+    }, 20000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [syncMostRecentConversation]);
 
   const handleLangChange = useCallback((next) => {
     localStorage.setItem('gaia.lang', next);
