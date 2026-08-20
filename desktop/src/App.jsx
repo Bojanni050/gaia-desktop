@@ -3,8 +3,7 @@ import Sidebar from './shell/Sidebar';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
 import LibraryPanel from './library/LibraryPanel';
-import HistoryPanel from './history/HistoryPanel';
-import { serverApi, presenceApi } from './server/api';
+import { serverApi, presenceApi, historyApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
 import { L } from './lib/lexicon';
@@ -19,13 +18,28 @@ export default function App() {
   const [quiet, setQuietState] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
 
   useEffect(() => {
     presenceApi.get().catch(() => {});
   }, []);
+
+  // Auto-resume: on launch, reopen the most recently active conversation
+  // (historyApi.list is already sorted newest-first by gaia-api) instead of
+  // starting blank every time. Only "New page" mints a fresh thread id
+  // after this — see Sidebar's onNew.
+  useEffect(() => {
+    let cancelled = false;
+    historyApi.list().then(async (list) => {
+      if (cancelled || list.length === 0) return;
+      const [mostRecent] = list;
+      const { messages } = await historyApi.get(mostRecent.id);
+      if (cancelled) return;
+      conversation.hydrateThread(mostRecent.id, messages);
+    }).catch(() => { /* no history yet, or unreachable — start fresh */ });
+    return () => { cancelled = true; };
+  }, [conversation.hydrateThread]);
 
   const handleLangChange = useCallback((next) => {
     localStorage.setItem('gaia.lang', next);
@@ -54,13 +68,14 @@ export default function App() {
         onLangChange={handleLangChange}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenLibrary={() => setLibraryOpen(true)}
-        onOpenHistory={() => setHistoryOpen(true)}
+        onOpenHistoryConversation={conversation.hydrateThread}
       />
 
       <main className="gaia-main">
         <Conversation
           thread={conversation.active}
           busy={conversation.busy}
+          streaming={conversation.streaming}
           presenceState={presenceState}
           whisper={whisper}
           onSend={conversation.send}
@@ -77,13 +92,6 @@ export default function App() {
       )}
 
       {libraryOpen && <LibraryPanel onClose={() => setLibraryOpen(false)} />}
-
-      {historyOpen && (
-        <HistoryPanel
-          onClose={() => setHistoryOpen(false)}
-          onOpenConversation={conversation.hydrateThread}
-        />
-      )}
     </div>
   );
 }
