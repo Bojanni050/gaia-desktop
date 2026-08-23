@@ -4,15 +4,18 @@
  * This hook owns no cognition: it sends user text through serverApi and
  * appends whatever reply the server returns. SOUL, memory, intent and
  * reasoning never run here. The one thing added on top of that reply —
- * speaking it via speechApi/playSpeech — is presentation, not cognition:
- * it runs strictly after a reply already exists, never changes what was
- * said, and its own failure can never affect the turn (see runTurn).
+ * speaking it via speechApi/playSpeech, gated by lib/language.js's
+ * looksEnglish (Xiaomi's TTS model only pronounces Chinese/English) — is
+ * presentation, not cognition: it runs strictly after a reply already
+ * exists, never changes what was said, and its own failure can never
+ * affect the turn (see runTurn).
  */
 import { useCallback, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
 import { speechApi } from '../server/api';
 import { playSpeech } from '../lib/speech';
+import { looksEnglish } from '../lib/language';
 
 let counter = 1;
 const localId = () => `${Date.now()}-${counter++}`;
@@ -125,10 +128,18 @@ export function useConversation(server) {
         // provider hiccup, playback denied) must never affect the turn
         // that already succeeded, so it's caught and swallowed here, same
         // posture as reflectOnTurn/history-save on the server side.
-        speechApi
-          .synthesize(fullReply)
-          .then((bytes) => playSpeech(bytes))
-          .catch(() => {});
+        //
+        // Gated to English-looking replies only: Xiaomi's
+        // mimo-v2.5-tts-voicedesign only supports Chinese/English
+        // pronunciation — Dutch text comes back badly mispronounced
+        // rather than rejected, so this must be checked before ever
+        // calling speechApi (see lib/language.js's own comment).
+        if (looksEnglish(fullReply)) {
+          speechApi
+            .synthesize(fullReply)
+            .then((bytes) => playSpeech(bytes))
+            .catch(() => {});
+        }
       } catch (error) {
         const phrase = phraseTurnError(error);
         setThreads((prev) =>
