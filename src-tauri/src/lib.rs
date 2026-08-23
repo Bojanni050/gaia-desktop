@@ -20,6 +20,7 @@ pub mod library;
 pub mod notifications;
 pub mod presence;
 pub mod settings;
+pub mod speech;
 
 use tauri::Manager;
 
@@ -77,6 +78,8 @@ pub fn run() {
             library::library_list_files,
             library::library_download_file,
             library::library_delete_file,
+            // speech
+            speech::speech_synthesize,
             // notifications
             notifications::notify,
             // settings

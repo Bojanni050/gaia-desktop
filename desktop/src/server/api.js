@@ -74,6 +74,22 @@ export const audioApi = {
 };
 
 /**
+ * Gaia's voice — synthesizes speech for an already-received Gaia reply via
+ * Rust's `speech_synthesize` (gaia-api's `POST /speech`, src/speech/mimoTts.js
+ * server-side). `text` must be a finished Gaia response, never a fresh
+ * prompt: this module has no say in what Gaia says, only how it sounds.
+ * Tauri returns the command's `Vec<u8>` as a plain JS array of byte
+ * values; `synthesize` turns that into a `Uint8Array` the caller can wrap
+ * in a `Blob` for playback.
+ */
+export const speechApi = {
+  async synthesize(text) {
+    const bytes = await invoke('speech_synthesize', { text });
+    return new Uint8Array(bytes);
+  },
+};
+
+/**
  * The file library. File bytes never cross the generic `server_request`
  * seam (JSON-only) — `library_upload_file`/`library_download_file` are
  * dedicated Rust commands that read/write local paths chosen through a

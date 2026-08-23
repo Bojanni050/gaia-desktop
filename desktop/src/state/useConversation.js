@@ -3,11 +3,16 @@
  *
  * This hook owns no cognition: it sends user text through serverApi and
  * appends whatever reply the server returns. SOUL, memory, intent and
- * reasoning never run here.
+ * reasoning never run here. The one thing added on top of that reply —
+ * speaking it via speechApi/playSpeech — is presentation, not cognition:
+ * it runs strictly after a reply already exists, never changes what was
+ * said, and its own failure can never affect the turn (see runTurn).
  */
 import { useCallback, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
+import { speechApi } from '../server/api';
+import { playSpeech } from '../lib/speech';
 
 let counter = 1;
 const localId = () => `${Date.now()}-${counter++}`;
@@ -114,6 +119,16 @@ export function useConversation(server) {
         if (!receivedAny || !fullReply) {
           throw new Error('Gaia Server returned no reply');
         }
+        // Gaia's voice — strictly a presentation step on the reply that
+        // just arrived. Fire-and-forget: text is already the canonical,
+        // already-displayed Gaia response; a TTS failure (not configured,
+        // provider hiccup, playback denied) must never affect the turn
+        // that already succeeded, so it's caught and swallowed here, same
+        // posture as reflectOnTurn/history-save on the server side.
+        speechApi
+          .synthesize(fullReply)
+          .then((bytes) => playSpeech(bytes))
+          .catch(() => {});
       } catch (error) {
         const phrase = phraseTurnError(error);
         setThreads((prev) =>
