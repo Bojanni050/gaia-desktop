@@ -63,7 +63,37 @@ pub async fn library_upload_file(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "upload".to_string());
 
-    let part = reqwest::multipart::Part::bytes(bytes).file_name(filename);
+    // Detect MIME type from file extension
+    let mime_type = match std::path::Path::new(&filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "txt" | "text" => "text/plain",
+        "json" => "application/json",
+        "md" => "text/markdown",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" | "mjs" => "text/javascript",
+        "py" => "text/x-python",
+        "rs" => "text/x-rust",
+        "toml" => "text/plain",
+        "yaml" | "yml" => "text/yaml",
+        _ => "application/octet-stream",
+    };
+
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(filename)
+        .mime_str(mime_type)
+        .map_err(|e| DesktopError::Message(format!("invalid mime type: {e}")))?;
     let form = reqwest::multipart::Form::new().part("file", part);
 
     let client = reqwest::Client::new();
