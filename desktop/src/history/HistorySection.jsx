@@ -15,7 +15,7 @@
  * conversation on its own.
  */
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, History, Trash2 } from 'lucide-react';
+import { ChevronRight, History, Trash2, Download } from 'lucide-react';
 import { historyApi } from '../server/api';
 import { L } from '../lib/lexicon';
 
@@ -24,6 +24,7 @@ export default function HistorySection({ onOpenConversation, refreshToken }) {
   const [conversations, setConversations] = useState(null); // null = not loaded yet
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [exportMenuId, setExportMenuId] = useState(null);
 
   useEffect(() => {
     if (conversations === null) return; // not loaded yet — first expand will fetch
@@ -71,6 +72,42 @@ export default function HistorySection({ onOpenConversation, refreshToken }) {
     }
   };
 
+  const handleExport = async (conv, format, e) => {
+    e.stopPropagation();
+    if (busyId) return;
+    setBusyId(conv.id);
+    setError(null);
+    setExportMenuId(null);
+    try {
+      const content = format === 'json'
+        ? await historyApi.exportJson(conv.id)
+        : await historyApi.exportMarkdown(conv.id);
+
+      const extension = format === 'json' ? 'json' : 'md';
+      const mimeType = format === 'json' ? 'application/json' : 'text/markdown';
+      const filename = `gaia-chat-${conv.id}.${extension}`;
+
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (_) {
+      setError(L.historyExportFailed || 'Export failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleExportMenu = (convId, e) => {
+    e.stopPropagation();
+    setExportMenuId(exportMenuId === convId ? null : convId);
+  };
+
   return (
     <div className="sidebar-section">
       <button className="sidebar-section-header" onClick={toggle} aria-expanded={open}>
@@ -95,14 +132,30 @@ export default function HistorySection({ onOpenConversation, refreshToken }) {
                 aria-disabled={busyId === conv.id}
               >
                 <span className="thread-title">{conv.title || L.untitled}</span>
-                <button
-                  className="thread-delete"
-                  onClick={(e) => handleDelete(conv, e)}
-                  disabled={busyId === conv.id}
-                  aria-label={L.historyDelete}
-                >
-                  <Trash2 size={14} />
-                </button>
+                <div className="thread-actions">
+                  <button
+                    className="thread-export"
+                    onClick={(e) => toggleExportMenu(conv.id, e)}
+                    disabled={busyId === conv.id}
+                    aria-label={L.historyExport || 'Export'}
+                  >
+                    <Download size={14} />
+                  </button>
+                  {exportMenuId === conv.id && (
+                    <div className="thread-export-menu">
+                      <button onClick={(e) => handleExport(conv, 'json', e)}>JSON</button>
+                      <button onClick={(e) => handleExport(conv, 'markdown', e)}>Markdown</button>
+                    </div>
+                  )}
+                  <button
+                    className="thread-delete"
+                    onClick={(e) => handleDelete(conv, e)}
+                    disabled={busyId === conv.id}
+                    aria-label={L.historyDelete}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))
           )}

@@ -72,6 +72,14 @@ export function buildHistoryDeleteRequest(id) {
   return { method: 'delete', path: `conversations/${id}` };
 }
 
+export function buildHistoryExportJsonRequest(id) {
+  return { method: 'get', path: `conversations/${id}/export/json` };
+}
+
+export function buildHistoryExportMarkdownRequest(id) {
+  return { method: 'get', path: `conversations/${id}/export/markdown` };
+}
+
 export function parseHistoryList(response) {
   const conversations = response?.body?.conversations;
   return Array.isArray(conversations) ? conversations : [];
@@ -83,4 +91,28 @@ export function parseHistoryConversation(response) {
     throw new Error('Gaia Server returned no conversation');
   }
   return { meta: response.body.meta || {}, messages };
+}
+
+export function parseHistoryExport(response, format) {
+  const body = response?.body;
+  if (!body) {
+    throw new Error('Gaia Server returned no export data');
+  }
+
+  if (format === 'json') {
+    const conversation = body.conversation;
+    if (!conversation) {
+      throw new Error('Gaia Server returned invalid export data');
+    }
+    return JSON.stringify(body, null, 2);
+  }
+
+  if (format === 'markdown') {
+    if (typeof body !== 'string') {
+      throw new Error('Gaia Server returned invalid markdown export');
+    }
+    return body;
+  }
+
+  throw new Error(`Unknown export format: ${format}`);
 }

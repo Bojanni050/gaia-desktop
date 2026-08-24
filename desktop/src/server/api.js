@@ -12,8 +12,11 @@ import {
   buildHistoryListRequest,
   buildHistoryGetRequest,
   buildHistoryDeleteRequest,
+  buildHistoryExportJsonRequest,
+  buildHistoryExportMarkdownRequest,
   parseHistoryList,
   parseHistoryConversation,
+  parseHistoryExport,
 } from '../state/contract';
 
 let streamRequestCounter = 0;
@@ -125,6 +128,8 @@ export const historyApi = {
   list: () => serverApi.request(buildHistoryListRequest()).then(parseHistoryList),
   get: (id) => serverApi.request(buildHistoryGetRequest(id)).then(parseHistoryConversation),
   remove: (id) => serverApi.request(buildHistoryDeleteRequest(id)),
+  exportJson: (id) => serverApi.request(buildHistoryExportJsonRequest(id)).then((r) => parseHistoryExport(r, 'json')),
+  exportMarkdown: (id) => serverApi.request(buildHistoryExportMarkdownRequest(id)).then((r) => parseHistoryExport(r, 'markdown')),
 };
 
 export const notify = (options) => invoke('notify', { options });

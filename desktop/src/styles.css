@@ -119,6 +119,27 @@ body {
 .thread-item:hover .thread-delete { opacity: 1; }
 .thread-delete:hover { color: #C98B7A; }
 
+.thread-actions { display: flex; align-items: center; gap: 2px; }
+.thread-export {
+  opacity: 0; background: none; border: none; color: var(--text-faint);
+  cursor: pointer; padding: 2px; display: flex; transition: opacity 0.2s ease, color 0.2s ease;
+}
+.thread-item:hover .thread-export { opacity: 1; }
+.thread-export:hover { color: var(--accent); }
+
+.thread-export-menu {
+  position: absolute; right: 40px; background: var(--surface-2);
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 4px; z-index: 10; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.thread-export-menu button {
+  display: block; width: 100%; padding: 6px 12px; background: none;
+  border: none; color: var(--text-muted); font-size: 0.82rem;
+  text-align: left; cursor: pointer; border-radius: 6px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.thread-export-menu button:hover { background: var(--surface-3); color: var(--text); }
+
 /* sidebar collapsible sections — History today, same shape for any future one */
 .sidebar-section { flex: none; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
 .sidebar-section-header {

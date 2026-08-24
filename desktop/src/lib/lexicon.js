@@ -52,6 +52,8 @@ export const LANGUAGES = {
     historyOpenFailed: 'Dit gesprek kon niet worden geopend.',
     historyDelete: 'Verwijderen',
     historyDeleteFailed: 'Verwijderen is niet gelukt.',
+    historyExport: 'Exporteren',
+    historyExportFailed: 'Exporteren is niet gelukt.',
     // turn failure phrases (phrases.js reads these)
     turnNoServer: 'Gaia is nog niet verbonden met haar server. Je kunt er een toevoegen in de instellingen.',
     turnUnreachable: 'Gaia is nu even niet te bereiken.',
@@ -106,6 +108,8 @@ export const LANGUAGES = {
     historyOpenFailed: 'Could not open this conversation.',
     historyDelete: 'Delete',
     historyDeleteFailed: 'Could not delete this conversation.',
+    historyExport: 'Export',
+    historyExportFailed: 'Could not export this conversation.',
     turnNoServer: 'Gaia is not connected to her server yet. You can add one in settings.',
     turnUnreachable: 'Gaia cannot be reached right now.',
     turnCapture: 'This device could not capture that.',
