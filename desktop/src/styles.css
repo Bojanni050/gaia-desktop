@@ -349,6 +349,36 @@ body {
 .thinking-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
 .thinking-word { font-family: var(--serif); font-style: italic; color: var(--text-faint); font-size: 0.95rem; }
 
+/* thought process details block */
+.thought-process {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: 8px 0 16px;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+.thought-process-title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.thought-process-body {
+  margin-top: 10px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent-line);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+.thought-process-body p { margin-bottom: 8px !important; }
+.thought-process-body p:last-child { margin-bottom: 0 !important; }
+
 /* health whisper — a quiet line, not a banner */
 .health-whisper {
   display: flex; align-items: center; gap: 12px; justify-content: center;

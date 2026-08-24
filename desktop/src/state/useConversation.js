@@ -89,6 +89,7 @@ export function useConversation(server) {
       // fresh from `prev` each time, making both updaters idempotent.
       let receivedAny = false;
 
+      let fullReasoning = '';
       const appendToAssistant = (text) => {
         if (!text) return;
         receivedAny = true;
@@ -115,12 +116,28 @@ export function useConversation(server) {
         // saves/appends the transcript under it (conversationStore.js),
         // which is what lets History reopen this same thread later.
         const body = buildStreamTurnBody(history, threadId);
-        const fullReply = await server.streamTurn(body, (delta) => appendToAssistant(delta.content));
+        const fullReply = await server.streamTurn(body, (delta) => {
+          if (delta.reasoningContent) fullReasoning += delta.reasoningContent;
+          appendToAssistant(delta.content);
+        });
         // A turn that streamed no content deltas at all (empty reply) is a
         // server-contract violation, same as the old parseReply's check —
         // surface it as a failure rather than leaving a blank bubble.
         if (!receivedAny || !fullReply) {
           throw new Error('Gaia Server returned no reply');
+        }
+        if (fullReasoning) {
+          setThreads((prev) =>
+            prev.map((t) => {
+              if (t.id !== threadId) return t;
+              return {
+                ...t,
+                messages: t.messages.map((m) =>
+                  m.id === assistantId ? { ...m, reasoning: fullReasoning } : m
+                ),
+              };
+            })
+          );
         }
         // Gaia's voice — strictly a presentation step on the reply that
         // just arrived. Fire-and-forget: text is already the canonical,

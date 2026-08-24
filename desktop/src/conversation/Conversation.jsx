@@ -67,9 +67,12 @@ export default function Conversation({ thread, busy, streaming, presenceState, w
             </div>
           ) : (
             <>
-              {messages.map((m) => (
-                <MessageView key={m.id} message={m} onRetry={onRetry} />
-              ))}
+              {messages.map((m, i) => {
+                const isLastAssistant = m.role === 'assistant' && i === messages.length - 1;
+                return (
+                  <MessageView key={m.id} message={m} streaming={streaming && isLastAssistant} onRetry={onRetry} />
+                );
+              })}
               {busy && !streaming && (
                 <div className="thinking-row">
                   <Presence isThinking={true} type="general" state="thinking" size={26} />

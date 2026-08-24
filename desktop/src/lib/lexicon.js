@@ -59,6 +59,7 @@ export const LANGUAGES = {
     turnUnreachable: 'Gaia is nu even niet te bereiken.',
     turnCapture: 'Dit apparaat kon dat niet vastleggen.',
     turnFallback: 'Er ging hier iets mis. Je bericht staat er nog.',
+    thoughtProcess: 'Gedachtegang',
   },
   en: {
     newPage: 'New conversation',
@@ -114,6 +115,7 @@ export const LANGUAGES = {
     turnUnreachable: 'Gaia cannot be reached right now.',
     turnCapture: 'This device could not capture that.',
     turnFallback: 'Something went wrong on this side. Your message is still here.',
+    thoughtProcess: 'Thought process',
   },
 };
 
