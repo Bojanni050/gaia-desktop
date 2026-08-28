@@ -21,6 +21,7 @@ pub use config::ServerConfig;
 pub use events::{ServerEvent, ServerEventEnvelope};
 pub use http::HttpGaiaClient;
 pub use status::ConnectionStatus;
+pub use crate::version::CloudBuildMeta;
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -322,4 +323,25 @@ pub async fn server_stream_turn(
     request_id: String,
 ) -> Result<String, crate::error::DesktopError> {
     Ok(link.stream_turn(&app, body, request_id).await?)
+}
+
+/// Fetch Cloud build version from the server.
+/// Returns the Cloud's build metadata, or an error if unavailable.
+/// This is cached for the session and fetched once during initialization.
+#[tauri::command]
+pub async fn server_get_cloud_version(
+    link: tauri::State<'_, ServerLink>,
+) -> Result<CloudBuildMeta, String> {
+    let client = link.client()
+        .ok_or_else(|| "no Gaia Server configured".to_string())?;
+    client.get_cloud_version().await
+        .map_err(|e| e.to_string())
+}
+
+/// Get Desktop build metadata (from the local application).
+#[tauri::command]
+pub async fn version_get_desktop(
+    desktop_version: tauri::State<'_, DesktopVersion>,
+) -> Result<DesktopBuildMeta, String> {
+    Ok(desktop_version.get().clone())
 }

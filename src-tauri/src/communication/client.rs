@@ -2,7 +2,7 @@
 //!
 //! The desktop depends only on this trait. Payloads crossing it are opaque:
 //! the desktop makes no assumptions about models, prompts, reasoning steps
-//! or memory layout — those belong to Gaia Server.
+//! or memory layout  those belong to Gaia Server.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 
 use super::events::ServerEvent;
 use super::CommunicationError;
+use crate::version::CloudBuildMeta;
 
 /// A generic server request envelope.
 ///
@@ -70,7 +71,7 @@ pub struct HealthReport {
 /// tomorrow, SSE the day after) stays swappable.
 pub type ServerEventStream = mpsc::UnboundedReceiver<ServerEvent>;
 
-/// One incremental piece of a streamed turn — assistant content or
+/// One incremental piece of a streamed turn  assistant content or
 /// reasoning content, exactly as Gaia Server's SSE frames distinguish them
 /// (gaia-api's turn.js `writeSseDelta`). Opaque otherwise: relayed text,
 /// never interpreted here.
@@ -108,10 +109,14 @@ pub trait GaiaServerClient: Send + Sync {
     async fn subscribe_events(&self) -> Result<ServerEventStream, CommunicationError>;
 
     /// Perform a streaming turn against `conversation/turn` (Gaia Server's
-    /// SSE path — gaia-api's turn.js `performStreamingTurn`). `body` is the
+    /// SSE path  gaia-api's turn.js `performStreamingTurn`). `body` is the
     /// same turn payload `request` would send, minus the `stream` flag,
     /// which implementations set themselves. Returns once the connection is
     /// established; deltas arrive on the returned channel as the server
     /// sends them.
     async fn stream_turn(&self, body: Value) -> Result<TurnDeltaStream, CommunicationError>;
+
+    /// Fetch Cloud build metadata from the server.
+    /// Returns the Cloud's version information, or an error if unavailable.
+    async fn get_cloud_version(&self) -> Result<CloudBuildMeta, CommunicationError>;
 }

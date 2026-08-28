@@ -27,6 +27,8 @@ export const serverApi = {
   getStatus: () => invoke('server_get_status'),
   testConnection: () => invoke('server_test_connection'),
   request: (request) => invoke('server_request', { request }),
+  getCloudVersion: () => invoke('server_get_cloud_version'),
+  getDesktopVersion: () => invoke('version_get_desktop'),
   onStatus: (handler) => listen('server://status', (event) => handler(event.payload)),
   /**
    * Realtime events relayed from Gaia Cloud (ServerLink::spawn_event_bridge,

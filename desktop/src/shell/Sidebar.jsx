@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Plus, Settings, Trash2 } from 'lucide-react';
+import { Library, Plus, Settings, Trash2, Info } from 'lucide-react';
 import { L } from '../lib/lexicon';
 import HistorySection from '../history/HistorySection';
 
@@ -21,6 +21,7 @@ export default function Sidebar({
   onOpenLibrary,
   onOpenHistoryConversation,
   historyVersion,
+  onOpenAbout,
 }) {
   return (
     <nav className="sidebar">
@@ -63,6 +64,9 @@ export default function Sidebar({
         </button>
         <button className="settings-open-btn" onClick={onOpenSettings}>
           <Settings size={13} /> {L.settings}
+        </button>
+        <button className="settings-open-btn" onClick={onOpenAbout}>
+          <Info size={13} /> {L.aboutTitle}
         </button>
         <div className="lang-switcher">
           <button

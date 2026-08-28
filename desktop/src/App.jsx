@@ -3,13 +3,14 @@ import Sidebar from './shell/Sidebar';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
 import LibraryPanel from './library/LibraryPanel';
+import AboutPanel from './settings/AboutPanel';
 import { serverApi, presenceApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
 import { L } from './lib/lexicon';
 
 /**
- * The desktop shell — the web's grid, the web's calm. Presence here is the
+ * The desktop shell  the web's grid, the web's calm. Presence here is the
  * orb's breath (quiet / listening / thinking), plus the health whisper when
  * Gaia's server is beyond reach. Never a status dashboard.
  */
@@ -18,6 +19,7 @@ export default function App() {
   const [quiet, setQuietState] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
 
@@ -27,7 +29,7 @@ export default function App() {
 
   // Bumped on every 'conversation.history.changed' server event (pushed via
   // ServerLink::spawn_event_bridge, backed by gaia-api's SSE endpoint) so
-  // HistorySection can refresh its already-loaded list live — e.g. gaia-web
+  // HistorySection can refresh its already-loaded list live  e.g. gaia-web
   // just saved a conversation this desktop app should now be able to see.
   // Deliberately does not touch the active thread: switching what's on
   // screen out from under someone is not what "keep history in sync" means.
@@ -70,6 +72,7 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenLibrary={() => setLibraryOpen(true)}
         onOpenHistoryConversation={conversation.hydrateThread}
+        onOpenAbout={() => setAboutOpen(true)}
         historyVersion={historyVersion}
       />
 
@@ -94,6 +97,10 @@ export default function App() {
       )}
 
       {libraryOpen && <LibraryPanel onClose={() => setLibraryOpen(false)} />}
+      
+      {aboutOpen && (
+        <AboutPanel onClose={() => setAboutOpen(false)} />
+      )}
     </div>
   );
 }

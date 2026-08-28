@@ -21,6 +21,7 @@ pub mod notifications;
 pub mod presence;
 pub mod settings;
 pub mod speech;
+pub mod version;
 
 use tauri::Manager;
 
@@ -49,6 +50,9 @@ pub fn run() {
             app.manage(capture::CaptureManager::new());
             app.manage(audio::AudioSubsystem::new());
             app.manage(presence::PresenceController::new());
+            
+            // Desktop version metadata
+            app.manage(version::DesktopVersion::new());
 
             // Keep connection status and presence fresh in the background.
             communication::ServerLink::spawn_health_loop(app.handle().clone());
@@ -66,6 +70,8 @@ pub fn run() {
             communication::server_test_connection,
             communication::server_request,
             communication::server_stream_turn,
+            communication::server_get_cloud_version,
+            communication::version_get_desktop,
             // capture
             capture::capture_list_sources,
             capture::capture_now,

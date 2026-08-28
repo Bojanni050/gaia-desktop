@@ -18,14 +18,15 @@ use super::client::{
 };
 use super::events::{ServerEvent, ServerEventEnvelope};
 use super::CommunicationError;
+use crate::version::CloudBuildMeta;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-/// A streaming turn covers the whole reply, not just a round-trip — recall
+/// A streaming turn covers the whole reply, not just a round-trip  recall
 /// and reasoning on the server side can legitimately take minutes. Applied
 /// per-request, overriding REQUEST_TIMEOUT for this call only.
 const STREAM_TIMEOUT: Duration = Duration::from_secs(600);
 /// The realtime events connection (`conversations/events`) is meant to sit
-/// open for the life of the app, not one request/response — long enough
+/// open for the life of the app, not one request/response  long enough
 /// that it should never legitimately hit this ceiling; gaia-api's own
 /// heartbeat (every 20s, historyRoutes.js) is what actually detects a dead
 /// connection well before this would.
@@ -109,7 +110,7 @@ impl GaiaServerClient for HttpGaiaClient {
 
     async fn subscribe_events(&self) -> Result<ServerEventStream, CommunicationError> {
         // Backed by gaia-api's `conversations/events` SSE endpoint
-        // (historyRoutes.js) rather than a WebSocket — same seam, simpler
+        // (historyRoutes.js) rather than a WebSocket  same seam, simpler
         // transport, no server-side change needed to add a real WebSocket
         // later behind this same trait method.
         let url = self.endpoint("conversations/events")?;
@@ -137,8 +138,8 @@ impl GaiaServerClient for HttpGaiaClient {
                             }
                         }
                     }
-                    Ok(None) => return,  // connection closed — caller reconnects
-                    Err(_) => return,    // transport error — caller reconnects
+                    Ok(None) => return,  // connection closed  caller reconnects
+                    Err(_) => return,    // transport error  caller reconnects
                 }
             }
         });
@@ -203,12 +204,33 @@ impl GaiaServerClient for HttpGaiaClient {
 
         Ok(rx)
     }
+
+    async fn get_cloud_version(&self) -> Result<CloudBuildMeta, CommunicationError> {
+        // Fetch from /api/version endpoint
+        let url = self.endpoint("api/version")?;
+        let builder = self.authorize(self.http.get(url)).timeout(REQUEST_TIMEOUT);
+
+        let response = builder.send().await.map_err(map_transport)?;
+        let status = response.status().as_u16();
+        
+        if status >= 400 {
+            return Err(CommunicationError::Server { status });
+        }
+
+        let body: Value = response.json().await.unwrap_or(Value::Null);
+        
+        // Parse the response into CloudBuildMeta
+        let cloud_meta = serde_json::from_value(body)
+            .map_err(|e| CommunicationError::Transport(e.to_string()))?;
+        
+        Ok(cloud_meta)
+    }
 }
 
 /// Parses one SSE frame (everything up to, but not including, its
 /// trailing blank line) into a delta. `None` means the frame carried
 /// nothing this client relays (a comment, an empty keep-alive); `Some(Ok(None))`
-/// means the server's `[DONE]` sentinel — the stream is over, not an error.
+/// means the server's `[DONE]` sentinel  the stream is over, not an error.
 fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, CommunicationError>> {
     let data = frame.lines().find_map(|line| line.strip_prefix("data: "))?;
     if data == "[DONE]" {
@@ -247,7 +269,7 @@ fn map_transport(error: reqwest::Error) -> CommunicationError {
 
 /// Parses one SSE frame from `conversations/events` into a [`ServerEvent`].
 /// gaia-api sends `event: changed` on every save/delete and `:heartbeat`/
-/// `:ok` comment-only frames in between (historyRoutes.js) — only the
+/// `:ok` comment-only frames in between (historyRoutes.js)  only the
 /// former is worth relaying, so anything else (including a malformed
 /// frame) is silently dropped rather than surfaced as an error: a missed
 /// heartbeat is not a failure the frontend needs to know about.
