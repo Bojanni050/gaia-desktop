@@ -11,16 +11,15 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useVersionInfo } from './useVersionInfo';
 
-// Mock serverApi
-const mockServerApi = {
+// Mock the serverApi module - use vi.hoisted to avoid hoisting issues
+const mockServerApi = vi.hoisted(() => ({
   getDesktopVersion: vi.fn(),
   getCloudVersion: vi.fn(),
-};
+}));
 
-// Mock the serverApi module
 vi.mock('../server/api', () => ({
   serverApi: mockServerApi,
 }));
@@ -41,12 +40,12 @@ describe('useVersionInfo', () => {
     mockServerApi.getDesktopVersion.mockResolvedValue(desktopMeta);
     mockServerApi.getCloudVersion.mockResolvedValue(null);
 
-    const { result, waitForNextUpdate } = renderHook(() => useVersionInfo());
+    const { result } = renderHook(() => useVersionInfo());
     
-    await waitForNextUpdate();
-
-    expect(result.current.desktopVersion).toEqual(desktopMeta);
-    expect(result.current.desktopBuild).toBe('202608282100');
+    await waitFor(() => {
+      expect(result.current.desktopVersion).toEqual(desktopMeta);
+      expect(result.current.desktopBuild).toBe('202608282100');
+    });
   });
 
   it('5. Desktop correctly displays both builds', async () => {
@@ -67,12 +66,12 @@ describe('useVersionInfo', () => {
     mockServerApi.getDesktopVersion.mockResolvedValue(desktopMeta);
     mockServerApi.getCloudVersion.mockResolvedValue(cloudMeta);
 
-    const { result, waitForNextUpdate } = renderHook(() => useVersionInfo());
+    const { result } = renderHook(() => useVersionInfo());
     
-    await waitForNextUpdate();
-
-    expect(result.current.desktopVersionString).toBe('0.1.0 · build 202608271233');
-    expect(result.current.cloudVersionString).toBe('0.8.0 · build 202608282334');
+    await waitFor(() => {
+      expect(result.current.desktopVersionString).toBe('0.1.0 \u00b7 build 202608271233');
+      expect(result.current.cloudVersionString).toBe('0.8.0 \u00b7 build 202608282334');
+    });
   });
 
   it('6. Cloud unavailable does not prevent Desktop startup', async () => {
@@ -86,15 +85,15 @@ describe('useVersionInfo', () => {
     mockServerApi.getDesktopVersion.mockResolvedValue(desktopMeta);
     mockServerApi.getCloudVersion.mockRejectedValue(new Error('Connection failed'));
 
-    const { result, waitForNextUpdate } = renderHook(() => useVersionInfo());
+    const { result } = renderHook(() => useVersionInfo());
     
-    await waitForNextUpdate();
-
-    // Desktop version should still be available
-    expect(result.current.desktopVersion).toEqual(desktopMeta);
-    // Cloud should show as unavailable
-    expect(result.current.cloudStatus).toBe('unavailable');
-    expect(result.current.cloudVersion).toBeNull();
+    await waitFor(() => {
+      // Desktop version should still be available
+      expect(result.current.desktopVersion).toEqual(desktopMeta);
+      // Cloud should show as unavailable
+      expect(result.current.cloudStatus).toBe('unavailable');
+      expect(result.current.cloudVersion).toBeNull();
+    });
   });
 
   it('7. Version information is not fetched repeatedly unnecessarily', async () => {
@@ -115,9 +114,11 @@ describe('useVersionInfo', () => {
     mockServerApi.getDesktopVersion.mockResolvedValue(desktopMeta);
     mockServerApi.getCloudVersion.mockResolvedValue(cloudMeta);
 
-    const { result, waitForNextUpdate } = renderHook(() => useVersionInfo());
+    const { result } = renderHook(() => useVersionInfo());
     
-    await waitForNextUpdate();
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     // Each API should only be called once during initial load
     expect(mockServerApi.getDesktopVersion).toHaveBeenCalledTimes(1);
@@ -142,14 +143,14 @@ describe('useVersionInfo', () => {
     mockServerApi.getDesktopVersion.mockResolvedValue(desktopMeta);
     mockServerApi.getCloudVersion.mockResolvedValue(cloudMeta);
 
-    const { result, waitForNextUpdate } = renderHook(() => useVersionInfo());
+    const { result } = renderHook(() => useVersionInfo());
     
-    await waitForNextUpdate();
-
-    // Builds should NOT match
-    expect(result.current.buildsMatch).toBe(false);
-    expect(result.current.desktopBuild).toBe('202608271233');
-    expect(result.current.cloudBuild).toBe('202608282334');
+    await waitFor(() => {
+      // Builds should NOT match
+      expect(result.current.buildsMatch).toBe(false);
+      expect(result.current.desktopBuild).toBe('202608271233');
+      expect(result.current.cloudBuild).toBe('202608282334');
+    });
   });
 
   it('10. Matching builds are correctly identified', async () => {
@@ -170,11 +171,11 @@ describe('useVersionInfo', () => {
     mockServerApi.getDesktopVersion.mockResolvedValue(desktopMeta);
     mockServerApi.getCloudVersion.mockResolvedValue(cloudMeta);
 
-    const { result, waitForNextUpdate } = renderHook(() => useVersionInfo());
+    const { result } = renderHook(() => useVersionInfo());
     
-    await waitForNextUpdate();
-
-    // Builds should match
-    expect(result.current.buildsMatch).toBe(true);
+    await waitFor(() => {
+      // Builds should match
+      expect(result.current.buildsMatch).toBe(true);
+    });
   });
 });
