@@ -38,5 +38,15 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Bojanni050/gaia-desktop/releases/latest/download"
+      ],
+      "dialog": true,
+      "pubkey": ""
+    }
   }
 }
