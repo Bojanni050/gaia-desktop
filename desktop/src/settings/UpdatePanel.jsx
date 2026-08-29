@@ -2,8 +2,8 @@
  * Update Panel - displays update information and allows checking for updates.
  * Uses the Tauri updater plugin to check for and install updates.
  */
-import React, { useState, useEffect, useCallback } from 'react';
-import { checkUpdate, installUpdate, UpdateStatus } from '@tauri-apps/plugin-updater';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { check } from '@tauri-apps/plugin-updater';
 import { Info, Check, X, Loader2 } from 'lucide-react';
 import { L } from '../lib/lexicon';
 
@@ -12,15 +12,19 @@ export default function UpdatePanel({ onClose }) {
   const [version, setVersion] = useState(null);
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(0);
+  // Tauri v2's updater returns the Update instance itself from check() —
+  // downloadAndInstall() is a method on it, not a separate module-level call.
+  const updateRef = useRef(null);
 
   const checkForUpdates = useCallback(async () => {
     setStatus('checking');
     setError(null);
-    
+
     try {
-      const update = await checkUpdate();
-      
-      if (update?.available) {
+      const update = await check();
+
+      if (update) {
+        updateRef.current = update;
         setStatus('available');
         setVersion(update.version);
       } else {
@@ -33,18 +37,26 @@ export default function UpdatePanel({ onClose }) {
   }, []);
 
   const handleInstall = useCallback(async () => {
+    if (!updateRef.current) return;
     setStatus('installing');
     setError(null);
     setProgress(0);
-    
+
+    let totalBytes = 0;
+    let downloadedBytes = 0;
+
     try {
-      await installUpdate((event) => {
-        if (event.status === UpdateStatus.DOWNLOADING) {
-          setProgress(event.progress?.percentage || 0);
-        } else if (event.status === UpdateStatus.DOWNLOADED) {
-          setStatus('restart-required');
+      await updateRef.current.downloadAndInstall((event) => {
+        if (event.event === 'Started') {
+          totalBytes = event.data.contentLength || 0;
+        } else if (event.event === 'Progress') {
+          downloadedBytes += event.data.chunkLength;
+          setProgress(totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : 0);
+        } else if (event.event === 'Finished') {
+          setProgress(100);
         }
       });
+      setStatus('restart-required');
     } catch (err) {
       setStatus('error');
       setError(err.message || String(err));
