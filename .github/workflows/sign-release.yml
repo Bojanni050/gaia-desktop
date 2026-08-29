@@ -1,0 +1,73 @@
+name: Sign and Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+jobs:
+  sign-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Install Tauri CLI
+        run: npm install
+
+      - name: Install desktop UI dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Build desktop UI
+        run: npm run build
+        working-directory: desktop
+
+      - name: Create signing key from secret
+        run: |
+          # The private key is stored as a GitHub secret (base64 encoded)
+          echo "${{ secrets.SIGNING_PRIVATE_KEY }}" | base64 -d > private_key.pem
+          chmod 600 private_key.pem
+
+      - name: Build and sign the installer
+        run: |
+          # Build the Tauri app with signing
+          npm run build:desktop
+          
+          # The updater plugin will automatically sign the artifacts
+          # using the private key if TAURI_SIGNING_PRIVATE_KEY is set
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi.sig
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
