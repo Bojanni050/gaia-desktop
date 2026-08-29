@@ -37,24 +37,47 @@ jobs:
         run: npm test
         working-directory: desktop
 
-      # Sign the release using the private key from secrets
-      - name: Create signing key
-        run: |
-          $privateKey = "${{ secrets.SIGNING_PRIVATE_KEY }}"
-          if ($privateKey) {
-            $privateKey | Out-File -FilePath private_key.pem -Encoding ASCII
-          }
-        shell: pwsh
-
       # Runs the Tauri build, which first invokes desktop's own
       # beforeBuildCommand (npm --prefix ./desktop run build), then bundles
       # the Rust shell into a Windows installer (MSI + NSIS, per
-      # src-tauri/tauri.conf.json's bundle.targets: "all").
+      # src-tauri/tauri.conf.json's bundle.targets: "all"). Setting
+      # TAURI_SIGNING_PRIVATE_KEY makes the bundler also emit a .sig
+      # alongside each installer — SIGNING_PRIVATE_KEY must be the raw
+      # contents of a minisign key from `tauri signer generate` (NOT an
+      # OpenSSL/RSA key — Tauri's updater only verifies minisign
+      # signatures, and silently produces no .sig at all if the key can't
+      # be parsed as one, which is why this had no working effect before).
       - name: Build the Windows installer
         run: npm run build:desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      # The Tauri updater plugin (tauri.conf.json's plugins.updater.endpoints)
+      # fetches this exact manifest shape from the release assets — nothing
+      # generates it automatically outside tauri-apps/tauri-action, which
+      # this hand-rolled workflow doesn't use. Points at the NSIS installer
+      # (silent-update capable); the MSI is still published for a normal
+      # from-scratch install but is not what the updater downloads.
+      - name: Generate updater manifest (latest.json)
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $exe = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          $signature = (Get-Content -Raw "$($exe.FullName).sig").Trim()
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$($exe.Name)"
+          $manifest = @{
+            version   = $version
+            notes     = "See the release notes on GitHub."
+            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $signature
+                url       = $downloadUrl
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Out-File -FilePath "latest.json" -Encoding utf8
 
       - name: Create GitHub Release with the installer
         uses: softprops/action-gh-release@v2
@@ -65,5 +88,6 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi.sig
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.exe.sig
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

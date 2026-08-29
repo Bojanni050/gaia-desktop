@@ -14,5 +14,9 @@ src-tauri/WixTools/
 .env.*
 !.env.example
 
+# Locally generated Tauri updater signing keys — the private key is a
+# GitHub Actions secret (SIGNING_PRIVATE_KEY), never committed.
+.tauri-keys/
+
 # System files
 .DS_Store

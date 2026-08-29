@@ -43,10 +43,10 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/Bojanni050/gaia-desktop/releases/latest/download"
+        "https://github.com/Bojanni050/gaia-desktop/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAlHbgrfCBwkFssssq/VTnMohTcdN0wM8kIpW2hsWTZAgLyZ5fGCWJxvNO+iT+RZQCOl+ITHdji+muwrPY/WiW32So/0Ol090QbeE098kdZfQYRItTAdH7L4aZMqIuUaArvVbWeS+dnANRsaH/xPjhqJNrxjWlfJ3bkBEWEIhBbov8zvtIGxs7eAO0alsqHsUL8+E4fDU9dajQ3yfoiT6ozZvFkJTxGp+8jx5RfhNtpTfIMUV/sIVry+zeC+kPG0JkICHcAlrB020fUnaCeSuDM/5suA70sH49sasEhRhtwq9YRKVNQKYmslLKR4Kf6uV6eyzBL+MeByyBdDatZVa/nEYVutxRf/jFIuR6pdOoY0CymHTvCQ5RuLkpBkevk0NRcOhPgtXCIZ1517ANNh9ac90ASc3rqmVjRm8Ri2l1ZLzkdG6c+len+fZNHcWq+zw6xtIPwnMPhRwwbleuAWHOS1hPJlwOx4fn1/WetX5NsDbBmjdoyarpWyOj2aeRjvLvAnl9plyLNquwZA0/MwvEJFMsZ442n7x5+KyqMVZ+YSoD2AEpgjlJpG5o2c0cSffJwbxdzMahgdtZxgxKd0hxbHYEbAAYQnx/xa+kF9hvj6SLZ1lDe9rUxRHbCMXEDgj17LTPXHv0BWG0jp/uwIsUzZlBAX7fUZUFFIpeigS8HxcCAwEAAQ=="
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJEOTE4OTM4M0MyOTBDNjcKUldSbkRDazhPSW1SdlRDUStROGt6RG9yamtDbGF5RDE3eURueG9mMmFHc2NuU2I0RmdZMFI0VloK"
     }
   }
 }
