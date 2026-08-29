@@ -9,9 +9,11 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() {
-    // Run Tauri's build first
-    tauri_build::build().expect("tauri build failed");
-    
+    // Run Tauri's build first — tauri_build::build() returns () in this
+    // version, not a Result (it panics internally on failure), so there is
+    // nothing to .expect() here.
+    tauri_build::build();
+
     // Generate build metadata file
     generate_build_meta();
 }
@@ -51,7 +53,8 @@ fn generate_build_meta() {
     let dest_path = Path::new(&out_dir).join("build-meta.json");
     
     let mut file = File::create(&dest_path).expect("Failed to create build-meta.json");
-    file.write_all(build_meta.to_string_pretty().as_bytes())
+    let pretty = serde_json::to_string_pretty(&build_meta).expect("Failed to serialize build-meta.json");
+    file.write_all(pretty.as_bytes())
         .expect("Failed to write build-meta.json");
     
     println!("cargo:rustc-env=GAIA_DESKTOP_BUILD_META={}", dest_path.display());

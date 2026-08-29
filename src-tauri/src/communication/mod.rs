@@ -21,7 +21,7 @@ pub use config::ServerConfig;
 pub use events::{ServerEvent, ServerEventEnvelope};
 pub use http::HttpGaiaClient;
 pub use status::ConnectionStatus;
-pub use crate::version::CloudBuildMeta;
+pub use crate::version::{CloudBuildMeta, DesktopBuildMeta, DesktopVersion};
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;

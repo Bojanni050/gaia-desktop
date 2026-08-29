@@ -29,3 +29,4 @@ tokio = { version = "1", features = ["sync", "time", "rt", "fs"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "stream", "rustls-tls"] }
 url = "2"
 keyring = { version = "3", features = ["windows-native"] }
+chrono = "0.4"

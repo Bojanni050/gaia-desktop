@@ -3,11 +3,11 @@
 //! This module provides access to the Desktop application's build metadata,
 //! which is generated at compile time and embedded in the binary.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 
 /// Desktop build metadata.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopBuildMeta {
     pub name: String,
@@ -63,7 +63,7 @@ fn load_desktop_build_meta() -> DesktopBuildMeta {
 }
 
 /// Cloud build metadata fetched from the server.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudBuildMeta {
     pub name: String,
