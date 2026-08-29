@@ -35,7 +35,7 @@ jobs:
         run: npm install
 
       - name: Install desktop UI dependencies
-        run: npm ci
+        run: npm install
         working-directory: desktop
 
       - name: Build desktop UI
