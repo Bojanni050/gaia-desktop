@@ -30,6 +30,13 @@ describe('phraseTurnError', () => {
     expect(phrase).not.toMatch(/fetch|http|connection refused/i);
   });
 
+  it('points at the token when the server rejects the credentials', () => {
+    const phrase = phraseTurnError({ kind: 'communication', message: 'communication error: server responded with status 401' });
+    expect(phrase).toBe(LANGUAGES.nl.turnUnauthorized);
+    expect(phrase).toMatch(/token/i);
+    expect(phrase).not.toMatch(/40\d/);
+  });
+
   it('never leaks raw messages for unknown kinds', () => {
     const phrase = phraseTurnError(new Error('stack trace detail'));
     expect(phrase).toBe(LANGUAGES.nl.turnFallback);

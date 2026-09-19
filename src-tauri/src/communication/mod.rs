@@ -156,6 +156,9 @@ impl ServerLink {
             Some(client) => {
                 let health = tokio::time::timeout(HEALTH_TIMEOUT, client.health()).await;
                 match health {
+                    Ok(Ok(report)) if report.reachable && !report.authorized => {
+                        ConnectionStatus::Unauthorized
+                    }
                     Ok(Ok(report)) if report.reachable => ConnectionStatus::Online,
                     Ok(Ok(_)) | Ok(Err(_)) | Err(_) => ConnectionStatus::Offline,
                 }

@@ -57,6 +57,7 @@ export const LANGUAGES = {
     // turn failure phrases (phrases.js reads these)
     turnNoServer: 'Gaia is nog niet verbonden met haar server. Je kunt er een toevoegen in de instellingen.',
     turnUnreachable: 'Gaia is nu even niet te bereiken.',
+    turnUnauthorized: 'Gaia weigert deze verbinding. Controleer het token in de instellingen.',
     turnCapture: 'Dit apparaat kon dat niet vastleggen.',
     turnFallback: 'Er ging hier iets mis. Je bericht staat er nog.',
     thoughtProcess: 'Gedachtegang',
@@ -139,6 +140,7 @@ export const LANGUAGES = {
     historyExportFailed: 'Could not export this conversation.',
     turnNoServer: 'Gaia is not connected to her server yet. You can add one in settings.',
     turnUnreachable: 'Gaia cannot be reached right now.',
+    turnUnauthorized: 'Gaia is refusing this connection. Check the token in settings.',
     turnCapture: 'This device could not capture that.',
     turnFallback: 'Something went wrong on this side. Your message is still here.',
     thoughtProcess: 'Thought process',

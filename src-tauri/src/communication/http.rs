@@ -69,19 +69,27 @@ impl HttpGaiaClient {
 impl GaiaServerClient for HttpGaiaClient {
     async fn health(&self) -> Result<HealthReport, CommunicationError> {
         let started = Instant::now();
+        // The server root is public, so probing it says nothing about the
+        // token; `conversations` is authenticated and read-only.
+        let url = self.endpoint("conversations")?;
         let response = self
-            .authorize(self.http.get(self.base.clone()))
+            .authorize(self.http.get(url))
             .timeout(Duration::from_secs(5))
             .send()
             .await;
         match response {
-            Ok(response) => Ok(HealthReport {
-                reachable: true,
-                latency_ms: Some(started.elapsed().as_millis() as u64),
-                detail: Some(format!("HTTP {}", response.status().as_u16())),
-            }),
+            Ok(response) => {
+                let status = response.status().as_u16();
+                Ok(HealthReport {
+                    reachable: true,
+                    authorized: !matches!(status, 401 | 403),
+                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                    detail: Some(format!("HTTP {status}")),
+                })
+            }
             Err(e) => Ok(HealthReport {
                 reachable: false,
+                authorized: true,
                 latency_ms: None,
                 detail: Some(e.to_string()),
             }),

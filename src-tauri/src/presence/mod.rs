@@ -38,7 +38,9 @@ impl DesktopPresence {
             ConnectionStatus::NotConfigured => DesktopPresence::LocalOnly,
             ConnectionStatus::Connecting => DesktopPresence::Connecting,
             ConnectionStatus::Online => DesktopPresence::Available,
-            ConnectionStatus::Offline => DesktopPresence::Disconnected,
+            ConnectionStatus::Offline | ConnectionStatus::Unauthorized => {
+                DesktopPresence::Disconnected
+            }
         }
     }
 }

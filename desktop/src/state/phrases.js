@@ -13,6 +13,9 @@ export function phraseTurnError(error) {
     if (message.includes('no Gaia Server configured')) {
       return L.turnNoServer;
     }
+    if (/status (401|403)\b/.test(message)) {
+      return L.turnUnauthorized;
+    }
     return L.turnUnreachable;
   }
   if (kind === 'capture') {

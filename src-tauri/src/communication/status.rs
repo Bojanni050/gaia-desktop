@@ -17,6 +17,8 @@ pub enum ConnectionStatus {
     Online,
     /// Configured but currently unreachable.
     Offline,
+    /// Reachable, but the server rejected the credentials (401/403).
+    Unauthorized,
 }
 
 impl ConnectionStatus {

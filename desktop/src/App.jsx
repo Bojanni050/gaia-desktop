@@ -59,7 +59,11 @@ export default function App() {
   // The orb rests quiet by default; Gaia is present, not performative.
   const presenceState = 'quiet';
   const whisper =
-    status === 'offline' ? L.healthWhisper : null;
+    status === 'offline'
+      ? L.healthWhisper
+      : status === 'unauthorized'
+        ? L.turnUnauthorized
+        : null;
 
   return (
     <div className="gaia-shell">

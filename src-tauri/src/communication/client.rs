@@ -60,6 +60,8 @@ pub struct ServerResponse {
 #[serde(rename_all = "camelCase")]
 pub struct HealthReport {
     pub reachable: bool,
+    /// False when the server answered 401/403 to an authenticated probe.
+    pub authorized: bool,
     pub latency_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
