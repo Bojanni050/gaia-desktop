@@ -12,11 +12,8 @@ import {
   buildHistoryListRequest,
   buildHistoryGetRequest,
   buildHistoryDeleteRequest,
-  buildHistoryExportJsonRequest,
-  buildHistoryExportMarkdownRequest,
   parseHistoryList,
   parseHistoryConversation,
-  parseHistoryExport,
 } from '../state/contract';
 
 let streamRequestCounter = 0;
@@ -122,16 +119,24 @@ export const libraryApi = {
 
 /**
  * Chat history — conversations Gaia Cloud has already saved (see
- * conversationStore.js's fire-and-forget save on every turn). Plain JSON
- * over the existing server_request seam; no dedicated Rust command
- * needed, unlike the library's file bytes.
+ * conversationStore.js's fire-and-forget save on every turn). List, read
+ * and delete are plain JSON over the existing server_request seam. Export
+ * is a file download, not opaque JSON — the server sends markdown as
+ * plain text — so it has its own Rust command that streams the bytes to
+ * a local path chosen through a native save dialog, same as the library.
  */
 export const historyApi = {
   list: () => serverApi.request(buildHistoryListRequest()).then(parseHistoryList),
   get: (id) => serverApi.request(buildHistoryGetRequest(id)).then(parseHistoryConversation),
   remove: (id) => serverApi.request(buildHistoryDeleteRequest(id)),
-  exportJson: (id) => serverApi.request(buildHistoryExportJsonRequest(id)).then((r) => parseHistoryExport(r, 'json')),
-  exportMarkdown: (id) => serverApi.request(buildHistoryExportMarkdownRequest(id)).then((r) => parseHistoryExport(r, 'markdown')),
+  /** Opens a native save dialog for the export filename; returns true if
+   * the file was written, false if the dialog was cancelled. */
+  async export(id, format, filename) {
+    const path = await saveDialog({ defaultPath: filename });
+    if (!path) return false;
+    await invoke('history_export_conversation', { id, format, savePath: path });
+    return true;
+  },
 };
 
 export const notify = (options) => invoke('notify', { options });

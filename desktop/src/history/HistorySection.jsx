@@ -79,23 +79,9 @@ export default function HistorySection({ onOpenConversation, refreshToken }) {
     setError(null);
     setExportMenuId(null);
     try {
-      const content = format === 'json'
-        ? await historyApi.exportJson(conv.id)
-        : await historyApi.exportMarkdown(conv.id);
-
       const extension = format === 'json' ? 'json' : 'md';
-      const mimeType = format === 'json' ? 'application/json' : 'text/markdown';
       const filename = `gaia-chat-${conv.id}.${extension}`;
-
-      const blob = new Blob([content], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await historyApi.export(conv.id, format, filename);
     } catch (_) {
       setError(L.historyExportFailed || 'Export failed');
     } finally {

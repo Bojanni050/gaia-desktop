@@ -16,6 +16,7 @@ pub mod audio;
 pub mod capture;
 pub mod communication;
 pub mod error;
+pub mod history;
 pub mod library;
 pub mod notifications;
 pub mod presence;
@@ -79,6 +80,8 @@ pub fn run() {
             // audio
             audio::audio_get_status,
             audio::audio_set_permission,
+            // history
+            history::history_export_conversation,
             // library
             library::library_upload_file,
             library::library_list_files,

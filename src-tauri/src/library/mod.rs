@@ -25,7 +25,7 @@ pub struct LibraryFile {
     pub uploaded_at: String,
 }
 
-fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
+pub fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     let config = link.config();
     let base = config
         .base_url
@@ -34,14 +34,14 @@ fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     Ok(base.trim_end_matches('/').to_string())
 }
 
-fn authorize(builder: reqwest::RequestBuilder, link: &ServerLink) -> reqwest::RequestBuilder {
+pub fn authorize(builder: reqwest::RequestBuilder, link: &ServerLink) -> reqwest::RequestBuilder {
     match link.config().auth_token {
         Some(token) => builder.bearer_auth(token),
         None => builder,
     }
 }
 
-async fn error_for_status(response: reqwest::Response) -> DesktopError {
+pub async fn error_for_status(response: reqwest::Response) -> DesktopError {
     let status = response.status();
     DesktopError::Message(format!("Gaia Server responded with status {status}"))
 }
