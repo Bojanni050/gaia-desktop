@@ -19,6 +19,8 @@ pub enum DesktopError {
 
     #[error("notification error: {0}")]
     Notification(String),
+    #[error("mcp error: {0}")]
+    Mcp(crate::mcp::McpError),
 
     #[error("{0}")]
     Message(String),
@@ -31,6 +33,7 @@ impl DesktopError {
             DesktopError::Capture(_) => "capture",
             DesktopError::Settings(_) => "settings",
             DesktopError::Notification(_) => "notification",
+            DesktopError::Mcp(_) => "mcp",
             DesktopError::Message(_) => "message",
         }
     }

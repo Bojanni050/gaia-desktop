@@ -10,7 +10,9 @@ from Gaia Web — see `evolution.md` in Gaia-Cloud).
 - `desktop/` — the desktop's own UI (Vite + React): sidebar, conversation
   view, composer, presence bar, settings panel.
 - `src-tauri/` — the Rust/Tauri shell: communication (`ServerLink`),
-  capture, audio, notifications, settings, presence.
+  capture, audio, notifications, settings, presence, MCP tool
+  execution (local stdio servers — technical capability only; which tool
+  to call and what a result means is decided server-side).
 
 Desktop is a first-class client of Gaia Cloud, never a wrapper around Gaia
 Web. It performs no reasoning, loads no SOUL, and calls no Hermes/Hindsight/

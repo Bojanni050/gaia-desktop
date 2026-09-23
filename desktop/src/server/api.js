@@ -67,6 +67,12 @@ export const settingsApi = {
   save: (newSettings) => invoke('settings_save', { newSettings }),
 };
 
+export const mcpApi = {
+  listTools: (serverId) => invoke('mcp_list_tools', { serverId }),
+  callTool: (serverId, tool, arguments_) =>
+    invoke('mcp_call_tool', { serverId, tool, arguments: arguments_ }),
+};
+
 export const captureApi = {
   listSources: () => invoke('capture_list_sources'),
 };

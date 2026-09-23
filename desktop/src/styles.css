@@ -539,3 +539,14 @@ body {
 }
 .library-icon-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
 .library-icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* MCP tool servers (settings) — one bordered row per configured server,
+   matching the calm field styling of the rest of the panel. */
+.mcp-server {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.mcp-server .field-toggle { margin-bottom: 8px; }

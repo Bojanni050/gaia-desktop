@@ -18,6 +18,7 @@ pub mod communication;
 pub mod error;
 pub mod history;
 pub mod library;
+pub mod mcp;
 pub mod notifications;
 pub mod presence;
 pub mod settings;
@@ -94,6 +95,9 @@ pub fn run() {
             // settings
             settings::settings_get,
             settings::settings_save,
+            // mcp — local tool servers, technical capability only
+            mcp::mcp_list_tools,
+            mcp::mcp_call_tool,
             // presence
             presence::presence_get,
             presence::presence_set_quiet,

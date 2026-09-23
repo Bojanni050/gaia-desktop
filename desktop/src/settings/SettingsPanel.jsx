@@ -7,7 +7,7 @@
  * soft "saved" state and quietly returns — never a jump or a flash.
  */
 import React, { useEffect, useState } from 'react';
-import { settingsApi, serverApi, audioApi, captureApi } from '../server/api';
+import { settingsApi, serverApi, audioApi, captureApi, mcpApi } from '../server/api';
 import { L } from '../lib/lexicon';
 
 export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
@@ -18,6 +18,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   const [testResult, setTestResult] = useState(null);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [showToken, setShowToken] = useState(false);
+  const [toolsState, setToolsState] = useState({ loading: null, result: null, error: null });
 
   useEffect(() => {
     let active = true;
@@ -38,6 +39,29 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   }
 
   const patch = (part) => setSettings((prev) => ({ ...prev, ...part }));
+
+  const mcpServers = () => settings.mcp?.servers || [];
+  const setMcpServers = (servers) => patch({ mcp: { ...settings.mcp, servers } });
+  const patchMcpServer = (index, part) =>
+    setMcpServers(
+      mcpServers().map((server, i) => (i === index ? { ...server, ...part } : server)),
+    );
+  const addMcpServer = () =>
+    setMcpServers([
+      ...mcpServers(),
+      { id: `mcp-${Date.now()}`, enabled: true, command: '', args: [] },
+    ]);
+  const removeMcpServer = (index) => setMcpServers(mcpServers().filter((_, i) => i !== index));
+
+  const showTools = async (serverId) => {
+    setToolsState({ loading: serverId, result: null, error: null });
+    try {
+      const result = await mcpApi.listTools(serverId);
+      setToolsState({ loading: null, result, error: null });
+    } catch (_) {
+      setToolsState({ loading: null, result: null, error: serverId });
+    }
+  };
 
   const save = async () => {
     if (saveState === 'saving') return;
@@ -134,6 +158,65 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
               ? L.settingsCaptureNone
               : captureSources.map((s) => s.name).join(', ')}
           </p>
+        </section>
+
+        <section>
+          <h3>{L.settingsMcp}</h3>
+          <p className="capability-line">{L.settingsMcpHint}</p>
+          {(settings.mcp?.servers || []).length === 0 && (
+            <p className="capability-line">{L.settingsMcpEmpty}</p>
+          )}
+          {(settings.mcp?.servers || []).map((server, index) => (
+            <div className="mcp-server" key={server.id || index}>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={server.enabled ?? true}
+                  onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
+                />
+                <span>{server.command ? `${server.id}` : L.settingsMcpCommand}</span>
+              </label>
+              <label className="field">
+                <span>{L.settingsMcpCommand}</span>
+                <input
+                  type="text"
+                  value={server.command || ''}
+                  placeholder="npx"
+                  onChange={(e) => patchMcpServer(index, { command: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>{L.settingsMcpArgs}</span>
+                <input
+                  type="text"
+                  value={(server.args || []).join(' ')}
+                  placeholder="-y @modelcontextprotocol/server-filesystem ~/Documents"
+                  onChange={(e) =>
+                    patchMcpServer(index, {
+                      args: e.target.value.split(/\s+/).filter(Boolean),
+                    })
+                  }
+                />
+              </label>
+              <div className="field-row">
+                <button onClick={() => showTools(server.id)} disabled={!server.id || toolsState.loading === server.id}>
+                  {toolsState.loading === server.id ? L.settingsMcpToolsLoading : L.settingsMcpTools}
+                </button>
+                {toolsState.result?.serverId === server.id && (
+                  <span className="capability-line">
+                    {toolsState.result.tools.map((t) => t.name).join(', ') || '—'}
+                  </span>
+                )}
+                {toolsState.error === server.id && (
+                  <span className="capability-line">{L.settingsMcpToolsFailed}</span>
+                )}
+                <button onClick={() => removeMcpServer(index)}>{L.settingsMcpRemove}</button>
+              </div>
+            </div>
+          ))}
+          <div className="field-row">
+            <button onClick={addMcpServer}>{L.settingsMcpAdd}</button>
+          </div>
         </section>
 
         <div className="settings-actions">

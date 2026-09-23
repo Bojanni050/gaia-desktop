@@ -23,6 +23,7 @@ pub struct Settings {
     pub notifications: NotificationSettings,
     pub audio: AudioSettings,
     pub capture: CaptureSettings,
+    pub mcp: crate::mcp::McpSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
