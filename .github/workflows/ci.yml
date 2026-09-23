@@ -1,0 +1,45 @@
+name: ci
+
+# Continuous checks for every push and every PR — the release workflow
+# (release.yml) stays separate: it only runs on version tags and builds the
+# actual installers.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    # The release target is Windows (see release.yml); CI checks the same
+    # platform the shipped artifact is built for.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Frontend: install + vitest (contract and api wrapper tests).
+      - name: Install desktop UI dependencies
+        run: npm install
+        working-directory: desktop
+
+      - name: Test desktop UI
+        run: npm test
+        working-directory: desktop
+
+      # Rust shell: the test suite compiles the whole Tauri crate, so this
+      # doubles as the compile check. cargo test needs the Tauri context
+      # only when building the app, not the lib tests — no frontend build
+      # required here (beforeBuildCommand only runs on `tauri build`).
+      - name: Test the Rust shell
+        run: cargo test --lib
+        working-directory: src-tauri
