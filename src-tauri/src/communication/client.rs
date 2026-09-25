@@ -74,9 +74,11 @@ pub struct HealthReport {
 pub type ServerEventStream = mpsc::UnboundedReceiver<ServerEvent>;
 
 /// One incremental piece of a streamed turn  assistant content or
-/// reasoning content, exactly as Gaia Server's SSE frames distinguish them
-/// (gaia-api's turn.js `writeSseDelta`). Opaque otherwise: relayed text,
-/// never interpreted here.
+/// reasoning content, or a plan-progress / calm-failure extension frame,
+/// exactly as Gaia Server's SSE frames distinguish them (gaia-api's
+/// responseEngine.js owns that frame family). Opaque otherwise: relayed
+/// as-is, never interpreted - what any of it MEANS to the user is the
+/// frontend's presentation job.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnDelta {
@@ -84,6 +86,17 @@ pub struct TurnDelta {
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    /// Plan progress: `{ type: 'step', step: { id, index, total, type,
+    /// status } }` - which step of a multi-step plan is running. Position
+    /// and step type only: never content, never a capability id, and it
+    /// arrives while the plan is still running, ahead of the answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<Value>,
+    /// Calm failure on an already-open stream: `{ type: 'error', error }` -
+    /// Gaia Server's own wording, relayed without any transport detail of
+    /// our own added to it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Receiver for a streamed turn's incremental deltas. Closes when the

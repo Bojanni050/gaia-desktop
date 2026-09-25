@@ -88,6 +88,7 @@ export default function App() {
           thread={conversation.active}
           busy={conversation.busy}
           streaming={conversation.streaming}
+          progress={conversation.progress}
           presenceState={presenceState}
           whisper={whisper}
           onSend={conversation.send}

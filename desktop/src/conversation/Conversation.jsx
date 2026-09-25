@@ -5,13 +5,14 @@ import Composer from './Composer';
 import Presence from '../presence/Presence';
 import { PresenceOrb } from '../presence/PresenceOrb';
 import { getGreeting } from '../lib/greeting';
+import { stepProgressLabel } from '../state/stepProgress';
 
 /**
  * Conversation — the web's structure, ported: centered column, the welcome
  * moment (orb + greeting), messages, the thinking row, and the composer
  * dock with Gaia's presence above it.
  */
-export default function Conversation({ thread, busy, streaming, presenceState, whisper, onSend, onRetry }) {
+export default function Conversation({ thread, busy, streaming, progress, presenceState, whisper, onSend, onRetry }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const messages = thread?.messages || [];
@@ -75,7 +76,18 @@ export default function Conversation({ thread, busy, streaming, presenceState, w
               })}
               {busy && !streaming && (
                 <div className="thinking-row">
-                  <Presence isThinking={true} type="general" state="thinking" size={26} />
+                  {progress ? (
+                    // A multi-step plan is running: its step line replaces
+                    // the sequenced thinking message, because "Step 2 of 3
+                    // - searching..." is the more specific — and still
+                    // entirely honest — statement of what Gaia is doing
+                    // right now. Progress is a separate frame from the
+                    // answer, so this row disappears the moment the reply
+                    // itself starts streaming in.
+                    <Presence state="thinking" size={26} label={stepProgressLabel(progress)} />
+                  ) : (
+                    <Presence isThinking={true} type="general" state="thinking" size={26} />
+                  )}
                 </div>
               )}
             </>

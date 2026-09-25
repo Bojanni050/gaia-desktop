@@ -204,6 +204,8 @@ impl ServerLink {
                     request_id: request_id.clone(),
                     content: delta.content,
                     reasoning_content: delta.reasoning_content,
+                    step: delta.step,
+                    error: delta.error,
                 },
             );
         }
@@ -269,6 +271,14 @@ pub struct TurnDeltaPayload {
     content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_content: Option<String>,
+    /// Plan progress relayed verbatim from a `{ type: 'step' }` frame -
+    /// see `TurnDelta::step`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    step: Option<Value>,
+    /// Gaia Server's calm failure wording from a `{ type: 'error' }`
+    /// frame - see `TurnDelta::error`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[tauri::command]

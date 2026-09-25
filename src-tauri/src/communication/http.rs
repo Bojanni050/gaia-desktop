@@ -236,8 +236,9 @@ impl GaiaServerClient for HttpGaiaClient {
 }
 
 /// Parses one SSE frame (everything up to, but not including, its
-/// trailing blank line) into a delta. `None` means the frame carried
-/// nothing this client relays (a comment, an empty keep-alive); `Some(Ok(None))`
+/// trailing blank line) into a TurnDelta: content, reasoning, plan
+/// progress or a calm failure. `None` means the frame carried nothing
+/// this client relays (a comment, an empty keep-alive); `Some(Ok(None))`
 /// means the server's `[DONE]` sentinel  the stream is over, not an error.
 fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, CommunicationError>> {
     let data = frame.lines().find_map(|line| line.strip_prefix("data: "))?;
@@ -262,12 +263,29 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         .get("reasoning_content")
         .and_then(|v| v.as_str())
         .map(String::from);
-    if content.is_none() && reasoning_content.is_none() {
+    // Extension frames (Gaia Server responseEngine.js's frame family): a
+    // plan step report and a calm failure. Both carry an EMPTY
+    // choices[0].delta next to their `type`, so a reader that only knows
+    // content frames appends nothing and keeps working - and here they
+    // become relayed fields instead of being dropped as "nothing worth
+    // relaying".
+    let frame_type = value.get("type").and_then(|v| v.as_str());
+    let step = match frame_type {
+        Some("step") => value.get("step").cloned(),
+        _ => None,
+    };
+    let error = match frame_type {
+        Some("error") => value.get("error").and_then(|v| v.as_str()).map(String::from),
+        _ => None,
+    };
+    if content.is_none() && reasoning_content.is_none() && step.is_none() && error.is_none() {
         return None;
     }
     Some(Ok(Some(TurnDelta {
         content,
         reasoning_content,
+        step,
+        error,
     })))
 }
 
@@ -292,4 +310,94 @@ fn parse_conversation_event(frame: &str) -> Option<ServerEvent> {
         topic: "conversation.history.changed".to_string(),
         payload: Value::Null,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Relays one frame the way the streaming loop does, panicking on a
+    /// parse error so a test failure names the case, not the plumbing.
+    fn relayed(frame: &str) -> Option<TurnDelta> {
+        match parse_sse_frame(frame) {
+            Some(Ok(delta)) => delta,
+            other => panic!("expected a relayable frame, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn content_and_reasoning_frames_relay_exactly_as_before() {
+        let content = relayed("data: {\"choices\":[{\"delta\":{\"content\":\"hallo\"}}]}\n\n")
+            .expect("content frame");
+        assert_eq!(content.content.as_deref(), Some("hallo"));
+        assert!(content.step.is_none() && content.error.is_none());
+
+        let reasoning =
+            relayed("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n")
+                .expect("reasoning frame");
+        assert_eq!(reasoning.reasoning_content.as_deref(), Some("hmm"));
+        assert!(reasoning.content.is_none());
+    }
+
+    #[test]
+    fn the_done_sentinel_ends_the_stream_without_an_error() {
+        assert!(matches!(
+            parse_sse_frame("data: [DONE]\n\n"),
+            Some(Ok(None))
+        ));
+    }
+
+    #[test]
+    fn a_step_frame_relays_progress_but_never_content_or_a_capability_id() {
+        let frame = "data: {\"choices\":[{\"delta\":{}}],\"type\":\"step\",\"step\":\
+                     {\"id\":\"step-2\",\"index\":2,\"total\":3,\"type\":\"retrieval\",\"status\":\"start\"}}";
+        let delta = relayed(frame).expect("step frame must relay, not be dropped");
+        assert!(delta.content.is_none(), "progress is never content");
+        assert!(delta.reasoning_content.is_none());
+
+        let step = delta.step.expect("step payload");
+        assert_eq!(step["id"], "step-2");
+        assert_eq!(step["index"], 2);
+        assert_eq!(step["total"], 3);
+        assert_eq!(step["type"], "retrieval");
+        assert_eq!(step["status"], "start");
+        assert!(
+            step.get("capability").is_none(),
+            "the frame may say Gaia searched, never WHAT she searched with"
+        );
+    }
+
+    #[test]
+    fn an_error_frame_relays_the_servers_calm_wording_as_stated() {
+        let frame =
+            "data: {\"choices\":[{\"delta\":{}}],\"type\":\"error\",\"error\":\"gaia could not answer right now\"}";
+        let delta = relayed(frame).expect("error frame must relay");
+        assert_eq!(delta.error.as_deref(), Some("gaia could not answer right now"));
+        assert!(delta.content.is_none() && delta.step.is_none());
+    }
+
+    #[test]
+    fn a_frame_the_client_cannot_use_is_dropped_silently_rather_than_errored() {
+        // An empty delta with no extension type: nothing to relay, no
+        // failure - the tolerant path a frame from a server that predates
+        // (or does not speak) the extension must take.
+        assert!(parse_sse_frame("data: {\"choices\":[{\"delta\":{}}]}\n\n").is_none());
+        // A future frame type this client does not know yet.
+        assert!(parse_sse_frame("data: {\"type\":\"telemetry\",\"x\":1}\n\n").is_none());
+        // Comment-only keep-alive frames.
+        assert!(parse_sse_frame(": heartbeat\n\n").is_none());
+    }
+
+    #[test]
+    fn a_frame_without_a_data_line_is_dropped() {
+        assert!(parse_sse_frame("event: step\n\n").is_none());
+    }
+
+    #[test]
+    fn malformed_json_is_reported_as_a_transport_error() {
+        assert!(matches!(
+            parse_sse_frame("data: {oops"),
+            Some(Err(CommunicationError::Transport(_)))
+        ));
+    }
 }

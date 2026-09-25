@@ -29,6 +29,13 @@ export function useConversation(server) {
   // can swap the thinking indicator for the live-updating message at the
   // right moment, not a beat too early or too late.
   const [streaming, setStreaming] = useState(false);
+  // Plan progress (Gaia Server's responseEngine sends each step of a
+  // multi-step plan as a `step` frame): which step is running right now.
+  // Presentation state only — it never enters the transcript, it clears the
+  // moment content starts arriving (the live message is the more specific
+  // thing to show by then), and `finally` clears it so a failed turn can
+  // never leave a stale "Step 2 of 3" hanging over the thread.
+  const [progress, setProgress] = useState(null);
 
   const active = threads.find((t) => t.id === activeId) || null;
 
@@ -88,6 +95,11 @@ export function useConversation(server) {
       // "does the thread already have this message" is instead derived
       // fresh from `prev` each time, making both updaters idempotent.
       let receivedAny = false;
+      // Gaia Server's calm failure wording, when it reported one on the
+      // already-open stream (`error` frame). Kept only so the failure
+      // below is reported for the reason it actually happened — the phrase
+      // the user sees is still phrases.js's own calm wording.
+      let serverFailure = null;
 
       let fullReasoning = '';
       const appendToAssistant = (text) => {
@@ -117,14 +129,27 @@ export function useConversation(server) {
         // which is what lets History reopen this same thread later.
         const body = buildStreamTurnBody(history, threadId);
         const fullReply = await server.streamTurn(body, (delta) => {
+          // Plan progress rides its OWN frame and is never content: show
+          // it while that step runs, drop it the instant the step ends
+          // (the next step's `start` — or the reply itself — takes over).
+          if (delta.step) {
+            setProgress(delta.step.status === 'start' ? delta.step : null);
+            return;
+          }
+          if (delta.error) serverFailure = delta.error;
+          // Content has begun: the growing message now says more than any
+          // "Step 2 of 3" line could.
+          setProgress(null);
           if (delta.reasoningContent) fullReasoning += delta.reasoningContent;
           appendToAssistant(delta.content);
         });
-        // A turn that streamed no content deltas at all (empty reply) is a
-        // server-contract violation, same as the old parseReply's check —
-        // surface it as a failure rather than leaving a blank bubble.
+        // A turn that streamed no content deltas at all (empty reply) must
+        // surface as a failure rather than leaving a blank bubble — either
+        // the server reported the failure on the stream itself (calm
+        // `error` frame, once progress had already opened it) or the reply
+        // never arrived at all.
         if (!receivedAny || !fullReply) {
-          throw new Error('Gaia Server returned no reply');
+          throw new Error(serverFailure || 'Gaia Server returned no reply');
         }
         if (fullReasoning) {
           setThreads((prev) =>
@@ -177,6 +202,7 @@ export function useConversation(server) {
       } finally {
         setBusy(false);
         setStreaming(false);
+        setProgress(null);
       }
     },
     [server]
@@ -233,5 +259,5 @@ export function useConversation(server) {
     [threads, activeId, busy, runTurn]
   );
 
-  return { threads, active, activeId, busy, streaming, newThread, openThread, deleteThread, hydrateThread, send, retry };
+  return { threads, active, activeId, busy, streaming, progress, newThread, openThread, deleteThread, hydrateThread, send, retry };
 }
