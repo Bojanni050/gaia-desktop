@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Sidebar from './shell/Sidebar';
+import ConnectionNotice from './shell/ConnectionNotice';
 import Conversation from './conversation/Conversation';
 import SettingsPanel from './settings/SettingsPanel';
 import LibraryPanel from './library/LibraryPanel';
@@ -27,7 +28,28 @@ export default function App() {
 
   useEffect(() => {
     presenceApi.get().catch(() => {});
+    // Actively probe the link on launch so the startup offline pop
+    // reflects a fresh check, not a stale cached status. The result
+    // flows back through useServerStatus via the server://status event.
+    serverApi.testConnection().catch(() => {});
   }, []);
+
+  // Startup offline pop: latch the first resolved status after
+  // 'connecting'. If it is anything but online, fade in a notice
+  // asking the user to check credentials. Later transitions never
+  // re-trigger it — this is strictly a launch check.
+  const startupCheckedRef = useRef(false);
+  const [startupOffline, setStartupOffline] = useState(false);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
+  useEffect(() => {
+    if (status !== 'connecting' && !startupCheckedRef.current) {
+      startupCheckedRef.current = true;
+      if (status !== 'online') setStartupOffline(true);
+    }
+  }, [status]);
+
+  const showConnectionNotice =
+    startupOffline && !noticeDismissed && status !== 'online';
 
   // Bumped on every 'conversation.history.changed' server event (pushed via
   // ServerLink::spawn_event_bridge, backed by gaia-api's SSE endpoint) so
@@ -113,6 +135,16 @@ export default function App() {
       {updateOpen && (
         <UpdatePanel onClose={() => setUpdateOpen(false)} />
       )}
+
+      <ConnectionNotice
+        open={showConnectionNotice}
+        status={status}
+        onOpenSettings={() => {
+          setNoticeDismissed(true);
+          setSettingsOpen(true);
+        }}
+        onDismiss={() => setNoticeDismissed(true)}
+      />
     </div>
   );
 }

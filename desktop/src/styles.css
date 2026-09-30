@@ -550,3 +550,36 @@ body {
   background: var(--surface-2);
 }
 .mcp-server .field-toggle { margin-bottom: 8px; }
+
+/* ---------------------------------------------------------------- connection notice (startup offline pop) */
+.connection-notice-overlay {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(12, 10, 7, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.connection-notice {
+  width: 380px; max-width: 90vw;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 18px; padding: 24px 26px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  text-align: left;
+}
+.connection-notice-title {
+  font-family: var(--serif); font-weight: 500; font-size: 1.25rem;
+  margin: 0 0 8px; color: var(--text);
+}
+.connection-notice-message {
+  font-family: var(--sans); font-size: 0.9rem; line-height: 1.6;
+  color: var(--text-muted); margin: 0 0 20px;
+}
+.connection-notice-actions { display: flex; gap: 10px; }
+.connection-notice-actions button {
+  font-family: var(--sans); font-size: 0.88rem; padding: 9px 16px; cursor: pointer;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: 11px; transition: background-color 0.25s ease;
+}
+.connection-notice-actions button.primary {
+  background: var(--accent); color: #201B13; border: none;
+}
+.connection-notice-actions button.primary:hover { background: #D9B27A; }
+.connection-notice-actions button:not(.primary):hover { background: var(--surface-3); }
