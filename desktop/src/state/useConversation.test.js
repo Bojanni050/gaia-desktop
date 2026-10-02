@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
 // The hook imports the Rust bridge through server/api.js; nothing here may
@@ -7,7 +7,13 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => ({})) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
+// Playback itself is a thin wrapper over the webview's Audio element —
+// asserted through, never with: these tests verify *whether* Gaia speaks
+// and with which bytes/mime, not that jsdom can play sound.
+vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}) }));
 
+import { invoke } from '@tauri-apps/api/core';
+import { playSpeech } from '../lib/speech';
 import { useConversation } from './useConversation';
 
 const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -88,5 +94,75 @@ describe('plan progress during a streamed turn', () => {
     expect(message.content.length).toBeGreaterThan(0); // a calm phrase, not an empty bubble
     expect(result.current.progress).toBeNull();
     expect(result.current.busy).toBe(false);
+  });
+});
+
+describe("Gaia's voice gate", () => {
+  const dutchReply = 'Ja. Het voelt goed om er te zijn, en dat is niet niks.';
+  const englishReply = 'Yes. It feels good to be here, and that is not nothing.';
+
+  const serverWithReply = (reply, info) => ({
+    streamTurn: vi.fn(async (body, onDelta) => {
+      onDelta({ content: reply });
+      return reply;
+    }),
+    // Absent entirely for legacy servers — the hook must not require it.
+    ...(info === undefined ? {} : { request: vi.fn(async () => ({ body: info })) }),
+  });
+
+  beforeEach(() => {
+    invoke.mockClear();
+    playSpeech.mockClear();
+    invoke.mockResolvedValue({ audio: [1, 2, 3], mime_type: 'audio/mpeg' });
+  });
+
+  it('speaks a Dutch reply when the voice pronounces Dutch', async () => {
+    const server = serverWithReply(dutchReply, { configured: true, provider: 'mistral', languages: ['en', 'nl'] });
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('kun je dit uitspreken?');
+    });
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: dutchReply }));
+    await waitFor(() =>
+      expect(playSpeech).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]), 'audio/mpeg')
+    );
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
+  });
+
+  it('stays silent on a Dutch reply when the voice is Chinese/English-only', async () => {
+    const server = serverWithReply(dutchReply, { configured: true, provider: 'xiaomi', languages: ['zh', 'en'] });
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('kun je dit uitspreken?');
+    });
+
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(invoke).not.toHaveBeenCalledWith('speech_synthesize', expect.anything());
+    expect(playSpeech).not.toHaveBeenCalled();
+    expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
+  });
+
+  it('stays silent on a Dutch reply when the server says nothing about its voice', async () => {
+    const server = serverWithReply(dutchReply, undefined); // no request function at all
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('kun je dit uitspreken?');
+    });
+
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(invoke).not.toHaveBeenCalledWith('speech_synthesize', expect.anything());
+    expect(playSpeech).not.toHaveBeenCalled();
+  });
+
+  it('still speaks an English reply when the server says nothing about its voice', async () => {
+    const server = serverWithReply(englishReply, undefined); // legacy behavior preserved
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('can you say this?');
+    });
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: englishReply }));
   });
 });

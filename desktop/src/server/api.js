@@ -88,19 +88,50 @@ export const audioApi = {
 
 /**
  * Gaia's voice — synthesizes speech for an already-received Gaia reply via
- * Rust's `speech_synthesize` (gaia-api's `POST /speech`, src/speech/mimoTts.js
- * server-side). `text` must be a finished Gaia response, never a fresh
+ * Rust's `speech_synthesize` (gaia-api's `POST /speech`, src/speech/
+ * mimoTts.js or mistralTts.js server-side, depending on the configured TTS
+ * provider). `text` must be a finished Gaia response, never a fresh
  * prompt: this module has no say in what Gaia says, only how it sounds.
- * Tauri returns the command's `Vec<u8>` as a plain JS array of byte
- * values; `synthesize` turns that into a `Uint8Array` the caller can wrap
- * in a `Blob` for playback.
+ * Rust returns `{ audio, mime_type }` (Tauri serializes the bytes as a
+ * plain JS array of byte values); `synthesize` turns that into
+ * `{ bytes, mimeType }` the caller can hand to playSpeech for Blob
+ * playback. Older shells returned the bare byte array — still accepted,
+ * labeled `audio/wav` as before.
  */
 export const speechApi = {
   async synthesize(text) {
-    const bytes = await invoke('speech_synthesize', { text });
-    return new Uint8Array(bytes);
+    const result = await invoke('speech_synthesize', { text });
+    if (Array.isArray(result)) {
+      return { bytes: new Uint8Array(result), mimeType: 'audio/wav' };
+    }
+    return {
+      bytes: new Uint8Array(result.audio),
+      mimeType: result.mime_type || 'audio/wav',
+    };
   },
 };
+
+/**
+ * Describes the server's configured voice (gaia-api's `GET /speech/info`):
+ * `{ configured, provider, languages }`. The desktop gates *whether* to
+ * speak on `languages` (see lib/language.js's shouldSpeak) — read from
+ * the provider, never judged from the reply text.
+ *
+ * `request` is serverApi.request (or any compatible `{ method, path }`
+ * function). Never throws: an unreachable server, an older server without
+ * this endpoint, or a missing request function all resolve to
+ * `undefined`, and callers fall back to the legacy English-only gate —
+ * staying quiet stays the safe failure mode.
+ */
+export async function getSpeechInfo(request) {
+  if (typeof request !== 'function') return undefined;
+  try {
+    const response = await request({ method: 'get', path: 'speech/info' });
+    return response?.body;
+  } catch (_) {
+    return undefined;
+  }
+}
 
 /**
  * The file library. File bytes never cross the generic `server_request`

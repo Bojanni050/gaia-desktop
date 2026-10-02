@@ -5,17 +5,18 @@
  * appends whatever reply the server returns. SOUL, memory, intent and
  * reasoning never run here. The one thing added on top of that reply —
  * speaking it via speechApi/playSpeech, gated by lib/language.js's
- * looksEnglish (Xiaomi's TTS model only pronounces Chinese/English) — is
- * presentation, not cognition: it runs strictly after a reply already
- * exists, never changes what was said, and its own failure can never
- * affect the turn (see runTurn).
+ * shouldSpeak over the voice GET /speech/info describes (Dutch only when
+ * the voice pronounces it — Xiaomi's TTS model only manages
+ * Chinese/English) — is presentation, not cognition: it runs strictly
+ * after a reply already exists, never changes what was said, and its own
+ * failure can never affect the turn (see runTurn).
  */
 import { useCallback, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
-import { speechApi } from '../server/api';
+import { speechApi, getSpeechInfo } from '../server/api';
 import { playSpeech } from '../lib/speech';
-import { looksEnglish } from '../lib/language';
+import { shouldSpeak } from '../lib/language';
 
 let counter = 1;
 const localId = () => `${Date.now()}-${counter++}`;
@@ -171,17 +172,26 @@ export function useConversation(server) {
         // that already succeeded, so it's caught and swallowed here, same
         // posture as reflectOnTurn/history-save on the server side.
         //
-        // Gated to English-looking replies only: Xiaomi's
-        // mimo-v2.5-tts-voicedesign only supports Chinese/English
-        // pronunciation — Dutch text comes back badly mispronounced
-        // rather than rejected, so this must be checked before ever
-        // calling speechApi (see lib/language.js's own comment).
-        if (looksEnglish(fullReply)) {
-          speechApi
-            .synthesize(fullReply)
-            .then((bytes) => playSpeech(bytes))
-            .catch(() => {});
-        }
+        // Gated by what the configured voice pronounces (GET /speech/info,
+        // read from the provider — never judged from the reply): a Dutch-
+        // speaking voice (Mistral Voxtral) speaks any reply, while a
+        // Chinese/English-only one (Xiaomi voicedesign) only gets English-
+        // looking text — Dutch comes back badly mispronounced rather than
+        // rejected, so that must be checked before ever calling
+        // speechApi (see lib/language.js's own comment). An unreachable
+        // or older server answers no info at all, and the gate falls back
+        // to the legacy English-only behavior: staying quiet is the safe
+        // failure mode.
+        (async () => {
+          try {
+            const info = await getSpeechInfo(server.request);
+            if (!shouldSpeak(fullReply, info && info.languages)) return;
+            const { bytes, mimeType } = await speechApi.synthesize(fullReply);
+            await playSpeech(bytes, mimeType);
+          } catch (_) {
+            /* already-displayed reply stays canonical */
+          }
+        })();
       } catch (error) {
         const phrase = phraseTurnError(error);
         setThreads((prev) =>

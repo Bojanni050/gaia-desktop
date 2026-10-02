@@ -39,16 +39,25 @@ async fn error_for_status(response: reqwest::Response) -> DesktopError {
     DesktopError::Message(format!("Gaia Server responded with status {status}"))
 }
 
+/// Synthesized speech as the server sent it: raw audio bytes plus the
+/// server's own Content-Type for correct Blob labeling upstream.
+#[derive(Debug, serde::Serialize)]
+pub struct SpeechAudio {
+    pub audio: Vec<u8>,
+    pub mime_type: String,
+}
+
 /// Synthesizes speech for `text` via Gaia Server's `POST /speech` and
-/// returns the raw audio bytes (WAV, per Gaia Server's current default —
-/// see gaia-api's GAIA_TTS_FORMAT). The frontend turns these into a Blob
-/// and plays them with the webview's own `Audio` element; no local audio
-/// engine is built here; none is needed for this.
+/// returns the raw audio bytes plus the server's own Content-Type, so the
+/// frontend can label the playback Blob correctly no matter which TTS
+/// provider (and encoding) the server has configured. Falls back to
+/// `audio/wav` when the server sends no Content-Type — the pre-provider
+/// default, and what older servers always served.
 #[tauri::command]
 pub async fn speech_synthesize(
     link: tauri::State<'_, ServerLink>,
     text: String,
-) -> Result<Vec<u8>, DesktopError> {
+) -> Result<SpeechAudio, DesktopError> {
     let base = base_url(&link)?;
     let client = reqwest::Client::new();
     let request = authorize(client.post(format!("{base}/speech")), &link)
@@ -63,9 +72,18 @@ pub async fn speech_synthesize(
         return Err(error_for_status(response).await);
     }
 
+    let mime_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("audio/wav")
+        .to_string();
     let bytes = response
         .bytes()
         .await
         .map_err(|e| DesktopError::Message(format!("could not read audio response: {e}")))?;
-    Ok(bytes.to_vec())
+    Ok(SpeechAudio {
+        audio: bytes.to_vec(),
+        mime_type,
+    })
 }

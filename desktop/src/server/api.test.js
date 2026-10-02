@@ -6,7 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args) => invoke(...args),
 }));
 
-import { mcpApi } from './api';
+import { mcpApi, speechApi, getSpeechInfo } from './api';
 
 describe('mcpApi', () => {
   beforeEach(() => invoke.mockClear());
@@ -25,5 +25,47 @@ describe('mcpApi', () => {
       tool: 'echo',
       arguments: { message: 'hallo' },
     });
+  });
+});
+
+describe('speechApi', () => {
+  beforeEach(() => invoke.mockClear());
+
+  it('returns bytes and the server mime type from the speech_synthesize command', async () => {
+    invoke.mockResolvedValue({ audio: [73, 68, 51], mime_type: 'audio/mpeg' });
+    const result = await speechApi.synthesize('hallo daar');
+    expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: 'hallo daar' });
+    expect(result.bytes).toEqual(new Uint8Array([73, 68, 51]));
+    expect(result.mimeType).toBe('audio/mpeg');
+  });
+
+  it('still accepts a bare byte array from older shells, labeled wav', async () => {
+    invoke.mockResolvedValue([82, 73, 70, 70]);
+    const result = await speechApi.synthesize('hello there');
+    expect(result.bytes).toEqual(new Uint8Array([82, 73, 70, 70]));
+    expect(result.mimeType).toBe('audio/wav');
+  });
+
+  it('falls back to wav when the shell sends no mime type', async () => {
+    invoke.mockResolvedValue({ audio: [1, 2, 3] });
+    const result = await speechApi.synthesize('hi');
+    expect(result.mimeType).toBe('audio/wav');
+  });
+});
+
+describe('getSpeechInfo', () => {
+  it('returns the voice description body from speech/info', async () => {
+    const request = vi.fn(async () => ({
+      body: { configured: true, provider: 'mistral', languages: ['en', 'nl'] },
+    }));
+    const info = await getSpeechInfo(request);
+    expect(request).toHaveBeenCalledWith({ method: 'get', path: 'speech/info' });
+    expect(info.languages).toContain('nl');
+  });
+
+  it('resolves undefined when the request fails — callers keep the legacy gate', async () => {
+    await expect(getSpeechInfo(async () => { throw new Error('gone'); })).resolves.toBeUndefined();
+    await expect(getSpeechInfo(undefined)).resolves.toBeUndefined();
+    await expect(getSpeechInfo(null)).resolves.toBeUndefined();
   });
 });

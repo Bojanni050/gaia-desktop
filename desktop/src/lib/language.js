@@ -52,3 +52,24 @@ export function looksEnglish(text) {
   const dutchScore = scoreText(value, DUTCH_SIGNALS);
   return englishScore > dutchScore;
 }
+
+/**
+ * Whether a reply is worth speaking, given the voice behind it.
+ *
+ * @param {string} text the already-received Gaia reply
+ * @param {string[]|undefined} languages what the configured TTS voice
+ *   pronounces (gaia-api's GET /speech/info) — `undefined` when the
+ *   server is unreachable or too old to say
+ * @returns {boolean} true for anything non-empty when the voice speaks
+ *   Dutch (Mistral Voxtral and friends handle both sides of this
+ *   bilingual household); otherwise the legacy English-only gate —
+ *   Xiaomi's voicedesign model mispronounces Dutch rather than
+ *   rejecting it, so silence stays the safe failure mode there, and
+ *   for an unknown voice alike.
+ */
+export function shouldSpeak(text, languages) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  if (Array.isArray(languages) && languages.includes('nl')) return true;
+  return looksEnglish(value);
+}
