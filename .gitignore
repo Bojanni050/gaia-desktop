@@ -20,3 +20,4 @@ src-tauri/WixTools/
 
 # System files
 .DS_Store
+src-tauri/Cargo.toml
