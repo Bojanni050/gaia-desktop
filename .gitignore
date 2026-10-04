@@ -21,3 +21,6 @@ src-tauri/WixTools/
 # System files
 .DS_Store
 src-tauri/Cargo.toml
+
+# OpenChamber locally generated screenshots — dev artifacts, never committed
+.openchamber/
