@@ -158,6 +158,30 @@ body {
 .sidebar-section-hint { font-family: var(--sans); font-size: 0.8rem; color: var(--text-faint); padding: 6px 12px; margin: 0; }
 .sidebar-section-error { font-family: var(--sans); font-size: 0.78rem; color: #C98B7A; padding: 4px 12px; }
 
+/* cognition review — the human Absolute Override in the sidebar */
+.cognition-item { flex-direction: column; align-items: stretch; gap: 4px; cursor: default; }
+.cognition-item:hover { background: var(--surface-2); }
+.cognition-item .thread-actions { justify-content: flex-end; margin-top: 2px; }
+.cognition-statement {
+  font-family: var(--sans); font-size: 0.85rem; color: var(--text);
+  line-height: 1.4; overflow-wrap: anywhere;
+}
+.cognition-meta { display: flex; align-items: center; }
+.cognition-status {
+  font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--accent); opacity: 0.75;
+}
+.cognition-action {
+  opacity: 0; background: none; border: none; color: var(--text-faint);
+  cursor: pointer; padding: 3px; display: flex; border-radius: 6px;
+  transition: opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+.cognition-item:hover .cognition-action { opacity: 1; }
+.cognition-action:hover { background: var(--surface-3); }
+.cognition-confirm:hover { color: var(--accent); }
+.cognition-reject:hover { color: #C98B7A; }
+.cognition-action:disabled { opacity: 0.4; cursor: default; }
+
 .sidebar-foot { padding: 18px 8px 2px; display: flex; flex-direction: column; gap: 2px; }
 .foot-line { font-family: var(--serif); font-size: 0.78rem; color: var(--text-faint); font-style: italic; }
 
