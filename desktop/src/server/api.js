@@ -14,6 +14,11 @@ import {
   buildHistoryDeleteRequest,
   parseHistoryList,
   parseHistoryConversation,
+  buildCognitionListRequest,
+  buildCognitionTestRequest,
+  buildCognitionRejectRequest,
+  buildCognitionConfirmRequest,
+  parseCognitionList,
 } from '../state/contract';
 
 let streamRequestCounter = 0;
@@ -182,3 +187,16 @@ export const historyApi = {
 };
 
 export const notify = (options) => invoke('notify', { options });
+
+/**
+ * Cognition review — the derived statements Logos is still weighing, and the
+ * human verdicts on them (`/cognition/*` on Gaia Cloud). `confirm` is the only
+ * path to `confirmed`; it may name older statements to supersede. Every call
+ * is plain JSON over the generic server_request seam.
+ */
+export const cognitionApi = {
+  list: () => serverApi.request(buildCognitionListRequest()).then(parseCognitionList),
+  test: (id) => serverApi.request(buildCognitionTestRequest(id)),
+  reject: (id, reason) => serverApi.request(buildCognitionRejectRequest(id, reason)),
+  confirm: (id, options) => serverApi.request(buildCognitionConfirmRequest(id, options)),
+};

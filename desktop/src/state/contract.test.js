@@ -8,6 +8,11 @@ import {
   buildHistoryDeleteRequest,
   parseHistoryList,
   parseHistoryConversation,
+  buildCognitionListRequest,
+  buildCognitionTestRequest,
+  buildCognitionRejectRequest,
+  buildCognitionConfirmRequest,
+  parseCognitionList,
 } from './contract';
 
 describe('buildTurnRequest', () => {
@@ -131,5 +136,35 @@ describe('parseReply', () => {
 
   it('rejects an empty reply', () => {
     expect(() => parseReply({ status: 200, body: { reply: '' } })).toThrow();
+  });
+});
+
+describe('cognition contract', () => {
+  it('buildCognitionListRequest is a plain GET', () => {
+    expect(buildCognitionListRequest()).toEqual({ method: 'get', path: 'cognition/hypotheses' });
+  });
+
+  it('buildCognitionTestRequest addresses one statement', () => {
+    expect(buildCognitionTestRequest('h1')).toEqual({ method: 'post', path: 'cognition/hypotheses/h1/test' });
+  });
+
+  it('buildCognitionRejectRequest carries a reason only when given', () => {
+    expect(buildCognitionRejectRequest('h1')).toEqual({ method: 'post', path: 'cognition/hypotheses/h1/reject' });
+    expect(buildCognitionRejectRequest('h1', 'not true')).toEqual({
+      method: 'post', path: 'cognition/hypotheses/h1/reject', body: { reason: 'not true' },
+    });
+  });
+
+  it('buildCognitionConfirmRequest omits an empty body and includes supersedes/rationale', () => {
+    expect(buildCognitionConfirmRequest('h1')).toEqual({ method: 'post', path: 'cognition/hypotheses/h1/confirm' });
+    expect(buildCognitionConfirmRequest('h2', { supersedes: ['h1'], rationale: 'newer value' })).toEqual({
+      method: 'post', path: 'cognition/hypotheses/h2/confirm', body: { supersedes: ['h1'], rationale: 'newer value' },
+    });
+  });
+
+  it('parseCognitionList reads the hypotheses array and defaults to []', () => {
+    expect(parseCognitionList({ body: { hypotheses: [{ id: 'h1' }] } })).toEqual([{ id: 'h1' }]);
+    expect(parseCognitionList({ body: {} })).toEqual([]);
+    expect(parseCognitionList({})).toEqual([]);
   });
 });

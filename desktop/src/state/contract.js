@@ -84,3 +84,42 @@ export function parseHistoryConversation(response) {
   }
   return { meta: response.body.meta || {}, messages };
 }
+
+// --- cognition review (cognition/ReviewSection.jsx) -------------------------
+// The human Absolute Override. Derived statements Logos is still weighing live
+// server-side; the person lists them and moves one forward or lets it go.
+// Plain JSON over the same generic server_request seam — never a file.
+
+/** The pending/testing statements awaiting review. */
+export function buildCognitionListRequest() {
+  return { method: 'get', path: 'cognition/hypotheses' };
+}
+
+export function buildCognitionTestRequest(id) {
+  return { method: 'post', path: `cognition/hypotheses/${id}/test` };
+}
+
+export function buildCognitionRejectRequest(id, reason) {
+  const request = { method: 'post', path: `cognition/hypotheses/${id}/reject` };
+  if (reason) request.body = { reason };
+  return request;
+}
+
+/**
+ * `confirm` is the only path to `confirmed`. `supersedes` names the older,
+ * contradicting statements this confirmation replaces (the server marks them
+ * rejected as `consolidatie`); `rationale` is the human-readable "why now".
+ */
+export function buildCognitionConfirmRequest(id, { supersedes, rationale } = {}) {
+  const request = { method: 'post', path: `cognition/hypotheses/${id}/confirm` };
+  const body = {};
+  if (Array.isArray(supersedes) && supersedes.length > 0) body.supersedes = supersedes;
+  if (rationale) body.rationale = rationale;
+  if (Object.keys(body).length > 0) request.body = body;
+  return request;
+}
+
+export function parseCognitionList(response) {
+  const hypotheses = response?.body?.hypotheses;
+  return Array.isArray(hypotheses) ? hypotheses : [];
+}

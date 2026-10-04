@@ -2,6 +2,7 @@ import React from 'react';
 import { Library, Plus, Settings, Trash2, Info, RefreshCw } from 'lucide-react';
 import { L } from '../lib/lexicon';
 import HistorySection from '../history/HistorySection';
+import ReviewSection from '../cognition/ReviewSection';
 
 /**
  * Sidebar — the web's Threads look, ported: brand orb, the italic serif
@@ -56,6 +57,8 @@ export default function Sidebar({
           </div>
         ))}
       </div>
+
+      <ReviewSection />
 
       <HistorySection onOpenConversation={onOpenHistoryConversation} refreshToken={historyVersion} />
 
