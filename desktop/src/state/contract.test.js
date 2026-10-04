@@ -155,10 +155,13 @@ describe('cognition contract', () => {
     });
   });
 
-  it('buildCognitionConfirmRequest omits an empty body and includes supersedes/rationale', () => {
+  it('buildCognitionConfirmRequest omits an empty body and includes supersedes/rationale/statement', () => {
     expect(buildCognitionConfirmRequest('h1')).toEqual({ method: 'post', path: 'cognition/hypotheses/h1/confirm' });
     expect(buildCognitionConfirmRequest('h2', { supersedes: ['h1'], rationale: 'newer value' })).toEqual({
       method: 'post', path: 'cognition/hypotheses/h2/confirm', body: { supersedes: ['h1'], rationale: 'newer value' },
+    });
+    expect(buildCognitionConfirmRequest('h2', { rationale: 'nuanced', statement: 'my own wording' })).toEqual({
+      method: 'post', path: 'cognition/hypotheses/h2/confirm', body: { rationale: 'nuanced', statement: 'my own wording' },
     });
   });
 

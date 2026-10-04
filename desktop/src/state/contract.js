@@ -110,11 +110,14 @@ export function buildCognitionRejectRequest(id, reason) {
  * contradicting statements this confirmation replaces (the server marks them
  * rejected as `consolidatie`); `rationale` is the human-readable "why now".
  */
-export function buildCognitionConfirmRequest(id, { supersedes, rationale } = {}) {
+export function buildCognitionConfirmRequest(id, { supersedes, rationale, statement } = {}) {
   const request = { method: 'post', path: `cognition/hypotheses/${id}/confirm` };
   const body = {};
   if (Array.isArray(supersedes) && supersedes.length > 0) body.supersedes = supersedes;
   if (rationale) body.rationale = rationale;
+  // `statement` is the human's own nuanced re-wording ("Nuanceren"); the
+  // server writes it together with the confirmation as one audited act.
+  if (statement) body.statement = statement;
   if (Object.keys(body).length > 0) request.body = body;
   return request;
 }
