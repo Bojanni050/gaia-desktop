@@ -13,8 +13,8 @@ use url::Url;
 use tokio::sync::mpsc;
 
 use super::client::{
-    GaiaServerClient, HealthReport, ServerEventStream, ServerRequest, ServerResponse, TurnDelta,
-    TurnDeltaStream,
+    EpisodeStream, GaiaServerClient, HealthReport, ServerEventStream, ServerRequest,
+    ServerResponse, TurnDelta, TurnDeltaStream,
 };
 use super::events::{ServerEvent, ServerEventEnvelope};
 use super::CommunicationError;
@@ -148,6 +148,46 @@ impl GaiaServerClient for HttpGaiaClient {
                     }
                     Ok(None) => return,  // connection closed  caller reconnects
                     Err(_) => return,    // transport error  caller reconnects
+                }
+            }
+        });
+
+        Ok(rx)
+    }
+
+    /// Subscribe to the Kairos episode stream (`kairos/episodes/stream`). Same
+    /// shape as `subscribe_events`: one long-lived SSE connection whose `event:
+    /// episode` frames each carry one episode object. Heartbeat/`ok` comment
+    /// frames are ignored; the channel closes when the connection ends so the
+    /// caller can reconnect.
+    async fn subscribe_episodes(&self) -> Result<EpisodeStream, CommunicationError> {
+        let url = self.endpoint("kairos/episodes/stream")?;
+        let builder = self.authorize(self.http.get(url)).timeout(EVENTS_TIMEOUT);
+
+        let mut response = builder.send().await.map_err(map_transport)?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            return Err(CommunicationError::Server { status });
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            loop {
+                match response.chunk().await {
+                    Ok(Some(bytes)) => {
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        while let Some(pos) = buffer.find("\n\n") {
+                            let frame: String = buffer.drain(..pos + 2).collect();
+                            if let Some(episode) = parse_episode_frame(&frame) {
+                                if tx.send(episode).is_err() {
+                                    return; // receiver dropped
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => return, // connection closed — caller reconnects
+                    Err(_) => return,   // transport error — caller reconnects
                 }
             }
         });
@@ -310,6 +350,21 @@ fn parse_conversation_event(frame: &str) -> Option<ServerEvent> {
         topic: "conversation.history.changed".to_string(),
         payload: Value::Null,
     }))
+}
+
+/// Parses one SSE frame from `kairos/episodes/stream` into the episode JSON.
+/// Only `event: episode` frames carry an episode; `:ok`/`:heartbeat` comments
+/// and anything malformed are dropped silently (a missed heartbeat is not a
+/// failure the frontend needs to know about).
+fn parse_episode_frame(frame: &str) -> Option<Value> {
+    let is_episode = frame
+        .lines()
+        .any(|line| line.trim() == "event: episode");
+    if !is_episode {
+        return None;
+    }
+    let data = frame.lines().find_map(|line| line.strip_prefix("data: "))?;
+    serde_json::from_str(data).ok()
 }
 
 #[cfg(test)]

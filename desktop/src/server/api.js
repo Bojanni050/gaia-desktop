@@ -20,6 +20,10 @@ import {
   buildCognitionReopenRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
+  buildEpisodeListRequest,
+  buildEpisodeEvidenceRequest,
+  parseEpisodeList,
+  parseEpisodeEvidence,
 } from '../state/contract';
 
 let streamRequestCounter = 0;
@@ -41,6 +45,12 @@ export const serverApi = {
    * polling. `handler` receives the raw `ServerEvent` envelope.
    */
   onServerEvent: (handler) => listen('server://event', (event) => handler(event.payload)),
+  /**
+   * Live Kairos episodes relayed from Gaia Cloud (ServerLink::spawn_episode_bridge,
+   * backed by gaia-api's `kairos/episodes/stream` SSE endpoint). `handler`
+   * receives one raw episode object per synthesis. Returns an unlisten fn.
+   */
+  onEpisode: (handler) => listen('server://episode', (event) => handler(event.payload)),
   /**
    * Streams one turn (Rust's `server_stream_turn`, over gaia-api's SSE
    * path — turn.js's performStreamingTurn). `onDelta` is called with
@@ -201,4 +211,16 @@ export const cognitionApi = {
   reject: (id, reason) => serverApi.request(buildCognitionRejectRequest(id, reason)),
   reopen: (id, reason) => serverApi.request(buildCognitionReopenRequest(id, reason)),
   confirm: (id, options) => serverApi.request(buildCognitionConfirmRequest(id, options)),
+};
+
+/**
+ * Kairos episodes — the time blocks Kairos recognised, each an interpretation
+ * plus the captures behind it. `list` reads them; `evidence` loads the raw
+ * observations for one episode on demand (the audit path). Plain JSON over the
+ * generic server_request seam. Endpoint is outside this repo: a server that
+ * predates it answers an error, which the drawer surfaces rather than hides.
+ */
+export const episodeApi = {
+  list: (query) => serverApi.request(buildEpisodeListRequest(query)).then(parseEpisodeList),
+  evidence: (id) => serverApi.request(buildEpisodeEvidenceRequest(id)).then(parseEpisodeEvidence),
 };

@@ -42,6 +42,12 @@ pub const TURN_DELTA_EVENT: &str = "server://turn-delta";
 /// made, so this app's History list can refresh without polling.
 pub const SERVER_EVENT: &str = "server://event";
 
+/// Tauri event emitted for each freshly-synthesised Kairos episode relayed
+/// from `GaiaServerClient::subscribe_episodes` (gaia-api's
+/// `kairos/episodes/stream` SSE), so the Logos timeline can insert new
+/// episodes live without polling.
+pub const EPISODE_EVENT: &str = "server://episode";
+
 /// How often the background health loop probes Gaia Server.
 const HEALTH_INTERVAL: Duration = Duration::from_secs(30);
 /// Timeout for a single health probe.
@@ -248,6 +254,33 @@ impl ServerLink {
                     Err(_) => {
                         // Not configured, offline, or the endpoint rejected
                         // us — same reconnect path either way.
+                    }
+                }
+                tokio::time::sleep(EVENTS_RECONNECT_DELAY).await;
+            }
+        });
+    }
+
+    /// Spawn the background bridge that relays freshly-synthesised Kairos
+    /// episodes as [`EPISODE_EVENT`] Tauri events. Reconnects on its own — same
+    /// lifetime and reconnect policy as [`ServerLink::spawn_event_bridge`].
+    pub fn spawn_episode_bridge(app: AppHandle) {
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let client = app.state::<ServerLink>().client();
+                let Some(client) = client else {
+                    tokio::time::sleep(EVENTS_RECONNECT_DELAY).await;
+                    continue;
+                };
+                match client.subscribe_episodes().await {
+                    Ok(mut episodes) => {
+                        while let Some(episode) = episodes.recv().await {
+                            let _ = app.emit(EPISODE_EVENT, &episode);
+                        }
+                        // Channel closed — connection ended; reconnect below.
+                    }
+                    Err(_) => {
+                        // Not configured, offline, or endpoint rejected us.
                     }
                 }
                 tokio::time::sleep(EVENTS_RECONNECT_DELAY).await;

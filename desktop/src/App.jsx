@@ -7,9 +7,7 @@ import LibraryPanel from './library/LibraryPanel';
 import AboutPanel from './settings/AboutPanel';
 import UpdatePanel from './settings/UpdatePanel';
 import EpisodeTimeline from './logos/EpisodeTimeline';
-import { EPISODES } from './logos/mockEpisodes';
-import { serverApi, presenceApi } from './server/api';
-import { useConversation } from './state/useConversation';
+import { serverApi, presenceApi } from './server/api';import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
 import { L } from './lib/lexicon';
 
@@ -140,8 +138,15 @@ export default function App() {
         <UpdatePanel onClose={() => setUpdateOpen(false)} />
       )}
 
+      {/*
+        The Kairos episode timeline reads live from Gaia Cloud
+        (GET /kairos/episodes) — the derived narrative episodes the Kairos
+        worker synthesises from raw observations, with each episode's raw
+        evidence loaded on demand. No mock feed: the drawer shows its honest
+        loading / empty / failed states against the real endpoint.
+      */}
       {logosOpen && (
-        <EpisodeTimeline episodes={EPISODES} onClose={() => setLogosOpen(false)} />
+        <EpisodeTimeline onClose={() => setLogosOpen(false)} />
       )}
 
       <ConnectionNotice

@@ -672,6 +672,16 @@ body {
   background: var(--surface);
   border-left: 1px solid var(--border-strong);
   box-shadow: -24px 0 60px rgba(0, 0, 0, 0.38);
+  animation: logos-slide-in 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@keyframes logos-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {  .logos-drawer { animation: none; }
+  .episode-evidence { animation: none; }
+  .logos-live-dot.connected, .logos-live-dot.connecting { animation: none; }
+  .episode-chevron, .cognition-chevron, .sidebar-section-chevron { transition: none; }
 }
 .logos-drawer-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
@@ -679,7 +689,17 @@ body {
 }
 .logos-drawer-head h2 {
   font-family: var(--serif); font-weight: 500; font-size: 1.3rem; margin: 0 0 5px;
+  display: flex; align-items: center; gap: 8px;
 }
+.logos-live-dot {
+  width: 7px; height: 7px; border-radius: 999px; flex: none;
+  background: var(--text-faint);
+}
+.logos-live-dot.connected { background: #8FBF8F; animation: logos-pulse 2s ease-in-out infinite; }
+.logos-live-dot.connecting { background: #CBA36A; animation: logos-blink 1s ease-in-out infinite; }
+.logos-live-dot.offline { background: #C98B7A; }
+@keyframes logos-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes logos-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 .logos-drawer-sub {
   margin: 0; max-width: 48ch;
   font-family: var(--sans); font-size: 0.8rem; line-height: 1.55; color: var(--text-faint);
@@ -699,6 +719,11 @@ body {
 .logos-empty {
   font-family: var(--serif); font-style: italic; color: var(--text-faint);
   font-size: 0.92rem; text-align: center; padding: 32px 0;
+}
+.logos-error {
+  padding: 10px 14px; border-radius: 12px;
+  background: rgba(201, 139, 122, 0.1); border: 1px solid rgba(201, 139, 122, 0.3);
+  color: #C98B7A; font-family: var(--sans); font-size: 0.82rem; line-height: 1.5;
 }
 
 /* the demo acknowledgement — present, not a toast, never blocking */

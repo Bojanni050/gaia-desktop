@@ -73,6 +73,13 @@ pub struct HealthReport {
 /// tomorrow, SSE the day after) stays swappable.
 pub type ServerEventStream = mpsc::UnboundedReceiver<ServerEvent>;
 
+/// Receiver for freshly-synthesised Kairos episodes pushed by Gaia Server.
+///
+/// Backed by gaia-api's `kairos/episodes/stream` SSE endpoint; each item is one
+/// episode object as the server serialized it, relayed opaquely (the desktop
+/// does not interpret episode semantics — it renders them).
+pub type EpisodeStream = mpsc::UnboundedReceiver<Value>;
+
 /// One incremental piece of a streamed turn  assistant content or
 /// reasoning content, or a plan-progress / calm-failure extension frame,
 /// exactly as Gaia Server's SSE frames distinguish them (gaia-api's
@@ -122,6 +129,12 @@ pub trait GaiaServerClient: Send + Sync {
     /// transport can slot in behind the same trait method without a caller
     /// changing.
     async fn subscribe_events(&self) -> Result<ServerEventStream, CommunicationError>;
+
+    /// Subscribe to freshly-synthesised Kairos episodes (`kairos/episodes/stream`
+    /// SSE). Returns once the connection is established; each episode arrives on
+    /// the returned channel as opaque JSON. Connection-end is signalled by the
+    /// channel closing, exactly like `subscribe_events`.
+    async fn subscribe_episodes(&self) -> Result<EpisodeStream, CommunicationError>;
 
     /// Perform a streaming turn against `conversation/turn` (Gaia Server's
     /// SSE path  gaia-api's turn.js `performStreamingTurn`). `body` is the

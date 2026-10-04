@@ -39,11 +39,10 @@ function episode(overrides = {}) {
   };
 }
 
-function renderCard(ep) {
+function renderCard(ep, extraProps = {}) {
   const onAskGaia = vi.fn();
-  const onSavePattern = vi.fn();
-  render(<EpisodeCard episode={ep} onAskGaia={onAskGaia} onSavePattern={onSavePattern} />);
-  return { onAskGaia, onSavePattern };
+  render(<EpisodeCard episode={ep} onAskGaia={onAskGaia} {...extraProps} />);
+  return { onAskGaia };
 }
 
 describe('EpisodeCard', () => {
@@ -113,14 +112,41 @@ describe('EpisodeCard', () => {
     expect(screen.getByText('“Financieel_Model_v3.xlsx”')).toBeTruthy();
   });
 
-  it('hands the whole episode to the two actions', () => {
+  it('hands the whole episode to the ask action', () => {
     const ep = episode();
-    const { onAskGaia, onSavePattern } = renderCard(ep);
+    const { onAskGaia } = renderCard(ep);
 
     fireEvent.click(screen.getByRole('button', { name: L.logosAskGaia }));
     expect(onAskGaia).toHaveBeenCalledWith(ep);
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: L.logosSavePattern }));
-    expect(onSavePattern).toHaveBeenCalledWith(ep);
+  it('loads evidence lazily through loadEvidence when the episode carries none', async () => {
+    const ep = episode({ observations: [] });
+    const loadEvidence = vi.fn().mockResolvedValue([
+      {
+        id: 'obs-9',
+        timestamp: '2026-10-03T10:16:00',
+        application: 'Outlook',
+        windowTitle: 'Postvak IN',
+        ocrText: 'Een verse observatie.',
+      },
+    ]);
+    renderCard(ep, { loadEvidence });
+
+    const toggle = screen.getByRole('button', { name: new RegExp(L.logosEvidenceToggle) });
+    fireEvent.click(toggle);
+
+    expect(screen.getByText(L.logosLoading)).toBeTruthy();
+    await screen.findByText('Een verse observatie.');
+    expect(loadEvidence).toHaveBeenCalledWith('ep-1');
+  });
+
+  it('shows an honest message when loading evidence fails', async () => {
+    const ep = episode({ observations: [] });
+    const loadEvidence = vi.fn().mockRejectedValue(new Error('offline'));
+    renderCard(ep, { loadEvidence });
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(L.logosEvidenceToggle) }));
+    await screen.findByText(L.logosEvidenceFailed);
   });
 });

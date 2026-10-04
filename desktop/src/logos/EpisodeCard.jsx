@@ -1,5 +1,5 @@
 /**
- * EpisodeCard — one stretch of activity Logos recognised, as a card.
+ * EpisodeCard — one stretch of activity Kairos recognised, as a card.
  *
  * The whole point of the card is an epistemic separation the eye can read in
  * one glance: the interpretation is the loud, human sentence at the top; the
@@ -8,12 +8,14 @@
  * "Episode / Interpretation", the evidence section says "raw observations" and
  * carries a note that Logos did not write it.
  *
- * Pure display: the card owns only which evidence is open. The two actions are
- * callbacks; what "Ask Gaia" and "Save as pattern" mean is decided elsewhere.
+ * Evidence is loaded lazily: an episode from the list carries none (one cheap
+ * call), so opening the accordion fetches the raw observations through
+ * `loadEvidence(episode.id)` — the audit path from interpretation to fact. If
+ * the episode already carries `observations` (the mock/demo path), no fetch
+ * runs; `loadEvidence` is optional.
  */
 import React, { useState } from 'react';
 import {
-  Bookmark,
   ChevronDown,
   Clock,
   FileSpreadsheet,
@@ -63,14 +65,41 @@ function contextIcon({ application = '', type }) {
   return Monitor;
 }
 
-export default function EpisodeCard({ episode, onAskGaia, onSavePattern }) {
+export default function EpisodeCard({ episode, onAskGaia, loadEvidence }) {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [loaded, setLoaded] = useState(null); // fetched observations, or null before load
+  const [evidenceError, setEvidenceError] = useState(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   const context = Array.isArray(episode.context) ? episode.context : [];
-  const observations = Array.isArray(episode.observations) ? episode.observations : [];
+  const inlineObservations = Array.isArray(episode.observations) ? episode.observations : [];
+  const observations = loaded !== null ? loaded : inlineObservations;
   const panelId = `episode-evidence-${episode.id}`;
-  const confidence =
-    typeof episode.confidence === 'number' ? Math.round(episode.confidence * 100) : null;
+
+  async function toggleEvidence() {
+    const next = !evidenceOpen;
+    setEvidenceOpen(next);
+    // Fetch once, on first open, and only when there is nothing inline and a
+    // loader was wired.
+    if (
+      next &&
+      loaded === null &&
+      inlineObservations.length === 0 &&
+      typeof loadEvidence === 'function'
+    ) {
+      setEvidenceLoading(true);
+      setEvidenceError(null);
+      try {
+        const rows = await loadEvidence(episode.id);
+        setLoaded(Array.isArray(rows) ? rows : []);
+      } catch (_) {
+        setEvidenceError(L.logosEvidenceFailed);
+        setLoaded([]);
+      } finally {
+        setEvidenceLoading(false);
+      }
+    }
+  }
 
   return (
     <article className="episode-card">
@@ -86,23 +115,8 @@ export default function EpisodeCard({ episode, onAskGaia, onSavePattern }) {
                 {L.logosSessionPrefix}: {episode.session}
               </span>
             )}
-            {confidence !== null && (
-              <span
-                className="episode-confidence"
-                role="img"
-                aria-label={`${L.logosConfidence}: ${confidence}%`}
-                title={`${L.logosConfidence}: ${confidence}%`}
-              >
-                <span className="episode-confidence-bars" aria-hidden="true">
-                  {[0, 1, 2].map((i) => (
-                    <i key={i} className={confidence >= (i + 1) * 33 ? 'on' : ''} />
-                  ))}
-                </span>
-                <span aria-hidden="true">{L.logosConfidence}</span>
-              </span>
-            )}
           </div>
-          <h3 className="episode-title">{episode.title}</h3>
+          {episode.title && <h3 className="episode-title">{episode.title}</h3>}
         </div>
 
         <span className="episode-badge" title={L.logosBadgeHint}>
@@ -147,13 +161,15 @@ export default function EpisodeCard({ episode, onAskGaia, onSavePattern }) {
         className="episode-evidence-toggle"
         aria-expanded={evidenceOpen}
         aria-controls={panelId}
-        onClick={() => setEvidenceOpen((open) => !open)}
+        onClick={toggleEvidence}
       >
         <ScrollText size={14} aria-hidden="true" />
         <span>{L.logosEvidenceToggle}</span>
-        <span className="episode-evidence-count">
-          ({observations.length} {observations.length === 1 ? L.logosCapture : L.logosCaptures})
-        </span>
+        {(observations.length > 0) && (
+          <span className="episode-evidence-count">
+            ({observations.length} {observations.length === 1 ? L.logosCapture : L.logosCaptures})
+          </span>
+        )}
         <ChevronDown
           size={15}
           className={`episode-chevron${evidenceOpen ? ' open' : ''}`}
@@ -173,6 +189,12 @@ export default function EpisodeCard({ episode, onAskGaia, onSavePattern }) {
             <span className="episode-raw-note">{L.logosRawNote}</span>
           </div>
 
+          {evidenceLoading && <p className="logos-empty">{L.logosLoading}</p>}
+          {evidenceError && <div className="logos-error">{evidenceError}</div>}
+          {!evidenceLoading && !evidenceError && observations.length === 0 && (
+            <p className="logos-empty">{L.logosEvidenceEmpty}</p>
+          )}
+
           <ol className="episode-observations">
             {observations.map((obs) => (
               <li key={obs.id} className="episode-observation">
@@ -186,7 +208,9 @@ export default function EpisodeCard({ episode, onAskGaia, onSavePattern }) {
 
                 <div className="episode-observation-body">
                   <div className="episode-observation-meta">
-                    <span className="episode-observation-time">{clockSeconds(obs.timestamp)}</span>
+                    {obs.timestamp && (
+                      <span className="episode-observation-time">{clockSeconds(obs.timestamp)}</span>
+                    )}
                     {obs.application && (
                       <span className="episode-observation-app">{obs.application}</span>
                     )}
@@ -225,14 +249,6 @@ export default function EpisodeCard({ episode, onAskGaia, onSavePattern }) {
         >
           <MessageCircle size={15} aria-hidden="true" />
           {L.logosAskGaia}
-        </button>
-        <button
-          type="button"
-          className="episode-action"
-          onClick={() => onSavePattern && onSavePattern(episode)}
-        >
-          <Bookmark size={15} aria-hidden="true" />
-          {L.logosSavePattern}
         </button>
       </footer>
     </article>

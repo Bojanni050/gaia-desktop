@@ -61,6 +61,8 @@ pub fn run() {
             // Relay realtime server events (e.g. conversation-history
             // changes from another client) as they arrive.
             communication::ServerLink::spawn_event_bridge(app.handle().clone());
+            // Relay freshly-synthesised Kairos episodes for the live timeline.
+            communication::ServerLink::spawn_episode_bridge(app.handle().clone());
 
             Ok(())
         })
