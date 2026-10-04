@@ -6,6 +6,8 @@ import SettingsPanel from './settings/SettingsPanel';
 import LibraryPanel from './library/LibraryPanel';
 import AboutPanel from './settings/AboutPanel';
 import UpdatePanel from './settings/UpdatePanel';
+import EpisodeTimeline from './logos/EpisodeTimeline';
+import { EPISODES } from './logos/mockEpisodes';
 import { serverApi, presenceApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
@@ -23,6 +25,7 @@ export default function App() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [logosOpen, setLogosOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
 
@@ -102,6 +105,7 @@ export default function App() {
         onOpenHistoryConversation={conversation.hydrateThread}
         onOpenAbout={() => setAboutOpen(true)}
         onOpenUpdates={() => setUpdateOpen(true)}
+        onOpenLogos={() => setLogosOpen(true)}
         historyVersion={historyVersion}
       />
 
@@ -134,6 +138,10 @@ export default function App() {
 
       {updateOpen && (
         <UpdatePanel onClose={() => setUpdateOpen(false)} />
+      )}
+
+      {logosOpen && (
+        <EpisodeTimeline episodes={EPISODES} onClose={() => setLogosOpen(false)} />
       )}
 
       <ConnectionNotice

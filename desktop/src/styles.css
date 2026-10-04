@@ -663,3 +663,220 @@ body {
 }
 .connection-notice-actions button.primary:hover { background: #D9B27A; }
 .connection-notice-actions button:not(.primary):hover { background: var(--surface-3); }
+
+/* ---------------------------------------------------------------- logos: episode timeline (right drawer) */
+.logos-drawer {
+  position: fixed; top: 0; right: 0; height: 100vh; z-index: 15;
+  width: min(33vw, 640px);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.38);
+}
+.logos-drawer-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 22px 22px 16px; border-bottom: 1px solid var(--border);
+}
+.logos-drawer-head h2 {
+  font-family: var(--serif); font-weight: 500; font-size: 1.3rem; margin: 0 0 5px;
+}
+.logos-drawer-sub {
+  margin: 0; max-width: 48ch;
+  font-family: var(--sans); font-size: 0.8rem; line-height: 1.55; color: var(--text-faint);
+}
+.logos-close {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 9px;
+  background: none; border: 1px solid transparent; color: var(--text-faint);
+  cursor: pointer; transition: color 0.2s ease, background-color 0.2s ease;
+}
+.logos-close:hover { color: var(--text); background: var(--surface-3); }
+
+.logos-drawer-body {
+  flex: 1; overflow-y: auto; padding: 18px 18px 28px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.logos-empty {
+  font-family: var(--serif); font-style: italic; color: var(--text-faint);
+  font-size: 0.92rem; text-align: center; padding: 32px 0;
+}
+
+/* the demo acknowledgement — present, not a toast, never blocking */
+.logos-notice {
+  margin: 0 18px 16px; padding: 10px 14px;
+  background: var(--accent-soft); border: 1px solid var(--accent-line);
+  border-radius: 12px; color: var(--text-muted);
+  font-family: var(--sans); font-size: 0.82rem; line-height: 1.5;
+}
+
+/* episode card */
+.episode-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 18px 15px;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+.episode-card:hover { border-color: var(--border-strong); }
+
+.episode-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.episode-head-main { min-width: 0; }
+.episode-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.episode-time {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 0.74rem; color: var(--text-muted);
+}
+.episode-session { font-family: var(--sans); font-size: 0.74rem; color: var(--text-faint); }
+.episode-confidence {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--sans); font-size: 0.7rem; color: var(--text-faint);
+}
+.episode-confidence-bars { display: inline-flex; gap: 2px; }
+.episode-confidence-bars i {
+  width: 3px; height: 9px; border-radius: 1px;
+  background: var(--surface-3); transition: background-color 0.2s ease;
+}
+.episode-confidence-bars i.on { background: var(--accent); opacity: 0.75; }
+
+.episode-title {
+  font-family: var(--serif); font-weight: 500; font-size: 1.04rem;
+  color: var(--text); margin: 7px 0 0;
+}
+
+/* the badge is the epistemic claim: this is an interpretation */
+.episode-badge {
+  flex: none; display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px; border-radius: 999px;
+  font-family: var(--sans); font-size: 0.64rem; letter-spacing: 0.05em;
+  text-transform: uppercase; white-space: nowrap;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line);
+}
+
+/* interpretation — the dominant line, deliberately not evidence-styled */
+.episode-interpretation {
+  margin: 14px 0 0; padding-left: 14px;
+  border-left: 2px solid var(--accent-line);
+  font-family: var(--serif); font-size: 1.02rem; line-height: 1.68; color: #F0EBE0;
+}
+
+.episode-context { margin-top: 15px; }
+.episode-context-label {
+  display: block; margin-bottom: 7px;
+  font-family: var(--sans); font-size: 0.64rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.episode-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.episode-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 6px 10px; border-radius: 10px;
+  background: var(--surface-3); border: 1px solid var(--border-strong);
+  font-family: var(--sans); font-size: 0.78rem; color: var(--text-muted);
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+.episode-chip:hover { border-color: var(--accent-line); color: var(--text); background: var(--surface-2); }
+.episode-chip-icon { color: var(--text-faint); flex: none; }
+.episode-chip-app { color: var(--text); }
+.episode-chip-sep { color: var(--text-faint); }
+.episode-chip-object {
+  color: var(--text-faint); max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* evidence toggle — the door back to the raw captures */
+.episode-evidence-toggle {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  margin-top: 15px; padding: 12px 2px 4px;
+  border: none; border-top: 1px solid var(--border); background: none;
+  cursor: pointer; text-align: left;
+  font-family: var(--sans); font-size: 0.8rem; color: var(--text-faint);
+  transition: color 0.2s ease;
+}
+.episode-evidence-toggle:hover { color: var(--text-muted); }
+.episode-evidence-count { color: var(--text-faint); opacity: 0.8; }
+.episode-chevron { margin-left: auto; transition: transform 0.25s ease; }
+.episode-chevron.open { transform: rotate(180deg); }
+
+.episode-evidence { animation: episode-reveal 0.24s ease; }
+@keyframes episode-reveal {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+.episode-raw-head {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 0 12px; border-top: 1px dashed var(--border);
+}
+.episode-raw-title {
+  font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.episode-raw-note { font-family: var(--sans); font-size: 0.72rem; color: var(--text-faint); }
+
+.episode-observations {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.episode-observation {
+  display: grid; grid-template-columns: 84px 1fr; gap: 12px;
+  padding: 10px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.episode-shot {
+  width: 84px; height: 60px; border-radius: 7px; object-fit: cover;
+  border: 1px solid var(--border); background: var(--surface-3);
+}
+.episode-shot-empty {
+  display: flex; align-items: center; justify-content: center; color: var(--text-faint);
+}
+.episode-observation-body { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.episode-observation-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.episode-observation-time { font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); }
+.episode-observation-app { font-family: var(--sans); font-size: 0.76rem; color: var(--text); }
+.episode-observation-window {
+  font-family: var(--sans); font-size: 0.75rem; color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.episode-field { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.episode-field-label {
+  font-family: var(--sans); font-size: 0.62rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.episode-ocr {
+  margin: 0; padding: 7px 9px; max-height: 150px; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  font-family: var(--mono); font-size: 0.71rem; line-height: 1.55;
+  color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.episode-uia summary { cursor: pointer; list-style: none; }
+.episode-uia summary::-webkit-details-marker { display: none; }
+.episode-uia[open] .episode-field-label { color: var(--text-muted); }
+
+/* actions — interpretation made actionable, at the bottom */
+.episode-actions {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--border);
+}
+.episode-action {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 13px; border-radius: 10px; cursor: pointer;
+  background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border-strong);
+  font-family: var(--sans); font-size: 0.82rem;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.episode-action:hover { color: var(--text); background: var(--surface-2); border-color: var(--accent-line); }
+.episode-action-primary { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+.episode-action-primary:hover { color: #E7C58C; background: rgba(203, 163, 106, 0.2); }
+.episode-evidence-toggle:focus-visible,
+.episode-action:focus-visible,
+.logos-close:focus-visible {
+  outline: 2px solid var(--accent-line); outline-offset: 2px;
+}
+
+/* narrow windows: the drawer may take more than a third to stay usable */
+@media (max-width: 1100px) {
+  .logos-drawer { width: min(88vw, 520px); }
+}
+@media (max-width: 560px) {
+  .logos-drawer { width: 100vw; }
+  .episode-observation { grid-template-columns: 64px 1fr; }
+  .episode-shot { width: 64px; height: 48px; }
+}

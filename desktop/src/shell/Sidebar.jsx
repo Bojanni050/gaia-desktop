@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Plus, Settings, Trash2, Info, RefreshCw } from 'lucide-react';
+import { Library, Plus, Settings, Trash2, Info, RefreshCw, ScrollText } from 'lucide-react';
 import { L } from '../lib/lexicon';
 import HistorySection from '../history/HistorySection';
 import ReviewSection from '../cognition/ReviewSection';
@@ -24,6 +24,7 @@ export default function Sidebar({
   historyVersion,
   onOpenAbout,
   onOpenUpdates,
+  onOpenLogos,
 }) {
   return (
     <nav className="sidebar">
@@ -63,6 +64,9 @@ export default function Sidebar({
       <HistorySection onOpenConversation={onOpenHistoryConversation} refreshToken={historyVersion} />
 
       <div className="sidebar-foot">
+        <button className="settings-open-btn" onClick={onOpenLogos}>
+          <ScrollText size={13} /> {L.logos}
+        </button>
         <button className="settings-open-btn" onClick={onOpenLibrary}>
           <Library size={13} /> {L.library}
         </button>
