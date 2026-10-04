@@ -1,0 +1,5 @@
+## 2026-10-04 (Epistemic review: quarantaine-tegenhypothese, macro-frictie en Heroverwegen)
+
+- Findings: De cognition-review was een enkele één-klik-bevestiging en toonde de V3-tegenhypothese/micro-macro-as niet. Een afgewezen stelling bood nog steeds test/confirm/reject aan, terwijl de backend `rejected` terminaal maakt.
+- Conclusions: De reviewkaart toont nu de quarantaine-tegenhypothese (dichtgeklapt, met "geen feit"-noot), klapbare evidentie en een micro/macro-badge. Een macro-bevestiging vraagt eerst een bewuste implicatietest; een afgewezen stelling is een harde quarantaine met als enige actie een expliciete "Heroverwegen" die een reden verplicht. Zo volgt de UI exact de backend-regels (macro-rationale, tegenhypothese vereist, rejected terminaal).
+- Actions: nieuwe `desktop/src/cognition/EpistemicReviewCard.jsx` + test; `desktop/src/cognition/ReviewSection.jsx` delegeert naar de kaart; `desktop/src/state/contract.js` + `desktop/src/server/api.js` (reopen-builder, `statement` op confirm); `desktop/src/lib/lexicon.js` (NL+EN); `desktop/src/styles.css`; validated — vitest 70/70, `npm run build` groen.

@@ -11,6 +11,7 @@ import {
   buildCognitionListRequest,
   buildCognitionTestRequest,
   buildCognitionRejectRequest,
+  buildCognitionReopenRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
 } from './contract';
@@ -152,6 +153,12 @@ describe('cognition contract', () => {
     expect(buildCognitionRejectRequest('h1')).toEqual({ method: 'post', path: 'cognition/hypotheses/h1/reject' });
     expect(buildCognitionRejectRequest('h1', 'not true')).toEqual({
       method: 'post', path: 'cognition/hypotheses/h1/reject', body: { reason: 'not true' },
+    });
+  });
+
+  it('buildCognitionReopenRequest always carries the reason', () => {
+    expect(buildCognitionReopenRequest('h1', 'the disproof was retracted')).toEqual({
+      method: 'post', path: 'cognition/hypotheses/h1/reopen', body: { reason: 'the disproof was retracted' },
     });
   });
 

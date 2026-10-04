@@ -68,6 +68,10 @@ export default function ReviewSection() {
     run(item, () => cognitionApi.test(item.id),
       (response) => afterAction(item.id, { ...((response && response.body) || {}), status: 'testing' }));
 
+  const handleReopen = (item, reason) =>
+    run(item, () => cognitionApi.reopen(item.id, reason),
+      (response) => afterAction(item.id, { ...((response && response.body) || {}), status: 'testing' }));
+
   return (
     <div className="sidebar-section">
       <button className="sidebar-section-header" onClick={toggle} aria-expanded={open}>
@@ -94,6 +98,7 @@ export default function ReviewSection() {
                   onConfirm={handleConfirm}
                   onReject={handleReject}
                   onTest={handleTest}
+                  onReopen={handleReopen}
                 />
               ))}
             </>

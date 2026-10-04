@@ -106,6 +106,14 @@ export function buildCognitionRejectRequest(id, reason) {
 }
 
 /**
+ * The human reopen — the only way out of the rejected quarantine. `rejected`
+ * is terminal for every automatic path; the reason is required.
+ */
+export function buildCognitionReopenRequest(id, reason) {
+  return { method: 'post', path: `cognition/hypotheses/${id}/reopen`, body: { reason } };
+}
+
+/**
  * `confirm` is the only path to `confirmed`. `supersedes` names the older,
  * contradicting statements this confirmation replaces (the server marks them
  * rejected as `consolidatie`); `rationale` is the human-readable "why now".

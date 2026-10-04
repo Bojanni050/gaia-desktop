@@ -17,6 +17,7 @@ import {
   buildCognitionListRequest,
   buildCognitionTestRequest,
   buildCognitionRejectRequest,
+  buildCognitionReopenRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
 } from '../state/contract';
@@ -198,5 +199,6 @@ export const cognitionApi = {
   list: () => serverApi.request(buildCognitionListRequest()).then(parseCognitionList),
   test: (id) => serverApi.request(buildCognitionTestRequest(id)),
   reject: (id, reason) => serverApi.request(buildCognitionRejectRequest(id, reason)),
+  reopen: (id, reason) => serverApi.request(buildCognitionReopenRequest(id, reason)),
   confirm: (id, options) => serverApi.request(buildCognitionConfirmRequest(id, options)),
 };

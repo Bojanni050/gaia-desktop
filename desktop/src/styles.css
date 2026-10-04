@@ -223,6 +223,21 @@ body {
 .cognition-implication-warning { font-family: var(--sans); font-size: 0.72rem; color: #C98B7A; }
 .cognition-nuance-toggle { font-family: var(--sans); font-size: 0.72rem; padding: 3px 6px; }
 
+/* rejected = hard quarantine: the only action is an explicit, reasoned reopen */
+.cognition-reopen { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-top: 1px dashed var(--surface-3); }
+.cognition-reopen-hint { font-family: var(--sans); font-size: 0.74rem; color: var(--text-muted); }
+.cognition-reopen textarea {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--surface-3); border-radius: 6px;
+  padding: 6px 8px; resize: vertical;
+}
+.cognition-reopen-action {
+  opacity: 1; width: auto; gap: 5px; align-items: center;
+  font-family: var(--sans); font-size: 0.74rem; padding: 3px 8px;
+}
+.cognition-item:hover .cognition-reopen-action { opacity: 1; }
+.cognition-reopen-action:hover { color: var(--accent); }
+
 .sidebar-foot { padding: 18px 8px 2px; display: flex; flex-direction: column; gap: 2px; }
 .foot-line { font-family: var(--serif); font-size: 0.78rem; color: var(--text-faint); font-style: italic; }
 

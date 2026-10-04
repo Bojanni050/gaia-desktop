@@ -22,6 +22,7 @@ function renderCard(props) {
   const onConfirm = vi.fn();
   const onReject = vi.fn();
   const onTest = vi.fn();
+  const onReopen = vi.fn();
   render(
     <EpistemicReviewCard
       item={props.item}
@@ -29,9 +30,10 @@ function renderCard(props) {
       onConfirm={onConfirm}
       onReject={onReject}
       onTest={onTest}
+      onReopen={onReopen}
     />,
   );
-  return { onConfirm, onReject, onTest };
+  return { onConfirm, onReject, onTest, onReopen };
 }
 
 describe('EpistemicReviewCard friction', () => {
@@ -93,6 +95,26 @@ describe('EpistemicReviewCard friction', () => {
     renderCard({ item: item(), busy: true });
     expect(screen.getByLabelText(L.cognitionConfirm).disabled).toBe(true);
     expect(screen.getByLabelText(L.cognitionReject).disabled).toBe(true);
+  });
+
+  it('a rejected statement offers only a reasoned Reconsider — never confirm/test/reject', () => {
+    const h = item({ status: 'rejected' });
+    const { onReopen, onConfirm } = renderCard({ item: h });
+
+    expect(screen.queryByLabelText(L.cognitionConfirm)).toBeNull();
+    expect(screen.queryByLabelText(L.cognitionReject)).toBeNull();
+    expect(screen.queryByLabelText(L.cognitionTesting)).toBeNull();
+
+    const reopen = screen.getByLabelText(L.cognitionReopen);
+    expect(reopen.disabled).toBe(true); // a reason is mandatory
+    fireEvent.change(screen.getByPlaceholderText(L.cognitionReopenPlaceholder), {
+      target: { value: 'the disproof was retracted' },
+    });
+    expect(reopen.disabled).toBe(false);
+
+    fireEvent.click(reopen);
+    expect(onReopen).toHaveBeenCalledWith(h, 'the disproof was retracted');
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('shows the quarantined counter-hypothesis only on request, with its not-a-fact note', () => {
