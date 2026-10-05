@@ -551,6 +551,9 @@ body {
 .field-row { display: flex; align-items: center; gap: 10px; }
 .token-row { display: flex; gap: 8px; }
 .token-row input { flex: 1; }
+.volume-row { display: flex; align-items: center; gap: 10px; }
+.volume-row input[type='range'] { flex: 1; accent-color: var(--accent); }
+.volume-value { flex: none; min-width: 2.8em; text-align: right; font-size: 0.78rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .token-toggle {
   flex: none; font-family: var(--sans); font-size: 0.76rem; color: var(--text-faint);
   background: var(--surface-3); border: 1px solid var(--border); border-radius: 9px;

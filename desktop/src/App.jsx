@@ -7,8 +7,9 @@ import LibraryPanel from './library/LibraryPanel';
 import AboutPanel from './settings/AboutPanel';
 import UpdatePanel from './settings/UpdatePanel';
 import EpisodeTimeline from './logos/EpisodeTimeline';
-import { serverApi, presenceApi } from './server/api';import { useConversation } from './state/useConversation';
+import { serverApi, presenceApi, settingsApi } from './server/api';import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
+import { setSpeechGain } from './lib/speech';
 import { L } from './lib/lexicon';
 
 /**
@@ -29,6 +30,10 @@ export default function App() {
 
   useEffect(() => {
     presenceApi.get().catch(() => {});
+    // Gaia's voice plays inside the WebView2 process, so Windows shows no
+    // per-app slider for it — load the saved gain here so her volume is
+    // right from the first reply, before Settings is ever opened.
+    settingsApi.get().then((s) => setSpeechGain(s?.audio || {})).catch(() => {});
     // Actively probe the link on launch so the startup offline pop
     // reflects a fresh check, not a stale cached status. The result
     // flows back through useServerStatus via the server://status event.

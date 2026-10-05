@@ -38,11 +38,28 @@ impl Default for NotificationSettings {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AudioSettings {
     /// Preferred input device id, if the user chose one.
     pub preferred_input: Option<String>,
+    /// Playback volume for Gaia's voice, 0.0 (silent) to 1.0 (full). Applied
+    /// locally at playback — WebView2 gives Windows no per-app slider of its
+    /// own, so this is the only volume control Gaia's voice actually has.
+    pub volume: f32,
+    /// Whether Gaia's voice is muted on this device (playback silenced
+    /// without discarding the transcript).
+    pub muted: bool,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            preferred_input: None,
+            volume: 1.0,
+            muted: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -128,4 +145,28 @@ pub async fn settings_save(
             .map_err(crate::error::DesktopError::Communication)?;
     }
     Ok(new_settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_defaults_to_full_and_unmuted() {
+        let audio = AudioSettings::default();
+        assert_eq!(audio.volume, 1.0);
+        assert!(!audio.muted);
+    }
+
+    #[test]
+    fn legacy_settings_without_volume_still_parse_at_full_volume() {
+        // A settings.json written before the volume field existed must not
+        // come back silent: missing fields fill from Default (volume 1.0).
+        let settings: Settings =
+            serde_json::from_str(r#"{ "audio": { "preferredInput": "mic-1" } }"#)
+                .expect("legacy settings should still parse");
+        assert_eq!(settings.audio.preferred_input.as_deref(), Some("mic-1"));
+        assert_eq!(settings.audio.volume, 1.0);
+        assert!(!settings.audio.muted);
+    }
 }

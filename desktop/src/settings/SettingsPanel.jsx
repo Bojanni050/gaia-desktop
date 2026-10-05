@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { settingsApi, serverApi, audioApi, captureApi, mcpApi } from '../server/api';
+import { setSpeechGain } from '../lib/speech';
 import { L } from '../lib/lexicon';
 
 export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
@@ -69,6 +70,9 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
     try {
       const saved = await settingsApi.save(settings);
       setSettings(saved);
+      // Gaia's voice has no Windows volume slider of its own (WebView2 is
+      // the audio host), so the saved gain is applied to playback here.
+      setSpeechGain(saved.audio || {});
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 1800);
     } catch (_) {
@@ -144,6 +148,30 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
           <label className="field field-toggle">
             <input type="checkbox" checked={quiet} onChange={(e) => onQuietChange(e.target.checked)} />
             <span>{L.settingsQuiet}</span>
+          </label>
+          <label className="field">
+            <span>{L.settingsVolume}</span>
+            <div className="volume-row">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={settings.audio?.volume ?? 1}
+                onChange={(e) => patch({ audio: { ...settings.audio, volume: Number(e.target.value) } })}
+              />
+              <span className="volume-value">
+                {Math.round((settings.audio?.volume ?? 1) * 100)}%
+              </span>
+            </div>
+          </label>
+          <label className="field field-toggle">
+            <input
+              type="checkbox"
+              checked={settings.audio?.muted ?? false}
+              onChange={(e) => patch({ audio: { ...settings.audio, muted: e.target.checked } })}
+            />
+            <span>{L.settingsMuted}</span>
           </label>
         </section>
 
