@@ -15,7 +15,7 @@ import { useCallback, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
 import { speechApi, getSpeechInfo } from '../server/api';
-import { playSpeech } from '../lib/speech';
+import { playSpeech, stopSpeech } from '../lib/speech';
 import { shouldSpeak } from '../lib/language';
 
 let counter = 1;
@@ -88,6 +88,11 @@ export function useConversation(server) {
    */
   const runTurn = useCallback(
     async (threadId, history) => {
+      // A new turn supersedes whatever Gaia was still saying: cut the
+      // previous reply off the moment a new one is asked for, rather than
+      // letting her talk over the answer she is about to give. Playback is
+      // presentation-only, so this never touches the turn itself.
+      stopSpeech();
       setBusy(true);
       const assistantId = localId();
       // Tracked outside the state updaters below (which must stay pure —

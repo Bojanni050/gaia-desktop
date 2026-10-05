@@ -10,10 +10,10 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 // Playback itself is a thin wrapper over the webview's Audio element —
 // asserted through, never with: these tests verify *whether* Gaia speaks
 // and with which bytes/mime, not that jsdom can play sound.
-vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}) }));
+vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}), stopSpeech: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { playSpeech } from '../lib/speech';
+import { playSpeech, stopSpeech } from '../lib/speech';
 import { useConversation } from './useConversation';
 
 const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -113,6 +113,7 @@ describe("Gaia's voice gate", () => {
   beforeEach(() => {
     invoke.mockClear();
     playSpeech.mockClear();
+    stopSpeech.mockClear();
     invoke.mockResolvedValue({ audio: [1, 2, 3], mime_type: 'audio/mpeg' });
   });
 
@@ -164,5 +165,21 @@ describe("Gaia's voice gate", () => {
     });
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: englishReply }));
+  });
+
+  it('cuts the previous reply off the moment a new turn begins', async () => {
+    const server = serverWithReply(englishReply, undefined);
+    const { result } = renderHook(() => useConversation(server));
+
+    await act(async () => {
+      await result.current.send('say this once');
+    });
+    stopSpeech.mockClear(); // the first turn's own stop is not what this asserts
+
+    await act(async () => {
+      await result.current.send('now say this instead');
+    });
+
+    expect(stopSpeech).toHaveBeenCalledTimes(1);
   });
 });
