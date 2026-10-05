@@ -10,15 +10,16 @@
  * engine would own, and V1 doesn't need one.
  *
  * Only one reply is ever spoken at a time: a new reply (or a new turn)
- * supersedes the last, so the previous playback is stopped rather than
- * left to overlap — Gaia doesn't talk over herself.
+ * supersedes the last, so the previous playback is faded out and stopped
+ * rather than left to overlap — Gaia doesn't talk over herself, and a cut
+ * reply eases out instead of clicking off mid-syllable.
  */
 
 /**
- * @param {Uint8Array} bytes
- * @param {string} [mimeType]
- * @returns {Promise<void>} resolves once playback finishes (or rejects if it fails to start)
+ * How long an interrupted reply takes to ease out, in ms. Short enough to
+ * read as instant, long enough not to click.
  */
+export const SPEECH_FADE_MS = 150;
 
 // Playback gain, applied locally. Windows' per-app volume mixer lists the
 // WebView2 host process, not "Gaia", so the OS offers no slider for her
@@ -47,21 +48,56 @@ export function speechSilenced() {
 let current = null;
 
 /**
- * Stops whatever is currently being spoken, if anything. Resolves the
- * pending playSpeech: cutting a clip off on purpose (a new reply, or a new
- * turn) is not a playback failure. No-op when nothing is playing.
+ * Stops whatever is currently being spoken, easing it out first. Resolves
+ * the pending playSpeech: cutting a clip off on purpose (a new reply, or a
+ * new turn) is not a playback failure. No-op when nothing is playing.
  */
 export function stopSpeech() {
   if (!current) return;
-  const { audio, url, resolve } = current;
+  const clip = current;
   current = null;
-  try {
-    audio.pause();
-  } catch (_) {
-    /* already gone — nothing to stop */
+  fadeOut(clip);
+}
+
+/** Ramps a clip's volume to zero, then pauses it and releases its URL. */
+function fadeOut(clip) {
+  const from = clip.audio.volume;
+  const began = Date.now();
+  clip.timer = setInterval(() => {
+    const progress = Math.min(1, (Date.now() - began) / SPEECH_FADE_MS);
+    try {
+      clip.audio.volume = from * (1 - progress);
+    } catch (_) {
+      /* element already gone — nothing left to silence */
+    }
+    if (progress >= 1) finish(clip);
+  }, 16);
+}
+
+/** Ends a clip for good: stop any fade, pause, release the blob, resolve. */
+function finish(clip) {
+  if (clip.timer) {
+    clearInterval(clip.timer);
+    clip.timer = null;
   }
-  URL.revokeObjectURL(url);
-  resolve();
+  try {
+    clip.audio.pause();
+  } catch (_) {
+    /* already gone */
+  }
+  URL.revokeObjectURL(clip.url);
+  clip.resolve();
+}
+
+/** A normal end (or a failure) — same cleanup, but the promise settles as before. */
+function settle(clip, fn, value) {
+  if (current === clip) current = null;
+  if (clip.timer) {
+    clearInterval(clip.timer);
+    clip.timer = null;
+  }
+  URL.revokeObjectURL(clip.url);
+  fn(value);
 }
 
 /**
@@ -79,14 +115,10 @@ export function playSpeech(bytes, mimeType = 'audio/wav') {
   audio.volume = speechSilenced() ? 0 : gain.volume;
 
   return new Promise((resolve, reject) => {
-    const settle = (fn, value) => {
-      if (current?.audio === audio) current = null;
-      URL.revokeObjectURL(url);
-      fn(value);
-    };
-    audio.addEventListener('ended', () => settle(resolve));
-    audio.addEventListener('error', () => settle(reject, new Error('audio playback failed')));
-    current = { audio, url, resolve };
-    audio.play().catch((error) => settle(reject, error));
+    const clip = { audio, url, resolve, timer: null };
+    current = clip;
+    audio.addEventListener('ended', () => settle(clip, resolve));
+    audio.addEventListener('error', () => settle(clip, reject, new Error('audio playback failed')));
+    audio.play().catch((error) => settle(clip, reject, error));
   });
 }

@@ -1,13 +1,20 @@
 /**
  * The playback wrapper's one invariant that matters: only one reply is ever
- * spoken, and a new reply (or a new turn) stops whatever came before it.
+ * spoken, and a new reply (or a new turn) eases the previous one out and
+ * stops it.
  *
  * jsdom has no audio engine and no object-URL support, so both are faked
- * here. The assertions are about which element got played, paused and
+ * here. The assertions are about which element got played, faded, paused and
  * released, never about sound.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { playSpeech, stopSpeech, setSpeechGain, speechSilenced } from './speech';
+import {
+  playSpeech,
+  stopSpeech,
+  setSpeechGain,
+  speechSilenced,
+  SPEECH_FADE_MS,
+} from './speech';
 
 class FakeAudio {
   constructor(src) {
@@ -32,6 +39,9 @@ class FakeAudio {
 
 let made;
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const FADE_DONE = SPEECH_FADE_MS + 60;
+
 beforeEach(() => {
   made = [];
   global.Audio = class extends FakeAudio {
@@ -53,18 +63,25 @@ afterEach(() => {
 const clip = () => new Uint8Array([1, 2, 3]);
 
 describe('playSpeech barge-in', () => {
-  it('stops and releases the previous clip when a new one starts', async () => {
+  it('fades the previous clip out, then pauses and releases it', async () => {
     const first = playSpeech(clip(), 'audio/mpeg');
     const firstAudio = made[0];
     const second = playSpeech(clip(), 'audio/mpeg');
     const secondAudio = made[1];
 
-    expect(firstAudio.paused).toBe(true); // the old reply was cut off
-    expect(secondAudio.paused).toBe(false); // the new one is the one speaking
-    expect(URL.revokeObjectURL).toHaveBeenCalled();
+    // Not cut instantly: the old reply eases down before it stops.
+    await wait(70);
+    expect(firstAudio.paused).toBe(false);
+    expect(firstAudio.volume).toBeLessThan(1);
 
-    // Being stopped on purpose resolves the clip — it is not a failure.
+    await wait(FADE_DONE);
+    expect(firstAudio.paused).toBe(true);
+    expect(URL.revokeObjectURL).toHaveBeenCalled();
+    // Being faded out on purpose resolves the clip — it is not a failure.
     await expect(first).resolves.toBeUndefined();
+
+    // The new reply is the one still speaking.
+    expect(secondAudio.paused).toBe(false);
     secondAudio.emit('ended');
     await expect(second).resolves.toBeUndefined();
   });
@@ -86,6 +103,7 @@ describe('playSpeech barge-in', () => {
     const pending = playSpeech(clip());
     stopSpeech();
     await expect(pending).resolves.toBeUndefined();
+    expect(made[0].paused).toBe(true);
   });
 
   it('has nothing left to stop once playback has ended', async () => {
