@@ -99,153 +99,159 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
         <h2>{L.settingsTitle}</h2>
 
-        <section>
-          <h3>{L.settingsCloud}</h3>
-          <label className="field">
-            <span>{L.settingsServerUrl}</span>
-            <input
-              type="url"
-              value={settings.server?.baseUrl || ''}
-              placeholder="https://gaia.example/api"
-              onChange={(e) => patch({ server: { ...settings.server, baseUrl: e.target.value || null } })}
-            />
-          </label>
-          <label className="field">
-            <span>{L.settingsAuthToken}</span>
-            <div className="token-row">
-              <input
-                type={showToken ? 'text' : 'password'}
-                value={settings.server?.authToken || ''}
-                onChange={(e) => patch({ server: { ...settings.server, authToken: e.target.value || null } })}
-              />
-              <button
-                type="button"
-                className="token-toggle"
-                onClick={() => setShowToken((prev) => !prev)}
-              >
-                {showToken ? '✓' : '○'}
-              </button>
-            </div>
-          </label>
-          <div className="field-row">
-            <button onClick={testConnection} disabled={testing}>
-              {testing ? L.settingsTesting : L.settingsTest}
-            </button>
-            {testResult && <span className={`test-result test-${testResult}`}>{String(testResult)}</span>}
-          </div>
-        </section>
+        <div className="settings-columns">
+          <div className="settings-col">
+            <section>
+              <h3>{L.settingsCloud}</h3>
+              <label className="field">
+                <span>{L.settingsServerUrl}</span>
+                <input
+                  type="url"
+                  value={settings.server?.baseUrl || ''}
+                  placeholder="https://gaia.example/api"
+                  onChange={(e) => patch({ server: { ...settings.server, baseUrl: e.target.value || null } })}
+                />
+              </label>
+              <label className="field">
+                <span>{L.settingsAuthToken}</span>
+                <div className="token-row">
+                  <input
+                    type={showToken ? 'text' : 'password'}
+                    value={settings.server?.authToken || ''}
+                    onChange={(e) => patch({ server: { ...settings.server, authToken: e.target.value || null } })}
+                  />
+                  <button
+                    type="button"
+                    className="token-toggle"
+                    onClick={() => setShowToken((prev) => !prev)}
+                  >
+                    {showToken ? '✓' : '○'}
+                  </button>
+                </div>
+              </label>
+              <div className="field-row">
+                <button onClick={testConnection} disabled={testing}>
+                  {testing ? L.settingsTesting : L.settingsTest}
+                </button>
+                {testResult && <span className={`test-result test-${testResult}`}>{String(testResult)}</span>}
+              </div>
+            </section>
 
-        <section>
-          <h3>{L.settingsBehaviour}</h3>
-          <label className="field field-toggle">
-            <input
-              type="checkbox"
-              checked={settings.notifications?.enabled ?? true}
-              onChange={(e) => patch({ notifications: { enabled: e.target.checked } })}
-            />
-            <span>{L.settingsNotifications}</span>
-          </label>
-          <label className="field field-toggle">
-            <input type="checkbox" checked={quiet} onChange={(e) => onQuietChange(e.target.checked)} />
-            <span>{L.settingsQuiet}</span>
-          </label>
-          <label className="field">
-            <span>{L.settingsVolume}</span>
-            <div className="volume-row">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={settings.audio?.volume ?? 1}
-                onChange={(e) => patch({ audio: { ...settings.audio, volume: Number(e.target.value) } })}
-              />
-              <span className="volume-value">
-                {Math.round((settings.audio?.volume ?? 1) * 100)}%
-              </span>
-            </div>
-          </label>
-          <label className="field field-toggle">
-            <input
-              type="checkbox"
-              checked={settings.audio?.muted ?? false}
-              onChange={(e) => patch({ audio: { ...settings.audio, muted: e.target.checked } })}
-            />
-            <span>{L.settingsMuted}</span>
-          </label>
-        </section>
-
-        <section>
-          <h3>{L.settingsCapabilities}</h3>
-          <p className="capability-line">
-            {L.settingsMicrophone}: {audio ? audio.permission : '—'}
-          </p>
-          <p className="capability-line">
-            {L.settingsCaptureSources}:{' '}
-            {captureSources.length === 0
-              ? L.settingsCaptureNone
-              : captureSources.map((s) => s.name).join(', ')}
-          </p>
-        </section>
-
-        <section>
-          <h3>{L.settingsMcp}</h3>
-          <p className="capability-line">{L.settingsMcpHint}</p>
-          {(settings.mcp?.servers || []).length === 0 && (
-            <p className="capability-line">{L.settingsMcpEmpty}</p>
-          )}
-          {(settings.mcp?.servers || []).map((server, index) => (
-            <div className="mcp-server" key={server.id || index}>
+            <section>
+              <h3>{L.settingsBehaviour}</h3>
               <label className="field field-toggle">
                 <input
                   type="checkbox"
-                  checked={server.enabled ?? true}
-                  onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
+                  checked={settings.notifications?.enabled ?? true}
+                  onChange={(e) => patch({ notifications: { enabled: e.target.checked } })}
                 />
-                <span>{server.command ? `${server.id}` : L.settingsMcpCommand}</span>
+                <span>{L.settingsNotifications}</span>
+              </label>
+              <label className="field field-toggle">
+                <input type="checkbox" checked={quiet} onChange={(e) => onQuietChange(e.target.checked)} />
+                <span>{L.settingsQuiet}</span>
               </label>
               <label className="field">
-                <span>{L.settingsMcpCommand}</span>
-                <input
-                  type="text"
-                  value={server.command || ''}
-                  placeholder="npx"
-                  onChange={(e) => patchMcpServer(index, { command: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{L.settingsMcpArgs}</span>
-                <input
-                  type="text"
-                  value={(server.args || []).join(' ')}
-                  placeholder="-y @modelcontextprotocol/server-filesystem ~/Documents"
-                  onChange={(e) =>
-                    patchMcpServer(index, {
-                      args: e.target.value.split(/\s+/).filter(Boolean),
-                    })
-                  }
-                />
-              </label>
-              <div className="field-row">
-                <button onClick={() => showTools(server.id)} disabled={!server.id || toolsState.loading === server.id}>
-                  {toolsState.loading === server.id ? L.settingsMcpToolsLoading : L.settingsMcpTools}
-                </button>
-                {toolsState.result?.serverId === server.id && (
-                  <span className="capability-line">
-                    {toolsState.result.tools.map((t) => t.name).join(', ') || '—'}
+                <span>{L.settingsVolume}</span>
+                <div className="volume-row">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={settings.audio?.volume ?? 1}
+                    onChange={(e) => patch({ audio: { ...settings.audio, volume: Number(e.target.value) } })}
+                  />
+                  <span className="volume-value">
+                    {Math.round((settings.audio?.volume ?? 1) * 100)}%
                   </span>
-                )}
-                {toolsState.error === server.id && (
-                  <span className="capability-line">{L.settingsMcpToolsFailed}</span>
-                )}
-                <button onClick={() => removeMcpServer(index)}>{L.settingsMcpRemove}</button>
-              </div>
-            </div>
-          ))}
-          <div className="field-row">
-            <button onClick={addMcpServer}>{L.settingsMcpAdd}</button>
+                </div>
+              </label>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.audio?.muted ?? false}
+                  onChange={(e) => patch({ audio: { ...settings.audio, muted: e.target.checked } })}
+                />
+                <span>{L.settingsMuted}</span>
+              </label>
+            </section>
+
+            <section>
+              <h3>{L.settingsCapabilities}</h3>
+              <p className="capability-line">
+                {L.settingsMicrophone}: {audio ? audio.permission : '—'}
+              </p>
+              <p className="capability-line">
+                {L.settingsCaptureSources}:{' '}
+                {captureSources.length === 0
+                  ? L.settingsCaptureNone
+                  : captureSources.map((s) => s.name).join(', ')}
+              </p>
+            </section>
           </div>
-        </section>
+
+          <div className="settings-col">
+            <section>
+              <h3>{L.settingsMcp}</h3>
+              <p className="capability-line">{L.settingsMcpHint}</p>
+              {(settings.mcp?.servers || []).length === 0 && (
+                <p className="capability-line">{L.settingsMcpEmpty}</p>
+              )}
+              {(settings.mcp?.servers || []).map((server, index) => (
+                <div className="mcp-server" key={server.id || index}>
+                  <label className="field field-toggle">
+                    <input
+                      type="checkbox"
+                      checked={server.enabled ?? true}
+                      onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
+                    />
+                    <span>{server.command ? `${server.id}` : L.settingsMcpCommand}</span>
+                  </label>
+                  <label className="field">
+                    <span>{L.settingsMcpCommand}</span>
+                    <input
+                      type="text"
+                      value={server.command || ''}
+                      placeholder="npx"
+                      onChange={(e) => patchMcpServer(index, { command: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{L.settingsMcpArgs}</span>
+                    <input
+                      type="text"
+                      value={(server.args || []).join(' ')}
+                      placeholder="-y @modelcontextprotocol/server-filesystem ~/Documents"
+                      onChange={(e) =>
+                        patchMcpServer(index, {
+                          args: e.target.value.split(/\s+/).filter(Boolean),
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="field-row">
+                    <button onClick={() => showTools(server.id)} disabled={!server.id || toolsState.loading === server.id}>
+                      {toolsState.loading === server.id ? L.settingsMcpToolsLoading : L.settingsMcpTools}
+                    </button>
+                    {toolsState.result?.serverId === server.id && (
+                      <span className="capability-line">
+                        {toolsState.result.tools.map((t) => t.name).join(', ') || '—'}
+                      </span>
+                    )}
+                    {toolsState.error === server.id && (
+                      <span className="capability-line">{L.settingsMcpToolsFailed}</span>
+                    )}
+                    <button onClick={() => removeMcpServer(index)}>{L.settingsMcpRemove}</button>
+                  </div>
+                </div>
+              ))}
+              <div className="field-row">
+                <button onClick={addMcpServer}>{L.settingsMcpAdd}</button>
+              </div>
+            </section>
+          </div>
+        </div>
 
         <div className="settings-actions">
           <button
