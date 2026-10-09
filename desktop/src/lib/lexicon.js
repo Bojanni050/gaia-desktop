@@ -114,6 +114,7 @@ export const LANGUAGES = {
     cognitionRailOpen: 'Begrip openen',
     cognitionRailNew: 'Nieuwe dingen in Begrip',
     cognitionClose: 'Sluiten',
+    cognitionResize: 'Formaat aanpassen',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Tijdlijn',
@@ -287,6 +288,7 @@ export const LANGUAGES = {
     cognitionRailOpen: 'Open understanding',
     cognitionRailNew: 'New in understanding',
     cognitionClose: 'Close',
+    cognitionResize: 'Resize',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Timeline',

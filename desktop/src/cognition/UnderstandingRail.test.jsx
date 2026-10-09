@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
-import UnderstandingRail from './UnderstandingRail';
+import UnderstandingRail, { clampWidth, MIN_WIDTH } from './UnderstandingRail';
 
 const list = (ids) => ({
   body: {
@@ -64,5 +64,20 @@ describe('UnderstandingRail', () => {
     const { container } = render(<UnderstandingRail pollMs={0} />);
     fireEvent.click(railOf(container));
     await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
+  });
+});
+
+describe('drawer width', () => {
+  it('never grows past a third of the viewport', () => {
+    expect(clampWidth(9999, 1000)).toBe(330);
+    expect(clampWidth(400, 2000)).toBe(400);
+  });
+
+  it('never shrinks below the minimum', () => {
+    expect(clampWidth(10, 1000)).toBe(MIN_WIDTH);
+  });
+
+  it('fills the third of a narrow window rather than overflow it', () => {
+    expect(clampWidth(9999, 500)).toBe(165);
   });
 });
