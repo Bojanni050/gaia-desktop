@@ -21,7 +21,6 @@ function item(overrides = {}) {
 function renderCard(props) {
   const onConfirm = vi.fn();
   const onReject = vi.fn();
-  const onTest = vi.fn();
   const onReopen = vi.fn();
   render(
     <EpistemicReviewCard
@@ -29,11 +28,10 @@ function renderCard(props) {
       busy={props.busy || false}
       onConfirm={onConfirm}
       onReject={onReject}
-      onTest={onTest}
       onReopen={onReopen}
     />,
   );
-  return { onConfirm, onReject, onTest, onReopen };
+  return { onConfirm, onReject, onReopen };
 }
 
 describe('EpistemicReviewCard — one question, two answers', () => {
@@ -53,18 +51,30 @@ describe('EpistemicReviewCard — one question, two answers', () => {
     expect(onReject).toHaveBeenCalledWith(h);
   });
 
-  it('keeps the advanced material behind Meer', () => {
-    const h = item({ status: 'proposed', counter_hypothesis: 'the opposite reading', evidence_for: ['e1'] });
+  it('hides the objection and the evidence note behind Meer', () => {
+    const h = item({
+      status: 'proposed',
+      counter_hypothesis: 'the opposite reading',
+      evidence_for: ['e1'],
+      evidence_against: ['e2'],
+    });
     renderCard({ item: h });
 
     // Nothing overwhelming up front.
     expect(screen.queryByText('the opposite reading')).toBeNull();
-    expect(screen.queryByLabelText(L.cognitionTesting)).toBeNull();
+    expect(screen.queryByText(L.cognitionEvidenceForNote)).toBeNull();
 
     fireEvent.click(screen.getByText(L.cognitionMore));
     expect(screen.getByText('the opposite reading')).toBeTruthy();
     expect(screen.getByText(L.cognitionCounterHint)).toBeTruthy();
-    expect(screen.getByLabelText(L.cognitionTesting)).toBeTruthy();
+    expect(screen.getByText(L.cognitionEvidenceForNote)).toBeTruthy();
+    expect(screen.getByText(L.cognitionEvidenceAgainstNote)).toBeTruthy();
+  });
+
+  it('offers no Meer when there is nothing to reveal', () => {
+    renderCard({ item: item({ counter_hypothesis: null }) });
+    expect(screen.queryByText(L.cognitionMore)).toBeNull();
+    expect(screen.queryByText(L.cognitionAsk)).toBeTruthy(); // still just the question
   });
 });
 
@@ -103,22 +113,6 @@ describe('EpistemicReviewCard — macro friction as a second step', () => {
 });
 
 describe('EpistemicReviewCard — the rest', () => {
-  it('sends the human re-wording with the confirmation', () => {
-    const h = item({ scope: 'micro' });
-    const { onConfirm } = renderCard({ item: h });
-
-    fireEvent.click(screen.getByText(L.cognitionMore));
-    fireEvent.click(screen.getByLabelText(L.cognitionNuance));
-    fireEvent.change(screen.getByPlaceholderText(L.cognitionNuancePlaceholder), {
-      target: { value: 'prefers bullets only in technical context' },
-    });
-    fireEvent.click(screen.getByLabelText(L.cognitionYes));
-    expect(onConfirm).toHaveBeenCalledWith(h, {
-      rationale: undefined,
-      statement: 'prefers bullets only in technical context',
-    });
-  });
-
   it('locks Ja and Nee while busy', () => {
     renderCard({ item: item(), busy: true });
     expect(screen.getByLabelText(L.cognitionYes).disabled).toBe(true);
@@ -131,7 +125,6 @@ describe('EpistemicReviewCard — the rest', () => {
 
     expect(screen.queryByLabelText(L.cognitionYes)).toBeNull();
     expect(screen.queryByLabelText(L.cognitionNo)).toBeNull();
-    expect(screen.queryByLabelText(L.cognitionTesting)).toBeNull();
 
     const reopen = screen.getByLabelText(L.cognitionReopen);
     expect(reopen.disabled).toBe(true); // a reason is mandatory

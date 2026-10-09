@@ -164,10 +164,6 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     run(item, () => cognitionApi.reject(item.id, L.cognitionRejected),
       () => afterAction(item.id, { status: 'rejected' }));
 
-  const handleTest = (item) =>
-    run(item, () => cognitionApi.test(item.id),
-      (response) => afterAction(item.id, { ...((response && response.body) || {}), status: 'testing' }));
-
   const handleReopen = (item, reason) =>
     run(item, () => cognitionApi.reopen(item.id, reason),
       (response) => afterAction(item.id, { ...((response && response.body) || {}), status: 'testing' }));
@@ -259,7 +255,6 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
                     busy={busyId === item.id}
                     onConfirm={handleConfirm}
                     onReject={handleReject}
-                    onTest={handleTest}
                     onReopen={handleReopen}
                   />
                 ))}

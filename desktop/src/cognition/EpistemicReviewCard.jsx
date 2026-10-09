@@ -1,11 +1,13 @@
 /**
  * EpistemicReviewCard — one derived statement awaiting the human's judgement.
  *
- * Kept deliberately simple for someone meeting it for the first time: one plain
- * question, "Klopt dit?", and two answers, Ja or Nee. Everything that made this
- * card feel like a control panel — status, scope, evidence, the quarantined
- * counter-hypothesis, re-wording, "examine this" — lives behind a single "Meer"
- * disclosure, opened only when someone actually wants it.
+ * Deliberately bare: the statement, one plain question ("Klopt dit?"), two
+ * answers (Ja or Nee). Everything that made this feel like a control panel —
+ * status, scope, raw evidence ids, "examine this", re-wording — is gone. The
+ * only thing that still hides behind "Meer" is what a person might actually
+ * want to weigh: the objection the card held back, and a plain note of whether
+ * anything supports or contradicts the claim. "Meer" only appears when there is
+ * such a thing to reveal.
  *
  * A macro (high-impact) statement still carries its friction, but as a SECOND
  * step: "Ja" does not confirm it directly. It opens the objection the card held
@@ -18,22 +20,12 @@
  * the server.
  */
 import React, { useState } from 'react';
-import { Check, Lightbulb, RotateCcw, X } from 'lucide-react';
+import { Check, RotateCcw, X } from 'lucide-react';
 import { L } from '../lib/lexicon';
 
-const STATUS_LABEL = {
-  proposed: () => L.cognitionStatusProposed,
-  testing: () => L.cognitionStatusTesting,
-  corroborated: () => L.cognitionStatusCorroborated,
-  confirmed: () => L.cognitionStatusConfirmed,
-  rejected: () => L.cognitionStatusRejected,
-};
-
-export default function EpistemicReviewCard({ item, busy, onTest, onReject, onConfirm, onReopen }) {
+export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, onReopen }) {
   const [more, setMore] = useState(false);
   const [confirming, setConfirming] = useState(false); // macro: the second step
-  const [nuancing, setNuancing] = useState(false);
-  const [statementDraft, setStatementDraft] = useState(item.statement || '');
   const [reopenReason, setReopenReason] = useState('');
 
   const isRejected = item.status === 'rejected';
@@ -42,35 +34,28 @@ export default function EpistemicReviewCard({ item, busy, onTest, onReject, onCo
   const evidenceFor = Array.isArray(item.evidence_for) ? item.evidence_for : [];
   const evidenceAgainst = Array.isArray(item.evidence_against) ? item.evidence_against : [];
   const hasEvidence = evidenceFor.length > 0 || evidenceAgainst.length > 0;
+  const canReveal = hasCounter || hasEvidence;
 
   const canConfirmMacro = !busy && hasCounter;
   const canReopen = !busy && reopenReason.trim().length > 0;
-
-  // The human's own re-wording, when they used "Nuanceren" and changed it.
-  const nuancedStatement = () => {
-    const normalized = statementDraft.trim();
-    return nuancing && normalized && normalized !== item.statement ? normalized : undefined;
-  };
 
   const handleYes = () => {
     if (isMacro) {
       setConfirming(true); // face the objection first — see the doc comment
       return;
     }
-    onConfirm(item, { rationale: undefined, statement: nuancedStatement() });
+    onConfirm(item, { rationale: undefined, statement: undefined });
   };
 
   const handleConfirmMacro = () => {
     if (!canConfirmMacro) return;
-    onConfirm(item, { rationale: L.cognitionImplicationEstablish, statement: nuancedStatement() });
+    onConfirm(item, { rationale: L.cognitionImplicationEstablish, statement: undefined });
   };
 
   const handleReopen = () => {
     if (!canReopen) return;
     onReopen(item, reopenReason.trim());
   };
-
-  const statusLabel = (STATUS_LABEL[item.status] || (() => item.status))();
 
   return (
     <div className="cognition-item epistemic-card">
@@ -133,41 +118,20 @@ export default function EpistemicReviewCard({ item, busy, onTest, onReject, onCo
             <button className="cognition-no" onClick={() => onReject(item)} disabled={busy} aria-label={L.cognitionNo}>
               <X size={14} /> {L.cognitionNo}
             </button>
-            <button
-              type="button"
-              className="cognition-more-toggle"
-              onClick={() => setMore((v) => !v)}
-              aria-expanded={more}
-            >
-              {more ? L.cognitionLess : L.cognitionMore}
-            </button>
+            {canReveal && (
+              <button
+                type="button"
+                className="cognition-more-toggle"
+                onClick={() => setMore((v) => !v)}
+                aria-expanded={more}
+              >
+                {more ? L.cognitionLess : L.cognitionMore}
+              </button>
+            )}
           </div>
 
           {more && (
             <div className="cognition-more">
-              <div className="cognition-meta">
-                <span className="cognition-status">{statusLabel}</span>
-                <span className={`cognition-scope cognition-scope-${isMacro ? 'macro' : 'micro'}`}>
-                  {isMacro ? L.cognitionScopeMacro : L.cognitionScopeMicro}
-                </span>
-              </div>
-
-              <div className="cognition-evidence">
-                {!hasEvidence && <span className="cognition-evidence-empty">{L.cognitionNoEvidence}</span>}
-                {evidenceFor.length > 0 && (
-                  <span className="cognition-evidence-group">
-                    <em>{L.cognitionEvidenceFor}</em>
-                    {evidenceFor.map((id) => <code key={id}>{id}</code>)}
-                  </span>
-                )}
-                {evidenceAgainst.length > 0 && (
-                  <span className="cognition-evidence-group">
-                    <em>{L.cognitionEvidenceAgainst}</em>
-                    {evidenceAgainst.map((id) => <code key={id}>{id}</code>)}
-                  </span>
-                )}
-              </div>
-
               {hasCounter && (
                 <div className="cognition-counter-body">
                   <span className="cognition-counter-label">{L.cognitionCounterHypothesis}</span>
@@ -175,34 +139,11 @@ export default function EpistemicReviewCard({ item, busy, onTest, onReject, onCo
                   <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
                 </div>
               )}
-
-              <div className="cognition-choice">
-                {item.status !== 'testing' && (
-                  <button onClick={() => onTest(item)} disabled={busy} aria-label={L.cognitionTesting}>
-                    <Lightbulb size={14} /> {L.cognitionTesting}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setNuancing((v) => !v)}
-                  disabled={busy}
-                  aria-pressed={nuancing}
-                  aria-label={L.cognitionNuance}
-                >
-                  {L.cognitionNuance}
-                </button>
-              </div>
-
-              {nuancing && (
-                <div className="cognition-nuance">
-                  <span className="cognition-nuance-hint">{L.cognitionNuanceHint}</span>
-                  <textarea
-                    value={statementDraft}
-                    onChange={(e) => setStatementDraft(e.target.value)}
-                    placeholder={L.cognitionNuancePlaceholder}
-                    rows={2}
-                  />
-                </div>
+              {evidenceFor.length > 0 && (
+                <p className="cognition-evidence-note">{L.cognitionEvidenceForNote}</p>
+              )}
+              {evidenceAgainst.length > 0 && (
+                <p className="cognition-evidence-note">{L.cognitionEvidenceAgainstNote}</p>
               )}
             </div>
           )}

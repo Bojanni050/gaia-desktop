@@ -122,6 +122,8 @@ export const LANGUAGES = {
     cognitionLess: 'Minder',
     cognitionBack: 'Terug',
     cognitionMacroSure: 'Weet je het zeker? Je stelt dit vast als iets wezenlijks.',
+    cognitionEvidenceForNote: 'Iets ondersteunt dit.',
+    cognitionEvidenceAgainstNote: 'Iets spreekt dit tegen.',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Tijdlijn',
@@ -303,6 +305,8 @@ export const LANGUAGES = {
     cognitionLess: 'Less',
     cognitionBack: 'Back',
     cognitionMacroSure: 'Are you sure? You are settling this as high-impact.',
+    cognitionEvidenceForNote: 'Something supports this.',
+    cognitionEvidenceAgainstNote: 'Something speaks against this.',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Timeline',
