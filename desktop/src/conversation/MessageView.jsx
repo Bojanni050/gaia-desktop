@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Copy, Paperclip, RotateCw, Trash2 } from 'lucide-react';
 import { L } from '../lib/lexicon';
+import { formatTurnTime } from '../lib/timestamp';
 import Markdown from './Markdown';
 
 function AssistantBody({ content, reasoning, streaming }) {
@@ -41,6 +42,7 @@ function AssistantBody({ content, reasoning, streaming }) {
 export default function MessageView({ message, streaming, onRetry, onDelete }) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const time = formatTurnTime(message.createdAt);
 
   const copy = () => {
     navigator.clipboard.writeText(message.content);
@@ -59,6 +61,12 @@ export default function MessageView({ message, streaming, onRetry, onDelete }) {
             <AssistantBody content={message.content} reasoning={message.reasoning} streaming={streaming} />
           )}
         </div>
+
+        {time && (
+          <time className="msg-time" dateTime={message.createdAt}>
+            {time}
+          </time>
+        )}
 
         {isUser && message.attachments?.length > 0 && (
           <div className="msg-attachments">

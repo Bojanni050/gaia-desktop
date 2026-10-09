@@ -97,6 +97,43 @@ describe('plan progress during a streamed turn', () => {
   });
 });
 
+describe('turn timestamps', () => {
+  it('stamps the user turn and the assistant reply with a createdAt', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ content: 'Hallo.' });
+        return 'Hallo.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('hoi');
+    });
+
+    const messages = result.current.active.messages;
+    expect(messages).toHaveLength(2);
+    expect(Number.isNaN(Date.parse(messages[0].createdAt))).toBe(false);
+    expect(Number.isNaN(Date.parse(messages[1].createdAt))).toBe(false);
+  });
+
+  it('stamps a failed reply so the turn still carries a time', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ error: 'gaia could not answer right now' });
+        return '';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('zoek iets wat niet bestaat');
+    });
+
+    const last = result.current.active.messages.at(-1);
+    expect(last.failed).toBe(true);
+    expect(Number.isNaN(Date.parse(last.createdAt))).toBe(false);
+  });
+});
+
 describe("Gaia's voice gate", () => {
   const dutchReply = 'Ja. Het voelt goed om er te zijn, en dat is niet niks.';
   const englishReply = 'Yes. It feels good to be here, and that is not nothing.';

@@ -95,6 +95,11 @@ export function useConversation(server) {
       stopSpeech();
       setBusy(true);
       const assistantId = localId();
+      // Stamped the moment the reply first exists — the turn time is when the
+      // answer was actually said, not whenever the next turn happens to
+      // re-save the transcript. Held in a closure (not state) so the same
+      // value rides every streaming delta.
+      let assistantCreatedAt = null;
       // Tracked outside the state updaters below (which must stay pure —
       // React StrictMode double-invokes them in dev, so mutating a closure
       // variable from inside one would drop or duplicate the first delta).
@@ -111,13 +116,14 @@ export function useConversation(server) {
       const appendToAssistant = (text) => {
         if (!text) return;
         receivedAny = true;
+        if (!assistantCreatedAt) assistantCreatedAt = new Date().toISOString();
         setStreaming(true);
         setThreads((prev) =>
           prev.map((t) => {
             if (t.id !== threadId) return t;
             const exists = t.messages.some((m) => m.id === assistantId);
             if (!exists) {
-              return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: text }] };
+              return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: text, createdAt: assistantCreatedAt }] };
             }
             return {
               ...t,
@@ -202,6 +208,7 @@ export function useConversation(server) {
         })();
       } catch (error) {
         const phrase = phraseTurnError(error);
+        if (!assistantCreatedAt) assistantCreatedAt = new Date().toISOString();
         setThreads((prev) =>
           prev.map((t) => {
             if (t.id !== threadId) return t;
@@ -214,7 +221,7 @@ export function useConversation(server) {
                 ),
               };
             }
-            return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: phrase, failed: true }] };
+            return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: phrase, failed: true, createdAt: assistantCreatedAt }] };
           })
         );
       } finally {
@@ -241,6 +248,7 @@ export function useConversation(server) {
         id: localId(),
         role: 'user',
         content,
+        createdAt: new Date().toISOString(),
         attachments,
         attachmentIds: attachments.map((a) => a.id),
       };

@@ -17,7 +17,15 @@
  */
 function buildTurnBody(messages, conversationId) {
   const body = {
-    messages: messages.map(({ role, content }) => ({ role, content })),
+    // Only role/content cross the seam, plus the one field the server needs
+    // to keep a readable chat log: the turn's own time (`createdAt`). Absent
+    // on messages that predate timestamps, in which case it's simply left
+    // off the envelope rather than sent as null.
+    messages: messages.map(({ role, content, createdAt }) => {
+      const message = { role, content };
+      if (createdAt) message.createdAt = createdAt;
+      return message;
+    }),
   };
   if (conversationId) body.conversationId = conversationId;
   // Attachments belong to whichever user turn just triggered this request —

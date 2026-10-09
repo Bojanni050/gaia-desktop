@@ -36,6 +36,17 @@ describe('buildTurnRequest', () => {
     expect(Object.keys(request.body.messages[0])).toEqual(['role', 'content']);
   });
 
+  it('carries the turn time when a message has one, and nothing else', () => {
+    const request = buildTurnRequest([
+      { id: 'x', role: 'user', content: 'hi', createdAt: '2026-10-03T10:15:00.000Z', failed: false },
+    ]);
+    expect(request.body.messages[0]).toEqual({
+      role: 'user',
+      content: 'hi',
+      createdAt: '2026-10-03T10:15:00.000Z',
+    });
+  });
+
   it('includes attachmentIds when the latest user turn has attachments', () => {
     const request = buildTurnRequest([
       { id: '1', role: 'user', content: 'what does this say?', attachments: [{ id: 'f1', filename: 'a.txt' }], attachmentIds: ['f1'] },
