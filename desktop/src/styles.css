@@ -160,14 +160,14 @@ body {
 
 /* ---------------------------------------------------------------- understanding (right rail + drawer) */
 .understanding-rail {
-  position: fixed; top: 0; right: 0; height: 100vh; width: 10px; z-index: 40;
+  position: fixed; top: 0; right: 0; height: 100vh; width: 16px; z-index: 40;
   display: flex; align-items: center; justify-content: center;
   padding: 0; background: var(--surface); border: none; border-left: 1px solid var(--border);
   cursor: pointer; transition: background-color 0.25s ease;
 }
 .understanding-rail:hover { background: var(--surface-2); }
 .understanding-dot {
-  width: 8px; height: 8px; border-radius: 50%;
+  width: 16px; height: 16px; border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #E7C58C, var(--accent));
   box-shadow: 0 0 10px rgba(203, 163, 106, 0.4);
   opacity: 0.5; transition: opacity 0.3s ease;
@@ -180,11 +180,11 @@ body {
   50% { opacity: 1; transform: scale(1.15); box-shadow: 0 0 18px rgba(203, 163, 106, 0.8); }
 }
 .understanding-drawer {
-  position: fixed; top: 0; right: 10px; height: 100vh; z-index: 30;
+  position: fixed; top: 0; right: 16px; height: 100vh; z-index: 30;
   width: 380px; min-width: 0; max-width: 33vw; display: flex; flex-direction: column;
   background: var(--surface); border-left: 1px solid var(--border-strong);
   box-shadow: -24px 0 60px rgba(0, 0, 0, 0.38);
-  animation: understanding-slide-in 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation: understanding-slide-in 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .understanding-resize {
   position: absolute; left: 0; top: 0; bottom: 0; width: 7px; z-index: 2;

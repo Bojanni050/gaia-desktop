@@ -165,7 +165,7 @@ export default function App() {
         onDismiss={() => setNoticeDismissed(true)}
       />
 
-      {/* Understanding — a right-hand drawer: closed, only a 10px edge with a
+      {/* Understanding — a right-hand drawer: closed, only a 16px edge with a
           golden dot that pulses while something unseen is waiting. */}
       <UnderstandingRail />
     </div>

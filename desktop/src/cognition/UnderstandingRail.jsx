@@ -6,7 +6,7 @@
  * lets it go. Only this verdict reaches `confirmed` — no model, no accumulation
  * of evidence on its own. Each row renders as an EpistemicReviewCard.
  *
- * Closed, the drawer is only a 10px edge on the right of the window with a
+ * Closed, the drawer is only a 16px edge on the right of the window with a
  * golden dot in its middle: it pulses softly while there is something in
  * Understanding the person has not seen yet, and rests when there is not. The
  * list is fetched in the background (at mount and on an interval) so the dot
@@ -22,7 +22,7 @@ import EpistemicReviewCard from './EpistemicReviewCard';
 
 const SEEN_KEY = 'gaia.understanding.seen';
 const WIDTH_KEY = 'gaia.understanding.width';
-const RAIL_WIDTH = 10;
+const RAIL_WIDTH = 16;
 
 /** The drawer never narrows below this (unless the window itself is smaller). */
 export const MIN_WIDTH = 300;
