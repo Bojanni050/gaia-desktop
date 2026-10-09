@@ -209,6 +209,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
       <button
         type="button"
         className={`understanding-rail${hasNew ? ' has-new' : ''}`}
+        style={open ? { right: RAIL_WIDTH + effectiveWidth } : undefined}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={hasNew ? L.cognitionRailNew : L.cognitionRailOpen}
