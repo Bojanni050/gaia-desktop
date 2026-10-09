@@ -1,13 +1,15 @@
 /**
  * EpistemicReviewCard — one derived statement awaiting the human's judgement.
  *
- * Deliberately bare: the statement, one plain question ("Klopt dit?"), two
- * answers (Ja or Nee). Everything that made this feel like a control panel —
- * status, scope, raw evidence ids, "examine this", re-wording — is gone. The
- * only thing that still hides behind "Meer" is what a person might actually
- * want to weigh: the objection the card held back, and a plain note of whether
- * anything supports or contradicts the claim. "Meer" only appears when there is
- * such a thing to reveal.
+ * Deliberately bare: the statement, one plain question, two answers (Ja or
+ * Nee). The question follows the kind of statement — "Klopt dit?" for a
+ * hypothesis, "Klopt dit verband?" for a relationship, "Is dit nog open?" for an
+ * open question. Everything that made this feel like a control panel — status,
+ * scope, raw evidence ids, "examine this", re-wording — is gone. The only thing
+ * that still hides behind "Meer" is what a person might actually want to weigh:
+ * the objection the card held back, and a plain note of whether anything
+ * supports or contradicts the claim. "Meer" only appears when there is such a
+ * thing to reveal.
  *
  * A macro (high-impact) statement still carries its friction, but as a SECOND
  * step: "Ja" does not confirm it directly. It opens the objection the card held
@@ -23,11 +25,20 @@ import React, { useState } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
 import { L } from '../lib/lexicon';
 
+// The prompt follows the kind of statement: "Klopt dit?" fits a hypothesis or a
+// candidate model, but not a link between two things, and certainly not a
+// statement that is already phrased as an open question.
+const ASK_BY_KIND = {
+  relationship: L.cognitionAskRelationship,
+  open_question: L.cognitionAskOpenQuestion,
+};
+
 export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, onReopen }) {
   const [more, setMore] = useState(false);
   const [confirming, setConfirming] = useState(false); // macro: the second step
   const [reopenReason, setReopenReason] = useState('');
 
+  const ask = ASK_BY_KIND[item.kind] || L.cognitionAsk;
   const isRejected = item.status === 'rejected';
   const isMacro = item.scope !== 'micro';
   const hasCounter = Boolean(item.counter_hypothesis && item.counter_hypothesis.trim());
@@ -110,7 +121,7 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
         </div>
       ) : (
         <>
-          <p className="cognition-ask">{L.cognitionAsk}</p>
+          <p className="cognition-ask">{ask}</p>
           <div className="cognition-choice">
             <button className="cognition-yes" onClick={handleYes} disabled={busy} aria-label={L.cognitionYes}>
               <Check size={14} /> {L.cognitionYes}

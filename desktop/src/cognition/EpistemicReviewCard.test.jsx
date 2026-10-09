@@ -78,6 +78,24 @@ describe('EpistemicReviewCard — one question, two answers', () => {
   });
 });
 
+describe('EpistemicReviewCard — the question follows the kind', () => {
+  it('asks the plain question for a hypothesis', () => {
+    renderCard({ item: item({ kind: 'hypothesis' }) });
+    expect(screen.getByText(L.cognitionAsk)).toBeTruthy();
+  });
+
+  it('asks about the link for a relationship', () => {
+    renderCard({ item: item({ kind: 'relationship' }) });
+    expect(screen.getByText(L.cognitionAskRelationship)).toBeTruthy();
+    expect(screen.queryByText(L.cognitionAsk)).toBeNull();
+  });
+
+  it('asks whether it is still open for an open question', () => {
+    renderCard({ item: item({ kind: 'open_question' }) });
+    expect(screen.getByText(L.cognitionAskOpenQuestion)).toBeTruthy();
+  });
+});
+
 describe('EpistemicReviewCard — macro friction as a second step', () => {
   it('does not confirm a macro statement on Ja — it opens the objection first', () => {
     const h = item({ scope: 'macro', counter_hypothesis: 'the user only said that once, in frustration' });
