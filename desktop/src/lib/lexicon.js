@@ -111,6 +111,9 @@ export const LANGUAGES = {
     cognitionReopenHint: 'Je hebt dit losgelaten. Wil je het toch weer in onderzoek nemen? Zeg waarom.',
     cognitionReopenPlaceholder: 'Waarom heroverwegen?',
     cognitionReopenRequired: 'Een reden is verplicht om te heroverwegen.',
+    cognitionRailOpen: 'Begrip openen',
+    cognitionRailNew: 'Nieuwe dingen in Begrip',
+    cognitionClose: 'Sluiten',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Tijdlijn',
@@ -281,6 +284,9 @@ export const LANGUAGES = {
     cognitionReopenHint: 'You let this go. Take it back under examination? State why.',
     cognitionReopenPlaceholder: 'Why reconsider?',
     cognitionReopenRequired: 'A reason is required to reconsider.',
+    cognitionRailOpen: 'Open understanding',
+    cognitionRailNew: 'New in understanding',
+    cognitionClose: 'Close',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Timeline',

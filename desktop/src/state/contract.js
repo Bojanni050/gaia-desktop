@@ -85,7 +85,7 @@ export function parseHistoryConversation(response) {
   return { meta: response.body.meta || {}, messages };
 }
 
-// --- cognition review (cognition/ReviewSection.jsx) -------------------------
+// --- cognition review (cognition/UnderstandingRail.jsx) ---------------------
 // The human Absolute Override. Derived statements Logos is still weighing live
 // server-side; the person lists them and moves one forward or lets it go.
 // Plain JSON over the same generic server_request seam — never a file.

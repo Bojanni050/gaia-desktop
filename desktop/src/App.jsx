@@ -7,6 +7,7 @@ import LibraryPanel from './library/LibraryPanel';
 import AboutPanel from './settings/AboutPanel';
 import UpdatePanel from './settings/UpdatePanel';
 import EpisodeTimeline from './logos/EpisodeTimeline';
+import UnderstandingRail from './cognition/UnderstandingRail';
 import { serverApi, presenceApi, settingsApi } from './server/api';import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
 import { setSpeechGain } from './lib/speech';
@@ -163,6 +164,10 @@ export default function App() {
         }}
         onDismiss={() => setNoticeDismissed(true)}
       />
+
+      {/* Understanding — a right-hand drawer: closed, only a 10px edge with a
+          golden dot that pulses while something unseen is waiting. */}
+      <UnderstandingRail />
     </div>
   );
 }
