@@ -218,8 +218,13 @@ body {
 }
 
 /* cognition review — the human Absolute Override in the sidebar */
-.cognition-item { flex-direction: column; align-items: stretch; gap: 4px; cursor: default; }
-.cognition-item:hover { background: var(--surface-2); }
+.cognition-item {
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  padding: 12px; border-radius: 12px; border: 1px solid var(--border);
+  cursor: default; transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.cognition-item + .cognition-item { margin-top: 10px; }
+.cognition-item:hover { background: var(--surface-2); border-color: var(--border-strong); }
 .cognition-item .thread-actions { justify-content: flex-end; margin-top: 2px; }
 .cognition-statement {
   font-family: var(--sans); font-size: 0.85rem; color: var(--text);
@@ -281,6 +286,29 @@ body {
 .cognition-implication-option { display: flex; align-items: flex-start; gap: 6px; font-family: var(--sans); font-size: 0.76rem; color: var(--text-faint); cursor: pointer; }
 .cognition-implication-warning { font-family: var(--sans); font-size: 0.72rem; color: #C98B7A; }
 .cognition-nuance-toggle { font-family: var(--sans); font-size: 0.72rem; padding: 3px 6px; }
+
+/* the simple front: one question, two answers, everything else behind "Meer" */
+.cognition-ask { margin: 2px 0 0; font-family: var(--sans); font-size: 0.78rem; color: var(--text-muted); }
+.cognition-choice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.cognition-choice button {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--sans); font-size: 0.8rem; padding: 5px 12px; cursor: pointer;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--surface-3);
+  border-radius: 9px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+.cognition-choice button:hover:not(:disabled) { background: var(--surface-3); }
+.cognition-choice button:disabled { opacity: 0.4; cursor: default; }
+.cognition-choice .cognition-yes:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.cognition-choice .cognition-no:hover:not(:disabled) { border-color: #C98B7A; color: #C98B7A; }
+.cognition-more-toggle {
+  margin-left: auto; background: none; border: none; color: var(--text-faint);
+  font-family: var(--sans); font-size: 0.74rem; cursor: pointer; padding: 4px 2px;
+}
+.cognition-more-toggle:hover { color: var(--text-muted); }
+.cognition-more { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--surface-3); }
+.cognition-sure { margin: 2px 0; font-family: var(--sans); font-size: 0.78rem; color: var(--text-muted); }
+.cognition-confirm-step { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 
 /* rejected = hard quarantine: the only action is an explicit, reasoned reopen */
 .cognition-reopen { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-top: 1px dashed var(--surface-3); }

@@ -36,73 +36,101 @@ function renderCard(props) {
   return { onConfirm, onReject, onTest, onReopen };
 }
 
-describe('EpistemicReviewCard friction', () => {
-  it('a micro statement confirms in one calm act, with no forced rationale', () => {
+describe('EpistemicReviewCard — one question, two answers', () => {
+  it('asks a plain question and confirms a micro statement in one act', () => {
     const h = item({ scope: 'micro' });
     const { onConfirm } = renderCard({ item: h });
-    const confirm = screen.getByLabelText(L.cognitionConfirm);
-    expect(confirm.disabled).toBe(false);
-    fireEvent.click(confirm);
+
+    expect(screen.getByText(L.cognitionAsk)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
     expect(onConfirm).toHaveBeenCalledWith(h, { rationale: undefined, statement: undefined });
   });
 
-  it('a macro statement cannot be confirmed until the counter-hypothesis is opened and the implication answered', () => {
+  it('lets a statement go with Nee', () => {
+    const h = item();
+    const { onReject } = renderCard({ item: h });
+    fireEvent.click(screen.getByLabelText(L.cognitionNo));
+    expect(onReject).toHaveBeenCalledWith(h);
+  });
+
+  it('keeps the advanced material behind Meer', () => {
+    const h = item({ status: 'proposed', counter_hypothesis: 'the opposite reading', evidence_for: ['e1'] });
+    renderCard({ item: h });
+
+    // Nothing overwhelming up front.
+    expect(screen.queryByText('the opposite reading')).toBeNull();
+    expect(screen.queryByLabelText(L.cognitionTesting)).toBeNull();
+
+    fireEvent.click(screen.getByText(L.cognitionMore));
+    expect(screen.getByText('the opposite reading')).toBeTruthy();
+    expect(screen.getByText(L.cognitionCounterHint)).toBeTruthy();
+    expect(screen.getByLabelText(L.cognitionTesting)).toBeTruthy();
+  });
+});
+
+describe('EpistemicReviewCard — macro friction as a second step', () => {
+  it('does not confirm a macro statement on Ja — it opens the objection first', () => {
     const h = item({ scope: 'macro', counter_hypothesis: 'the user only said that once, in frustration' });
     const { onConfirm } = renderCard({ item: h });
-    const confirm = screen.getByLabelText(L.cognitionConfirm);
 
-    expect(confirm.disabled).toBe(true);
-    fireEvent.click(screen.getByText(L.cognitionShowCounter));
-    expect(confirm.disabled).toBe(true); // looked, but no implication chosen yet
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
+    expect(onConfirm).not.toHaveBeenCalled(); // second step, not a one-click confirm
+    expect(screen.getByText('the user only said that once, in frustration')).toBeTruthy();
 
-    // A wrong implication keeps the override locked.
-    fireEvent.click(screen.getByLabelText(L.cognitionImplicationCounter));
-    expect(confirm.disabled).toBe(true);
-
-    fireEvent.click(screen.getByLabelText(L.cognitionImplicationEstablish));
-    expect(confirm.disabled).toBe(false);
-
-    fireEvent.click(confirm);
+    fireEvent.click(screen.getByLabelText(L.cognitionConfirm));
     expect(onConfirm).toHaveBeenCalledWith(h, {
       rationale: L.cognitionImplicationEstablish,
       statement: undefined,
     });
   });
 
-  it('a macro statement without a counter-hypothesis stays unconfirmable and says so', () => {
+  it('leaves a macro statement without a counter-hypothesis unconfirmable, and says so', () => {
     const h = item({ scope: 'macro', counter_hypothesis: null });
     renderCard({ item: h });
+
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
     expect(screen.getByText(L.cognitionCounterMissing)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(L.cognitionImplicationEstablish));
     expect(screen.getByLabelText(L.cognitionConfirm).disabled).toBe(true);
   });
 
-  it('Nuanceren sends the human re-wording with the confirmation', () => {
+  it('can back out of the second step', () => {
+    const h = item({ scope: 'macro', counter_hypothesis: 'an objection' });
+    renderCard({ item: h });
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
+    fireEvent.click(screen.getByText(L.cognitionBack));
+    expect(screen.getByLabelText(L.cognitionYes)).toBeTruthy(); // back to the question
+  });
+});
+
+describe('EpistemicReviewCard — the rest', () => {
+  it('sends the human re-wording with the confirmation', () => {
     const h = item({ scope: 'micro' });
     const { onConfirm } = renderCard({ item: h });
-    fireEvent.click(screen.getByText(L.cognitionNuance));
+
+    fireEvent.click(screen.getByText(L.cognitionMore));
+    fireEvent.click(screen.getByLabelText(L.cognitionNuance));
     fireEvent.change(screen.getByPlaceholderText(L.cognitionNuancePlaceholder), {
       target: { value: 'prefers bullets only in technical context' },
     });
-    fireEvent.click(screen.getByLabelText(L.cognitionConfirm));
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
     expect(onConfirm).toHaveBeenCalledWith(h, {
       rationale: undefined,
       statement: 'prefers bullets only in technical context',
     });
   });
 
-  it('a busy card locks every action', () => {
+  it('locks Ja and Nee while busy', () => {
     renderCard({ item: item(), busy: true });
-    expect(screen.getByLabelText(L.cognitionConfirm).disabled).toBe(true);
-    expect(screen.getByLabelText(L.cognitionReject).disabled).toBe(true);
+    expect(screen.getByLabelText(L.cognitionYes).disabled).toBe(true);
+    expect(screen.getByLabelText(L.cognitionNo).disabled).toBe(true);
   });
 
-  it('a rejected statement offers only a reasoned Reconsider — never confirm/test/reject', () => {
+  it('a rejected statement offers only a reasoned Reconsider', () => {
     const h = item({ status: 'rejected' });
     const { onReopen, onConfirm } = renderCard({ item: h });
 
-    expect(screen.queryByLabelText(L.cognitionConfirm)).toBeNull();
-    expect(screen.queryByLabelText(L.cognitionReject)).toBeNull();
+    expect(screen.queryByLabelText(L.cognitionYes)).toBeNull();
+    expect(screen.queryByLabelText(L.cognitionNo)).toBeNull();
     expect(screen.queryByLabelText(L.cognitionTesting)).toBeNull();
 
     const reopen = screen.getByLabelText(L.cognitionReopen);
@@ -115,14 +143,5 @@ describe('EpistemicReviewCard friction', () => {
     fireEvent.click(reopen);
     expect(onReopen).toHaveBeenCalledWith(h, 'the disproof was retracted');
     expect(onConfirm).not.toHaveBeenCalled();
-  });
-
-  it('shows the quarantined counter-hypothesis only on request, with its not-a-fact note', () => {
-    const h = item({ scope: 'macro', counter_hypothesis: 'the opposite reading' });
-    renderCard({ item: h });
-    expect(screen.queryByText('the opposite reading')).toBeNull();
-    fireEvent.click(screen.getByText(L.cognitionShowCounter));
-    expect(screen.getByText('the opposite reading')).toBeTruthy();
-    expect(screen.getByText(L.cognitionCounterHint)).toBeTruthy();
   });
 });

@@ -1,23 +1,24 @@
 /**
  * EpistemicReviewCard — one derived statement awaiting the human's judgement.
  *
- * The human Absolute Override, but with structural friction (V3 review): a
- * macro statement is never a single yes/no click. To confirm one the person
- * must first open the quarantined counter-hypothesis AND answer an implication
- * test correctly; only then does Confirm enable. Micro statements stay a
- * single calm act — they are low-impact and may soft-promote on their own.
+ * Kept deliberately simple for someone meeting it for the first time: one plain
+ * question, "Klopt dit?", and two answers, Ja or Nee. Everything that made this
+ * card feel like a control panel — status, scope, evidence, the quarantined
+ * counter-hypothesis, re-wording, "examine this" — lives behind a single "Meer"
+ * disclosure, opened only when someone actually wants it.
  *
- * A rejected statement is a hard quarantine: no confirm/test/reject is offered
- * at all. The only action is an explicit human "Reconsider" that requires a
- * stated reason — the one path back to testing, mirrored by the server.
+ * A macro (high-impact) statement still carries its friction, but as a SECOND
+ * step: "Ja" does not confirm it directly. It opens the objection the card held
+ * back, states plainly what confirming means, and only then offers Bevestig.
+ * A macro statement with no counter-hypothesis cannot be confirmed at all — the
+ * server asks for the same, and the card says so.
  *
- * The card renders only what the record actually carries (statement, evidence
- * ids, counter_hypothesis, scope). It never invents an implication specific to
- * the statement — the multiple-choice test below is a fixed, honest stand-in
- * until Logos can generate statement-specific implications.
+ * A rejected statement is a hard quarantine: no Ja/Nee at all, only an explicit
+ * "Reconsider" that requires a stated reason — the one path back, mirrored by
+ * the server.
  */
 import React, { useState } from 'react';
-import { Check, ChevronRight, Lightbulb, RotateCcw, X } from 'lucide-react';
+import { Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import { L } from '../lib/lexicon';
 
 const STATUS_LABEL = {
@@ -28,14 +29,11 @@ const STATUS_LABEL = {
   rejected: () => L.cognitionStatusRejected,
 };
 
-const IMPLICATIONS = ['establish', 'counter', 'soft'];
-
 export default function EpistemicReviewCard({ item, busy, onTest, onReject, onConfirm, onReopen }) {
-  const [showEvidence, setShowEvidence] = useState(false);
-  const [counterOpen, setCounterOpen] = useState(false);
+  const [more, setMore] = useState(false);
+  const [confirming, setConfirming] = useState(false); // macro: the second step
   const [nuancing, setNuancing] = useState(false);
   const [statementDraft, setStatementDraft] = useState(item.statement || '');
-  const [implication, setImplication] = useState(null);
   const [reopenReason, setReopenReason] = useState('');
 
   const isRejected = item.status === 'rejected';
@@ -45,32 +43,29 @@ export default function EpistemicReviewCard({ item, busy, onTest, onReject, onCo
   const evidenceAgainst = Array.isArray(item.evidence_against) ? item.evidence_against : [];
   const hasEvidence = evidenceFor.length > 0 || evidenceAgainst.length > 0;
 
-  // Confirm unlocks only when nothing is in flight AND, for a macro statement,
-  // the person has looked at the objection and answered the implication test.
-  const canConfirm = !busy && (!isMacro || (counterOpen && implication === 'establish'));
+  const canConfirmMacro = !busy && hasCounter;
   const canReopen = !busy && reopenReason.trim().length > 0;
 
-  const implicationText = (key) => ({
-    establish: L.cognitionImplicationEstablish,
-    counter: L.cognitionImplicationCounter,
-    soft: L.cognitionImplicationSoft,
-  }[key]);
-
-  const handleConfirm = (e) => {
-    e.stopPropagation();
-    if (!canConfirm) return;
+  // The human's own re-wording, when they used "Nuanceren" and changed it.
+  const nuancedStatement = () => {
     const normalized = statementDraft.trim();
-    const statement = nuancing && normalized && normalized !== item.statement ? normalized : undefined;
-    // A macro confirmation always carries a rationale (server-side friction
-    // too): the implication the person consciously chose.
-    const rationale = isMacro ? implicationText(implication) : undefined;
-    onConfirm(item, { rationale, statement });
+    return nuancing && normalized && normalized !== item.statement ? normalized : undefined;
   };
 
-  const handleReject = (e) => { e.stopPropagation(); onReject(item); };
-  const handleTest = (e) => { e.stopPropagation(); onTest(item); };
-  const handleReopen = (e) => {
-    e.stopPropagation();
+  const handleYes = () => {
+    if (isMacro) {
+      setConfirming(true); // face the objection first — see the doc comment
+      return;
+    }
+    onConfirm(item, { rationale: undefined, statement: nuancedStatement() });
+  };
+
+  const handleConfirmMacro = () => {
+    if (!canConfirmMacro) return;
+    onConfirm(item, { rationale: L.cognitionImplicationEstablish, statement: nuancedStatement() });
+  };
+
+  const handleReopen = () => {
     if (!canReopen) return;
     onReopen(item, reopenReason.trim());
   };
@@ -80,63 +75,6 @@ export default function EpistemicReviewCard({ item, busy, onTest, onReject, onCo
   return (
     <div className="cognition-item epistemic-card">
       <div className="cognition-statement">{item.statement}</div>
-
-      <div className="cognition-meta">
-        <span className="cognition-status">{statusLabel}</span>
-        <span className={`cognition-scope cognition-scope-${isMacro ? 'macro' : 'micro'}`}>
-          {isMacro ? L.cognitionScopeMacro : L.cognitionScopeMicro}
-        </span>
-      </div>
-
-      <button
-        type="button"
-        className="cognition-toggle"
-        aria-expanded={showEvidence}
-        onClick={(e) => { e.stopPropagation(); setShowEvidence((v) => !v); }}
-      >
-        <ChevronRight size={12} className={`cognition-chevron${showEvidence ? ' open' : ''}`} />
-        {L.cognitionEvidence}
-      </button>
-      {showEvidence && (
-        <div className="cognition-evidence">
-          {!hasEvidence && <span className="cognition-evidence-empty">{L.cognitionNoEvidence}</span>}
-          {evidenceFor.length > 0 && (
-            <span className="cognition-evidence-group">
-              <em>{L.cognitionEvidenceFor}</em>
-              {evidenceFor.map((id) => <code key={id}>{id}</code>)}
-            </span>
-          )}
-          {evidenceAgainst.length > 0 && (
-            <span className="cognition-evidence-group">
-              <em>{L.cognitionEvidenceAgainst}</em>
-              {evidenceAgainst.map((id) => <code key={id}>{id}</code>)}
-            </span>
-          )}
-        </div>
-      )}
-
-      {hasCounter ? (
-        <div className="cognition-counter">
-          <button
-            type="button"
-            className="cognition-toggle"
-            aria-expanded={counterOpen}
-            onClick={(e) => { e.stopPropagation(); setCounterOpen((v) => !v); }}
-          >
-            <ChevronRight size={12} className={`cognition-chevron${counterOpen ? ' open' : ''}`} />
-            {counterOpen ? L.cognitionHideCounter : L.cognitionShowCounter}
-          </button>
-          {counterOpen && (
-            <div className="cognition-counter-body">
-              <span className="cognition-counter-label">{L.cognitionCounterHypothesis}</span>
-              <p>{item.counter_hypothesis}</p>
-              <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <p className="cognition-counter-missing">{L.cognitionCounterMissing}</p>
-      )}
 
       {isRejected ? (
         <div className="cognition-reopen">
@@ -150,100 +88,126 @@ export default function EpistemicReviewCard({ item, busy, onTest, onReject, onCo
           {reopenReason.trim().length === 0 && (
             <span className="cognition-implication-warning">{L.cognitionReopenRequired}</span>
           )}
+          <div className="cognition-choice">
+            <button
+              className="cognition-reopen-action"
+              onClick={handleReopen}
+              disabled={!canReopen}
+              aria-label={L.cognitionReopen}
+            >
+              <RotateCcw size={14} /> {L.cognitionReopen}
+            </button>
+          </div>
+        </div>
+      ) : confirming ? (
+        <div className="cognition-confirm-step">
+          {hasCounter ? (
+            <div className="cognition-counter-body">
+              <span className="cognition-counter-label">{L.cognitionCounterHypothesis}</span>
+              <p>{item.counter_hypothesis}</p>
+              <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
+            </div>
+          ) : (
+            <p className="cognition-counter-missing">{L.cognitionCounterMissing}</p>
+          )}
+          <p className="cognition-sure">{L.cognitionMacroSure}</p>
+          <div className="cognition-choice">
+            <button
+              className="cognition-yes"
+              onClick={handleConfirmMacro}
+              disabled={!canConfirmMacro}
+              aria-label={L.cognitionConfirm}
+            >
+              <Check size={14} /> {L.cognitionConfirm}
+            </button>
+            <button onClick={() => setConfirming(false)}>{L.cognitionBack}</button>
+          </div>
         </div>
       ) : (
         <>
-          {nuancing && (
-            <div className="cognition-nuance">
-              <span className="cognition-nuance-hint">{L.cognitionNuanceHint}</span>
-              <textarea
-                value={statementDraft}
-                onChange={(e) => setStatementDraft(e.target.value)}
-                placeholder={L.cognitionNuancePlaceholder}
-                rows={2}
-              />
-            </div>
-          )}
+          <p className="cognition-ask">{L.cognitionAsk}</p>
+          <div className="cognition-choice">
+            <button className="cognition-yes" onClick={handleYes} disabled={busy} aria-label={L.cognitionYes}>
+              <Check size={14} /> {L.cognitionYes}
+            </button>
+            <button className="cognition-no" onClick={() => onReject(item)} disabled={busy} aria-label={L.cognitionNo}>
+              <X size={14} /> {L.cognitionNo}
+            </button>
+            <button
+              type="button"
+              className="cognition-more-toggle"
+              onClick={() => setMore((v) => !v)}
+              aria-expanded={more}
+            >
+              {more ? L.cognitionLess : L.cognitionMore}
+            </button>
+          </div>
 
-          {isMacro && (
-            <div className="cognition-implication">
-              <span className="cognition-implication-prompt">{L.cognitionImplicationPrompt}</span>
-              {IMPLICATIONS.map((key) => (
-                <label key={key} className="cognition-implication-option">
-                  <input
-                    type="radio"
-                    name={`implication-${item.id}`}
-                    checked={implication === key}
-                    onChange={() => setImplication(key)}
-                    onClick={(e) => e.stopPropagation()}
+          {more && (
+            <div className="cognition-more">
+              <div className="cognition-meta">
+                <span className="cognition-status">{statusLabel}</span>
+                <span className={`cognition-scope cognition-scope-${isMacro ? 'macro' : 'micro'}`}>
+                  {isMacro ? L.cognitionScopeMacro : L.cognitionScopeMicro}
+                </span>
+              </div>
+
+              <div className="cognition-evidence">
+                {!hasEvidence && <span className="cognition-evidence-empty">{L.cognitionNoEvidence}</span>}
+                {evidenceFor.length > 0 && (
+                  <span className="cognition-evidence-group">
+                    <em>{L.cognitionEvidenceFor}</em>
+                    {evidenceFor.map((id) => <code key={id}>{id}</code>)}
+                  </span>
+                )}
+                {evidenceAgainst.length > 0 && (
+                  <span className="cognition-evidence-group">
+                    <em>{L.cognitionEvidenceAgainst}</em>
+                    {evidenceAgainst.map((id) => <code key={id}>{id}</code>)}
+                  </span>
+                )}
+              </div>
+
+              {hasCounter && (
+                <div className="cognition-counter-body">
+                  <span className="cognition-counter-label">{L.cognitionCounterHypothesis}</span>
+                  <p>{item.counter_hypothesis}</p>
+                  <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
+                </div>
+              )}
+
+              <div className="cognition-choice">
+                {item.status !== 'testing' && (
+                  <button onClick={() => onTest(item)} disabled={busy} aria-label={L.cognitionTesting}>
+                    <Lightbulb size={14} /> {L.cognitionTesting}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setNuancing((v) => !v)}
+                  disabled={busy}
+                  aria-pressed={nuancing}
+                  aria-label={L.cognitionNuance}
+                >
+                  {L.cognitionNuance}
+                </button>
+              </div>
+
+              {nuancing && (
+                <div className="cognition-nuance">
+                  <span className="cognition-nuance-hint">{L.cognitionNuanceHint}</span>
+                  <textarea
+                    value={statementDraft}
+                    onChange={(e) => setStatementDraft(e.target.value)}
+                    placeholder={L.cognitionNuancePlaceholder}
+                    rows={2}
                   />
-                  {implicationText(key)}
-                </label>
-              ))}
-              {implication && implication !== 'establish' && (
-                <span className="cognition-implication-warning">{L.cognitionImplicationPickCorrect}</span>
+                </div>
               )}
             </div>
           )}
         </>
       )}
-
-      <div className="thread-actions">
-        {isRejected ? (
-          <button
-            className="cognition-action cognition-reopen-action"
-            onClick={handleReopen}
-            disabled={!canReopen}
-            aria-label={L.cognitionReopen}
-            title={L.cognitionReopen}
-          >
-            <RotateCcw size={14} />
-            {L.cognitionReopen}
-          </button>
-        ) : (
-          <>
-            {item.status !== 'testing' && (
-              <button
-                className="cognition-action"
-                onClick={handleTest}
-                disabled={busy}
-                aria-label={L.cognitionTesting}
-                title={L.cognitionTesting}
-              >
-                <Lightbulb size={14} />
-              </button>
-            )}
-            <button
-              type="button"
-              className="cognition-action cognition-nuance-toggle"
-              onClick={(e) => { e.stopPropagation(); setNuancing((v) => !v); }}
-              disabled={busy}
-              aria-pressed={nuancing}
-              title={L.cognitionNuance}
-            >
-              {L.cognitionNuance}
-            </button>
-            <button
-              className="cognition-action cognition-confirm"
-              onClick={handleConfirm}
-              disabled={!canConfirm}
-              aria-label={L.cognitionConfirm}
-              title={L.cognitionConfirm}
-            >
-              <Check size={14} />
-            </button>
-            <button
-              className="cognition-action cognition-reject"
-              onClick={handleReject}
-              disabled={busy}
-              aria-label={L.cognitionReject}
-              title={L.cognitionReject}
-            >
-              <X size={14} />
-            </button>
-          </>
-        )}
-      </div>
     </div>
   );
 }
