@@ -193,8 +193,11 @@ export function useConversation(server) {
             if (!shouldSpeak(fullReply, info && info.languages)) return;
             const { bytes, mimeType } = await speechApi.synthesize(fullReply);
             await playSpeech(bytes, mimeType);
-          } catch (_) {
-            /* already-displayed reply stays canonical */
+          } catch (error) {
+            // Never affects the turn — text is already canonical and shown.
+            // But don't hide it either: a silent swallow is exactly what once
+            // concealed a CSP-blocked blob URL (see tauri.conf.json's csp).
+            console.warn('[speech] playback failed:', error);
           }
         })();
       } catch (error) {
