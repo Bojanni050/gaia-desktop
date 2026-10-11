@@ -43,3 +43,22 @@ Run on the owner's Windows 11 machine, 2026-10-11. Companion to `background-voic
 - C2 scope reduced to abort-signal plumbing; add the Cloud-side file/line references above.
 - Add the no-frames watchdog to the engine requirements and failure modes.
 - Add the half-pin / candle risk to the Rustpotter notes.
+
+## Wake-word harness (built, validated on synthetic audio only)
+
+Run from `spikes/voice-phase0/` in **PowerShell** (not from tools that sandbox audio, see the zero-frames finding above):
+
+```powershell
+cargo build --release
+.\target\release\voice-phase0.exe collect hey 12 2.0     # 12 x "Hey Gaia", 2 s each
+.\target\release\voice-phase0.exe collect neg 20 2.0     # 20 other phrases / near-misses ("Gaia", "hey Maya", sentences)
+.\target\release\voice-phase0.exe collect bg 1 600       # 10 min ambient: TV, music, talking (false-accept test)
+.\target\release\voice-phase0.exe score 5                # build ref from 5 "hey" clips, test the rest
+```
+
+- Clips are 16 kHz mono WAV in `spikes/voice-phase0/recordings/<label>/` — **gitignored; it is your voice, do not commit or upload it.** Delete the folder when done.
+- Optional last argument of `collect` is a device id from `devices` (default = system default mic).
+- `score` runs two folds (refs = first N / last N `hey` clips), sweeps five thresholds, and prints held-out hits/misses, false accepts on the `neg` clips and false accepts per hour on the `bg` audio. `GAIA_TRACE=1` prints per-clip best scores; `GAIA_SELFTEST=1` scores the reference clips themselves (sanity check).
+- Validation: on synthetic tone clips the harness hits 14/14 held-out at thresholds 0.40–0.50 with 0 negative/ambient false accepts, and false-accepts at 0.30. This proves the pipeline, **not** Rustpotter's real accuracy — that needs your recordings.
+- Lessons built in: clips are padded with 1 s leading and 1.5 s trailing silence, because Rustpotter only emits a detection while its window slides across the word and after a countdown; without padding even an identical clip never fired.
+- openWakeWord is **not** in the harness yet (it is Python/ONNX; a Rust runner via `ort` is a separate step). Compare it only if Rustpotter's numbers are weak.
