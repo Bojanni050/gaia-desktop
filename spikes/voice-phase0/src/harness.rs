@@ -12,7 +12,7 @@ use rustpotter::{
 };
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 const TARGET: u32 = 16_000;
@@ -103,13 +103,21 @@ pub fn collect(label: &str, count: usize, secs: f32, device_id: Option<String>) 
     std::fs::create_dir_all(&out).unwrap();
     let start = std::fs::read_dir(&out).map(|d| d.count()).unwrap_or(0);
 
-    let buf: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let b2 = buf.clone();
+    // The audio callback only forwards small chunks over a channel: no big-Vec reallocation, no
+    // lock shared with the main thread. (A growing Vec behind a Mutex caused buffer over/underruns.)
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<f32>>();
+    let xruns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let x2 = xruns.clone();
     let stream = device
         .build_input_stream(
             cfg.into(),
-            move |d: &[f32], _: &_| b2.lock().unwrap().extend_from_slice(d),
-            |e: cpal::Error| eprintln!("stream error: {e}"),
+            move |d: &[f32], _: &_| {
+                let _ = tx.send(d.to_vec());
+            },
+            move |e: cpal::Error| {
+                x2.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("stream error: {e}");
+            },
             None,
         )
         .expect("stream");
@@ -123,10 +131,23 @@ pub fn collect(label: &str, count: usize, secs: f32, device_id: Option<String>) 
             std::io::stdout().flush().ok();
             std::thread::sleep(Duration::from_millis(700));
         }
-        buf.lock().unwrap().clear();
+        while rx.try_recv().is_ok() {} // drop what arrived during the countdown
+        let glitches_before = xruns.load(std::sync::atomic::Ordering::Relaxed);
         println!("NOW");
-        std::thread::sleep(Duration::from_secs_f32(secs));
-        let taken: Vec<f32> = std::mem::take(&mut *buf.lock().unwrap());
+        let mut taken: Vec<f32> = Vec::with_capacity((rate as f32 * ch as f32 * secs) as usize + 65_536);
+        let deadline = std::time::Instant::now() + Duration::from_secs_f32(secs);
+        while std::time::Instant::now() < deadline {
+            if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(50)) {
+                taken.extend_from_slice(&chunk);
+            }
+        }
+        while let Ok(chunk) = rx.try_recv() {
+            taken.extend_from_slice(&chunk);
+        }
+        let glitches = xruns.load(std::sync::atomic::Ordering::Relaxed) - glitches_before;
+        if glitches > 0 {
+            println!("      WARNING: {glitches} audio glitch(es) during this clip, consider re-recording it");
+        }
         let pcm = to_16k_mono(&taken, rate, ch);
         if pcm.is_empty() {
             println!("      NO AUDIO received for this clip: check the mic, then re-run");
@@ -267,7 +288,7 @@ pub fn score(n_refs: usize) {
         "{:>9} {:>9} | {:>8} {:>8} | {:>8} {:>12}",
         "threshold", "avg_thr", "hey hit", "hey miss", "neg FP", "bg FP/hour"
     );
-    for (thr, avg) in [(0.30, 0.15), (0.40, 0.20), (0.50, 0.25), (0.60, 0.30), (0.70, 0.35)] {
+    for (thr, avg) in [(0.50, 0.25), (0.54, 0.27), (0.57, 0.28), (0.60, 0.30), (0.62, 0.31), (0.64, 0.32), (0.66, 0.33), (0.68, 0.34)] {
         let (mut hit, mut miss, mut nfp, mut bfp) = (0usize, 0usize, 0usize, 0usize);
         for (refs, tests) in &folds {
             let mut d = detector(&trimmed_copies(refs), thr, avg);
