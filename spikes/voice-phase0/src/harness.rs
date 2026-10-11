@@ -325,3 +325,99 @@ pub fn score(n_refs: usize) {
         folds.len()
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Trained-model mode: a small neural net (Rustpotter "wakeword model") instead of DTW references.
+//   train [epochs=1500] [tiny|small|medium|large]   build a 70/30 split from recordings/, train, save
+//   score-model                                     score the held-out 30% (never seen in training)
+// Split is deterministic: every 3rd clip (index % 3 == 0) is held out. Ambient audio is cut in time:
+// the first 70% trains the `none` class, the last 30% is the held-out false-accept test.
+// ---------------------------------------------------------------------------------------------
+use rustpotter::{ModelType, WakewordModel, WakewordModelTrain, WakewordModelTrainOptions, WakewordSave};
+
+const MODEL_PATH: &str = "recordings/_model.rpw";
+
+fn reset_dir(name: &str) -> PathBuf {
+    let d = dir(name);
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+pub fn train(epochs: usize, model_type: &str) {
+    let (train_dir, test_dir) = (reset_dir("_train"), reset_dir("_test"));
+    let (mut n_train, mut n_test) = ([0usize; 2], [0usize; 2]); // [hey, none]
+    let mut put = |is_test: bool, hey: bool, idx: usize, pcm: &[i16]| {
+        let tag = if hey { "[hey_gaia]" } else { "[none]" };
+        let (d, n) = if is_test { (&test_dir, &mut n_test) } else { (&train_dir, &mut n_train) };
+        write_wav(&d.join(format!("{}_{idx:04}{tag}.wav", if hey { "hey" } else { "none" })), pcm);
+        n[if hey { 0 } else { 1 }] += 1;
+    };
+    for (i, p) in usable_list("hey").iter().enumerate() {
+        put(i % 3 == 0, true, i, &trim(&read_wav(p)));
+    }
+    for (i, p) in usable_list("neg").iter().enumerate() {
+        put(i % 3 == 0, false, i, &trim(&read_wav(p)));
+    }
+    // Ambient: 1 s windows, 50% overlap; first 70% of each file trains, the rest is held out.
+    let mut k = 0usize;
+    for p in usable_list("bg") {
+        let pcm = read_wav(&p);
+        let cut = pcm.len() * 7 / 10;
+        let win = TARGET as usize;
+        let mut s = 0;
+        while s + win <= pcm.len() {
+            put(s >= cut, false, 10_000 + k, &pcm[s..s + win]);
+            k += 1;
+            s += win / 2;
+        }
+    }
+    println!("training set: {} hey + {} none; test set: {} hey + {} none", n_train[0], n_train[1], n_test[0], n_test[1]);
+    let m_type: ModelType = model_type.parse().expect("model type: tiny|small|medium|large");
+    let opts = WakewordModelTrainOptions::new(m_type, 0.03, epochs, (epochs / 10).max(1), 16);
+    let model = WakewordModel::train_from_dirs(opts, train_dir.to_string_lossy().into(), test_dir.to_string_lossy().into(), None)
+        .expect("training failed");
+    model.save_to_file(MODEL_PATH).expect("save model");
+    println!("saved {MODEL_PATH}");
+}
+
+/// Same filtering `score` uses, as a reusable list.
+fn usable_list(label: &str) -> Vec<PathBuf> {
+    wavs(label)
+        .into_iter()
+        .filter(|p| {
+            let pcm = read_wav(p);
+            let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as f32 / 32768.0;
+            let word = trim(&pcm).len() as f32 / TARGET as f32;
+            pcm.len() >= TARGET as usize / 2 && peak >= 0.05 && (label == "bg" || (0.5..=1.5).contains(&word))
+        })
+        .collect()
+}
+
+pub fn score_model() {
+    let test_dir = dir("_test");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&test_dir).expect("run `train` first").filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    files.sort();
+    let (hey, none): (Vec<_>, Vec<_>) = files.into_iter().partition(|p| p.to_string_lossy().contains("[hey_gaia]"));
+    let bg: Vec<&PathBuf> = none.iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("none_1")).collect();
+    let neg: Vec<&PathBuf> = none.iter().filter(|p| !bg.contains(p)).collect();
+    // bg windows overlap 50%: each adds 0.5 s of new audio (plus 0.5 s for the first)
+    let bg_secs = bg.len() as f32 * 0.5 + 0.5;
+    println!("held-out: hey={} neg={} bg windows={} (~{bg_secs:.0}s)", hey.len(), neg.len(), bg.len());
+    println!("{:>9} | {:>8} {:>8} | {:>8} | {:>12}", "threshold", "hey hit", "hey miss", "neg FP", "bg FP/hour");
+    for thr in [0.50f32, 0.60, 0.70, 0.80, 0.90, 0.95, 0.98] {
+        let cfg = RustpotterConfig {
+            fmt: AudioFmt { sample_rate: TARGET as usize, sample_format: RpFmt::I16, channels: 1, endianness: Endianness::Little },
+            detector: DetectorConfig { threshold: thr, avg_threshold: 0.0, ..DetectorConfig::default() },
+            ..RustpotterConfig::default()
+        };
+        let mut d = Rustpotter::new(&cfg).expect("rustpotter");
+        d.add_wakeword_from_file("hey_gaia", MODEL_PATH).expect("load model");
+        let hit = hey.iter().filter(|p| detect(&mut d, &read_wav(p)).0 > 0).count();
+        let nfp = neg.iter().filter(|p| detect(&mut d, &read_wav(p)).0 > 0).count();
+        let bfp = bg.iter().filter(|p| detect(&mut d, &read_wav(p)).0 > 0).count();
+        let per_hour = if bg_secs > 1.0 { format!("{:.1}", bfp as f32 / bg_secs * 3600.0) } else { "n/a".into() };
+        println!("{thr:>9.2} | {hit:>8} {:>8} | {nfp:>8} | {per_hour:>12}", hey.len() - hit);
+    }
+    println!("(bg windows overlap, so a single noise event can count twice)");
+}

@@ -62,3 +62,14 @@ cargo build --release
 - Validation: on synthetic tone clips the harness hits 14/14 held-out at thresholds 0.40–0.50 with 0 negative/ambient false accepts, and false-accepts at 0.30. This proves the pipeline, **not** Rustpotter's real accuracy — that needs your recordings.
 - Lessons built in: clips are padded with 1 s leading and 1.5 s trailing silence, because Rustpotter only emits a detection while its window slides across the word and after a countdown; without padding even an identical clip never fired.
 - openWakeWord is **not** in the harness yet (it is Python/ONNX; a Rust runner via `ort` is a separate step). Compare it only if Rustpotter's numbers are weak.
+
+### Trained-model mode (harness)
+
+```powershell
+.\target\release\voice-phase0.exe train 1500 tiny     # epochs, model size (tiny|small|medium|large)
+.\target\release\voice-phase0.exe score-model         # held-out 30% only
+```
+
+- Split is deterministic (every 3rd `hey`/`neg` clip held out; ambient audio is cut in time, first 70% trains the `none` class, last 30% is the false-accept test). Model is saved to `recordings/_model.rpw` (gitignored).
+- Validated on synthetic tone data only (pipeline runs end to end; synthetic numbers are meaningless). Real accuracy needs your recordings.
+- Reading the result: the real question is whether some threshold gives high held-out `hey` hits **and** low `neg` / `bg` false accepts, which the DTW reference mode did not on near-miss negatives.

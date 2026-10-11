@@ -22,6 +22,11 @@ fn main() {
             args.get(4).and_then(|s| s.parse().ok()).unwrap_or(2.0),
             args.get(5).cloned(),
         ),
+        Some("train") => harness::train(
+            args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1500),
+            args.get(3).map(String::as_str).unwrap_or("tiny"),
+        ),
+        Some("score-model") => harness::score_model(),
         Some("score") => harness::score(args.get(2).and_then(|s| s.parse().ok()).unwrap_or(5)),
         Some("aec-sim") => {
             for (d, g, dt) in [(30, 0.5, false), (30, 0.5, true), (120, 0.8, true)] {
