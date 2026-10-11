@@ -128,6 +128,9 @@ pub fn collect(label: &str, count: usize, secs: f32, device_id: Option<String>) 
         std::thread::sleep(Duration::from_secs_f32(secs));
         let taken: Vec<f32> = std::mem::take(&mut *buf.lock().unwrap());
         let pcm = to_16k_mono(&taken, rate, ch);
+        if pcm.is_empty() {
+            println!("      NO AUDIO received for this clip: check the mic, then re-run");
+        }
         let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
         let path = out.join(format!("{label}_{:03}.wav", start + i + 1));
         write_wav(&path, &pcm);
@@ -140,6 +143,29 @@ pub fn collect(label: &str, count: usize, secs: f32, device_id: Option<String>) 
         );
     }
     drop(stream);
+}
+
+/// Trim to the active region (20 ms frames above 12% of the clip peak) plus a 120 ms margin.
+fn trim(pcm: &[i16]) -> Vec<i16> {
+    let fr = (TARGET as usize) / 50;
+    let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as f32;
+    let loud: Vec<bool> = pcm.chunks(fr).map(|c| c.iter().map(|s| s.unsigned_abs() as f32).fold(0f32, f32::max) > 0.12 * peak).collect();
+    let (Some(a), Some(b)) = (loud.iter().position(|x| *x), loud.iter().rposition(|x| *x)) else { return pcm.to_vec() };
+    let margin = 6usize;
+    let start = a.saturating_sub(margin) * fr;
+    let end = ((b + 1 + margin) * fr).min(pcm.len());
+    pcm[start..end].to_vec()
+}
+
+/// Writes trimmed copies of `files` to recordings/_trimmed and returns their paths.
+fn trimmed_copies(files: &[PathBuf]) -> Vec<PathBuf> {
+    let out = dir("_trimmed");
+    std::fs::create_dir_all(&out).unwrap();
+    files.iter().map(|f| {
+        let p = out.join(f.file_name().unwrap());
+        write_wav(&p, &trim(&read_wav(f)));
+        p
+    }).collect()
 }
 
 fn wavs(label: &str) -> Vec<PathBuf> {
@@ -201,9 +227,25 @@ fn detector(refs: &[PathBuf], threshold: f32, avg: f32) -> Rustpotter {
 }
 
 pub fn score(n_refs: usize) {
-    let hey = wavs("hey");
-    let neg = wavs("neg");
-    let bg = wavs("bg");
+    let usable = |label: &str| -> Vec<PathBuf> {
+        wavs(label)
+            .into_iter()
+            .filter(|p| {
+                let pcm = read_wav(p);
+                let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as f32 / 32768.0;
+                let word = trim(&pcm).len() as f32 / TARGET as f32;
+                // A single "Hey Gaia" is roughly 0.5-1.5 s once trimmed; longer means noise/talking, shorter means a cut-off clip.
+                let ok = pcm.len() >= TARGET as usize / 2 && peak >= 0.05 && (label == "bg" || (0.5..=1.5).contains(&word));
+                if !ok {
+                    println!("skipping unusable clip {} ({:.2}s, trimmed {word:.2}s, peak {peak:.2})", p.display(), pcm.len() as f32 / TARGET as f32);
+                }
+                ok
+            })
+            .collect()
+    };
+    let hey = usable("hey");
+    let neg = usable("neg");
+    let bg = usable("bg");
     println!("clips: hey={} neg={} bg={}", hey.len(), neg.len(), bg.len());
     if hey.len() < n_refs + 2 {
         eprintln!("need at least {} `hey` clips (n_refs {n_refs} + 2 to test)", n_refs + 2);
@@ -228,11 +270,11 @@ pub fn score(n_refs: usize) {
     for (thr, avg) in [(0.30, 0.15), (0.40, 0.20), (0.50, 0.25), (0.60, 0.30), (0.70, 0.35)] {
         let (mut hit, mut miss, mut nfp, mut bfp) = (0usize, 0usize, 0usize, 0usize);
         for (refs, tests) in &folds {
-            let mut d = detector(refs, thr, avg);
+            let mut d = detector(&trimmed_copies(refs), thr, avg);
             for t in tests {
-                let (h, b) = detect(&mut d, &read_wav(t));
+                let (h, b) = detect(&mut d, &trim(&read_wav(t)));
                 if std::env::var("GAIA_TRACE").is_ok() {
-                    println!("    {} -> detections {h}, best score {b:.3}", t.display());
+                    println!("    thr {thr:.2}: {} -> {}  (best score {b:.3})", t.file_name().unwrap().to_string_lossy(), if h > 0 { "HIT" } else { "MISS" });
                 }
                 if h > 0 {
                     hit += 1
@@ -241,7 +283,7 @@ pub fn score(n_refs: usize) {
                 }
             }
             for t in &neg {
-                if detect(&mut d, &read_wav(t)).0 > 0 {
+                if detect(&mut d, &trim(&read_wav(t))).0 > 0 {
                     nfp += 1
                 }
             }
