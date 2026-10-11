@@ -1,0 +1,17 @@
+# THROWAWAY Phase 0 spike for docs/background-voice-spec.md — never merged into the product.
+[package]
+name = "voice-phase0"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+cpal = "0.18"
+rustpotter = "3"
+earshot = "1"
+rubato = "5"
+rodio = "0.23"
+sonora = "0.2.0"
+aec3 = "0.4.0"
