@@ -13,7 +13,6 @@ import { useConversation } from './state/useConversation';
 import { useResearchJobs } from './state/useResearchJobs';
 import { useServerStatus } from './state/useServerStatus';
 import { useVoiceSession } from './state/useVoiceSession';
-import VoiceControls from './conversation/VoiceControls';
 import { setSpeechGain } from './lib/speech';
 import { L } from './lib/lexicon';
 
@@ -162,13 +161,13 @@ export default function App() {
       />
 
       <main className="gaia-main">
-        <VoiceControls listenState={voiceSession.state} />
         <Conversation
           thread={conversation.active}
           busy={conversation.busy}
           streaming={conversation.streaming}
           progress={conversation.progress}
           presenceState={presenceState}
+          listenState={voiceSession.state}
           whisper={whisper}
           onSend={conversation.send}
           onRetry={conversation.retry}
