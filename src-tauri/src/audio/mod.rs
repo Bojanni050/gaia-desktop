@@ -12,6 +12,10 @@
 //! every launch starts with the microphone off.
 
 mod capture;
+pub mod ptt;
+#[cfg(test)]
+mod testing;
+pub mod utterance;
 
 pub use capture::{
     AudioDeviceInfo, CaptureBackend, CaptureOpenError, CaptureSink, CaptureStream, CpalBackend,
@@ -224,6 +228,18 @@ impl MicController {
         }
     }
 
+    /// The live capture sink while the microphone is on and healthy; `None` when it is off or failed.
+    /// A recording attaches its tap here, and checks the sink is unchanged when it ends (a device
+    /// change swaps the sink, which ends the recording as interrupted).
+    pub fn capture_sink(&self) -> Option<Arc<CaptureSink>> {
+        let sh = self.inner.shared.lock().expect("mic state poisoned");
+        if sh.error.is_none() && sh.stream.is_some() {
+            sh.sink.clone()
+        } else {
+            None
+        }
+    }
+
     /// Stops everything (app exit).
     pub fn shutdown(&self) {
         self.set_enabled(false, None);
@@ -420,9 +436,14 @@ pub fn voice_list_devices(mic: tauri::State<'_, MicController>) -> Vec<AudioDevi
 #[tauri::command]
 pub fn voice_set_mic_enabled(
     mic: tauri::State<'_, MicController>,
+    ptt: tauri::State<'_, ptt::PttController>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
     enabled: bool,
 ) -> VoiceStatus {
+    // Switching the microphone off ends any recording at once: nothing recorded is ever kept or sent.
+    if !enabled {
+        ptt.cancel();
+    }
     let preferred = settings.get().voice.input_device;
     mic.set_enabled(enabled, preferred)
 }
@@ -441,117 +462,9 @@ pub fn voice_select_device(
 
 #[cfg(test)]
 mod tests {
+    use super::testing::{Fake, Mode};
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
-    #[derive(Clone, Copy, PartialEq)]
-    enum Mode {
-        Frames,
-        NoFrames,
-        Permission,
-        Fail,
-    }
-
-    struct Fake {
-        devices: Vec<AudioDeviceInfo>,
-        mode: Mutex<Mode>,
-        alive: Arc<AtomicUsize>,
-        opens: AtomicUsize,
-        last_sink: Mutex<Option<Arc<CaptureSink>>>,
-        stall: Arc<AtomicBool>,
-    }
-
-    struct FakeStream {
-        stop: Arc<AtomicBool>,
-        alive: Arc<AtomicUsize>,
-        thread: Option<std::thread::JoinHandle<()>>,
-    }
-    impl CaptureStream for FakeStream {}
-    impl Drop for FakeStream {
-        fn drop(&mut self) {
-            self.stop.store(true, Ordering::SeqCst);
-            if let Some(t) = self.thread.take() {
-                let _ = t.join();
-            }
-            self.alive.fetch_sub(1, Ordering::SeqCst);
-        }
-    }
-
-    fn dev(id: &str, default: bool) -> AudioDeviceInfo {
-        AudioDeviceInfo {
-            id: id.into(),
-            name: format!("Mic {id}"),
-            is_default: default,
-        }
-    }
-
-    impl Fake {
-        fn new(mode: Mode) -> Arc<Self> {
-            Arc::new(Self {
-                devices: vec![dev("a", true), dev("b", false)],
-                mode: Mutex::new(mode),
-                alive: Arc::new(AtomicUsize::new(0)),
-                opens: AtomicUsize::new(0),
-                last_sink: Mutex::new(None),
-                stall: Arc::new(AtomicBool::new(false)),
-            })
-        }
-        fn alive(&self) -> usize {
-            self.alive.load(Ordering::SeqCst)
-        }
-        fn set_mode(&self, m: Mode) {
-            *self.mode.lock().unwrap() = m;
-        }
-    }
-
-    impl CaptureBackend for Fake {
-        fn list_input_devices(&self) -> Vec<AudioDeviceInfo> {
-            self.devices.clone()
-        }
-        fn open(
-            &self,
-            device_id: Option<&str>,
-            sink: Arc<CaptureSink>,
-        ) -> Result<(Box<dyn CaptureStream>, AudioDeviceInfo), CaptureOpenError> {
-            self.opens.fetch_add(1, Ordering::SeqCst);
-            let mode = *self.mode.lock().unwrap();
-            match mode {
-                Mode::Permission => return Err(CaptureOpenError::PermissionDenied),
-                Mode::Fail => return Err(CaptureOpenError::NoDevice),
-                _ => {}
-            }
-            let info = match device_id {
-                Some(id) => self
-                    .devices
-                    .iter()
-                    .find(|d| d.id == id)
-                    .cloned()
-                    .ok_or_else(|| CaptureOpenError::DeviceNotFound(id.into()))?,
-                None => self.devices[0].clone(),
-            };
-            *self.last_sink.lock().unwrap() = Some(sink.clone());
-            self.alive.fetch_add(1, Ordering::SeqCst);
-            let stop = Arc::new(AtomicBool::new(false));
-            let s2 = stop.clone();
-            let stall = self.stall.clone();
-            let thread = std::thread::spawn(move || {
-                while !s2.load(Ordering::SeqCst) {
-                    if mode == Mode::Frames && !stall.load(Ordering::SeqCst) {
-                        sink.push(480, 0.25);
-                    }
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-            });
-            Ok((
-                Box::new(FakeStream {
-                    stop,
-                    alive: self.alive.clone(),
-                    thread: Some(thread),
-                }),
-                info,
-            ))
-        }
-    }
+    use std::sync::atomic::Ordering;
 
     fn fast() -> Timing {
         Timing {

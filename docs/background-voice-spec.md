@@ -224,6 +224,8 @@ Implement the engine behind `AudioInputEngine`, device list/select, `voice` sett
   - `cargo test --lib` passes in CI using the fake engine.
 
 ### Phase 2 — Push-to-talk and Cloud STT (C1)
+
+**Status (2026-10-12): implemented on branch `feat/voice-phase2`** (stacked on `feat/voice-phase1`; needs Gaia-Cloud PR #21 deployed with a speech-to-text provider configured). Built: capture tap on the mic sink (a recording sees mono chunks only while one is in progress), `audio/utterance.rs` (speech detection, trim, 16 kHz resample, WAV), `audio/ptt.rs` (`PttController` state machine, events `voice://ptt` and `voice://transcript`, 30 s limit, discard on mic-off or device change), `speech/stt.rs` (`POST /speech/transcribe`, status-to-code mapping), `voice_ptt_*` commands, `usePushToTalk` and a mic button in the composer. Deviation from the original plan: **no live VAD yet**; push-to-talk has the user choose start and stop, and the energy-based speech check runs once over the finished recording (it trims silence and refuses to upload recordings with no speech). Streaming VAD for hands-free mode arrives in Phase 3. Verified: 69 Rust tests (plus 4 opt-in hardware tests; the real microphone delivered exactly 2.00 s at 48 kHz through the tap), the real HTTP call against a local server, 143 frontend tests. Not yet verified: a full spoken question through a Gaia Cloud that has a working speech-to-text provider.
 VAD, segmentation, `/speech/transcribe`, `voice://transcript`, mic button in the composer feeding `send()`.
 - **Accept:**
   - A spoken question appears in the same thread and History as a typed one.

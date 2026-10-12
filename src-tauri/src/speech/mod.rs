@@ -16,13 +16,14 @@
 //! reply, not a fresh prompt.
 
 mod playback;
+pub mod stt;
 
 pub use playback::{PlayOutcome, PlaybackEngine, DEFAULT_FADE_MS};
 
 use crate::communication::{CommunicationError, ServerLink};
 use crate::error::DesktopError;
 
-fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
+pub(crate) fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     let config = link.config();
     let base = config
         .base_url
@@ -31,7 +32,7 @@ fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     Ok(base.trim_end_matches('/').to_string())
 }
 
-fn authorize(builder: reqwest::RequestBuilder, link: &ServerLink) -> reqwest::RequestBuilder {
+pub(crate) fn authorize(builder: reqwest::RequestBuilder, link: &ServerLink) -> reqwest::RequestBuilder {
     match link.config().auth_token {
         Some(token) => builder.bearer_auth(token),
         None => builder,
