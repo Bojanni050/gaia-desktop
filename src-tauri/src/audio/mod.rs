@@ -17,6 +17,7 @@ pub mod echo;
 pub mod ptt;
 pub mod stream;
 pub mod vad;
+pub mod wake;
 #[cfg(test)]
 mod testing;
 pub mod utterance;
