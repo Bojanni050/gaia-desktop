@@ -127,7 +127,7 @@ New `voice` struct in `Settings`, `#[serde(default)]` so legacy `settings.json` 
 
 ```
 voice: {
-  micEnabled: false,        // master switch; off on first launch and after every update
+  micEnabled: false,        // master switch. RUNTIME ONLY (never persisted; serde skip): off at every launch
   continuousEnabled: false,
   wakeWordEnabled: false,
   inputDevice: null,        // cpal device id (e.g. "wasapi:{...}"); null = system default; unknown id falls back to default
@@ -213,6 +213,8 @@ Cloud: `services/gaia-api/src/server.js`, new `src/speech/*Stt.js`, `adminRoutes
 - **Accept:** written findings; chosen wake engine, AEC crate, VAD and STT provider; measured false-accept/false-reject on a recorded set.
 
 ### Phase 1 — Rust audio core and master switch
+
+**Status (2026-10-12): implemented on branch `feat/voice-phase1`** (not yet merged). Built: `audio/capture.rs` (cpal backend, `CaptureBackend` trait), `audio/mod.rs` (`MicController`: master switch, device fallback, no-frames and device-failure watchdogs, level events), `voice` settings with migration of `audio.preferredInput`, `speech/playback.rs` (rodio playback thread with fade-out and stale-synthesis cancellation), `speech_play/stop/set_gain` commands, frontend wrapper and Settings controls. Verified: 39 Rust tests plus 3 opt-in hardware tests, 127 frontend tests, a real-microphone check that Windows' own consent record shows the microphone in use while on and released after off. Not yet done: a full manual run of the packaged app.
 Implement the engine behind `AudioInputEngine`, device list/select, `voice` settings, mic on/off, Rust playback replacing `playSpeech` (keeping gain/mute/fade).
 - **Accept:**
   - With the switch off, the Windows mic indicator is off and no capture stream exists.
@@ -263,7 +265,7 @@ Sentence-level TTS streaming for latency, Dutch tuning, level meter polish, opti
 | TTS fails | Text reply stands (existing behaviour); no retry loop |
 | Echo loop on speakers | AEC + post-playback cooldown + `bargeInEnabled=false` fallback |
 | Wake false accepts | Sensitivity setting, short confirmation tone, easy disarm. Near-miss words ("Gaia", "hey Maya") are the known weak spot |
-| Stream opens but delivers no frames | Watchdog (no callbacks for 2 s) → `voice://error`, stop, do not report "listening" |
+| Stream opens but delivers no frames | Watchdog (5 s for the first frames, 2 s for a later stall) → `voice://error`, stop, do not report "listening". **Security software can cause this:** the owner's Norton blocks a program it does not recognise (including every freshly built dev binary) until it is allowed, and the stream then opens without error but delivers nothing. The error text names this as a likely cause |
 | Audio glitch (xrun) in capture | Count and surface; drop the affected utterance rather than send gapped audio |
 | Wake word not enrolled | Wake toggle disabled until enrollment completes |
 | Crash with mic live | Capture dies with the process; always restarts `Off` |

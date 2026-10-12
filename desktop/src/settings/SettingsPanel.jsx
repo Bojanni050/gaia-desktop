@@ -9,11 +9,38 @@
 import React, { useEffect, useState } from 'react';
 import { settingsApi, serverApi, audioApi, captureApi, mcpApi } from '../server/api';
 import { setSpeechGain } from '../lib/speech';
+import { useVoiceStatus } from '../state/useVoiceStatus';
 import { L } from '../lib/lexicon';
+
+/** The one sentence (if any) explaining the microphone's current problem or notice. */
+function micMessage(voice) {
+  const error = voice.status && voice.status.error;
+  if (error) {
+    return (
+      {
+        no_frames: L.settingsMicErrNoFrames,
+        permission_denied: L.settingsMicErrDenied,
+        no_device: L.settingsMicErrNoDevice,
+        too_many_restarts: L.settingsMicErrRestarts,
+      }[error.code] || L.settingsMicErrOpen
+    );
+  }
+  const notice = voice.notice;
+  if (notice && voice.status && voice.status.state === 'listening') {
+    return (
+      {
+        device_fallback: L.settingsMicNoticeFallback,
+        device_changed: L.settingsMicNoticeChanged,
+      }[notice.code] || null
+    );
+  }
+  return null;
+}
 
 export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   const [settings, setSettings] = useState(null);
   const [audio, setAudio] = useState(null);
+  const voice = useVoiceStatus();
   const [captureSources, setCaptureSources] = useState([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -178,9 +205,55 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
             </section>
 
             <section>
+              <h3>{L.settingsMicrophone}</h3>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={voice.status ? voice.status.micEnabled : false}
+                  disabled={!voice.status}
+                  onChange={(e) => voice.setEnabled(e.target.checked)}
+                />
+                <span>{L.settingsMicToggle}</span>
+              </label>
+              <label className="field">
+                <span>{L.settingsMicDevice}</span>
+                <select
+                  value={settings.voice?.inputDevice || ''}
+                  onFocus={voice.refreshDevices}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    patch({ voice: { ...settings.voice, inputDevice: id } });
+                    voice.selectDevice(id);
+                  }}
+                >
+                  <option value="">{L.settingsMicDefault}</option>
+                  {voice.devices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {voice.status && voice.status.state === 'listening' && (
+                <>
+                  <p className="capability-line">
+                    {L.settingsMicListening} {voice.status.device ? voice.status.device.name : ''}
+                  </p>
+                  <div className="mic-level" aria-hidden="true">
+                    <div className="mic-level-fill" style={{ width: `${Math.min(100, Math.round(voice.level * 140))}%` }} />
+                  </div>
+                </>
+              )}
+              {voice.status && voice.status.state === 'off' && (
+                <p className="capability-line">{L.settingsMicOffState}</p>
+              )}
+              {micMessage(voice) && <p className="capability-line mic-note">{micMessage(voice)}</p>}
+            </section>
+
+            <section>
               <h3>{L.settingsCapabilities}</h3>
               <p className="capability-line">
-                {L.settingsMicrophone}: {audio ? audio.permission : '—'}
+                {L.settingsMicrophone}: {voice.status ? voice.status.permission : audio ? audio.permission : '—'}
               </p>
               <p className="capability-line">
                 {L.settingsCaptureSources}:{' '}

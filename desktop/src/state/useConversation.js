@@ -4,7 +4,7 @@
  * This hook owns no cognition: it sends user text through serverApi and
  * appends whatever reply the server returns. SOUL, memory, intent and
  * reasoning never run here. The one thing added on top of that reply —
- * speaking it via speechApi/playSpeech, gated by lib/language.js's
+ * speaking it via playSpeech (synthesis and playback in Rust), gated by lib/language.js's
  * shouldSpeak over the voice GET /speech/info describes (Dutch only when
  * the voice pronounces it — Xiaomi's TTS model only manages
  * Chinese/English) — is presentation, not cognition: it runs strictly
@@ -14,7 +14,7 @@
 import { useCallback, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
-import { speechApi, getSpeechInfo } from '../server/api';
+import { getSpeechInfo } from '../server/api';
 import { playSpeech, stopSpeech } from '../lib/speech';
 import { shouldSpeak } from '../lib/language';
 
@@ -197,8 +197,8 @@ export function useConversation(server) {
           try {
             const info = await getSpeechInfo(server.request);
             if (!shouldSpeak(fullReply, info && info.languages)) return;
-            const { bytes, mimeType } = await speechApi.synthesize(fullReply);
-            await playSpeech(bytes, mimeType);
+            // Synthesis and playback both happen in Rust (speech_play).
+            await playSpeech(fullReply);
           } catch (error) {
             // Never affects the turn — text is already canonical and shown.
             // But don't hide it either: a silent swallow is exactly what once

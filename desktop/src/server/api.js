@@ -103,6 +103,25 @@ export const audioApi = {
 };
 
 /**
+ * The microphone: Rust's `MicController`. The master switch is runtime-only: the microphone is off at
+ * every launch and only an explicit `setMicEnabled(true)` opens it; `false` drops the capture stream so
+ * Windows releases the device. Status is `{ state: 'off'|'listening'|'error', micEnabled, device,
+ * permission, error: { code, message } | null, glitches }`. Nothing is recorded or sent anywhere yet.
+ */
+export const voiceApi = {
+  getStatus: () => invoke('voice_get_status'),
+  listDevices: () => invoke('voice_list_devices'),
+  setMicEnabled: (enabled) => invoke('voice_set_mic_enabled', { enabled }),
+  /** `id` is a device id from listDevices, or null for the system default. Persisted. */
+  selectDevice: (id) => invoke('voice_select_device', { id }),
+  onState: (handler) => listen('voice://state', (event) => handler(event.payload)),
+  /** Failures and notices: `{ code, message }`. */
+  onError: (handler) => listen('voice://error', (event) => handler(event.payload)),
+  /** Peak input level 0..1, a few times a second while listening. */
+  onLevel: (handler) => listen('voice://level', (event) => handler(event.payload)),
+};
+
+/**
  * Gaia's voice — synthesizes speech for an already-received Gaia reply via
  * Rust's `speech_synthesize` (gaia-api's `POST /speech`, src/speech/
  * mimoTts.js or mistralTts.js server-side, depending on the configured TTS
@@ -115,6 +134,15 @@ export const audioApi = {
  * labeled `audio/wav` as before.
  */
 export const speechApi = {
+  /**
+   * Synthesizes `text` (Gaia Cloud's `/speech`) and plays it in Rust. Resolves with
+   * `{ outcome: 'ended' | 'stopped' }`, or `{ outcome: 'failed', message }`; rejects if the
+   * synthesis request itself fails.
+   */
+  play: (text) => invoke('speech_play', { text }),
+  /** Eases the current reply out over `fadeMs` and cancels one still being synthesised. */
+  stop: (fadeMs) => invoke('speech_stop', { fadeMs }),
+  setGain: (volume, muted) => invoke('speech_set_gain', { volume, muted }),
   async synthesize(text) {
     const result = await invoke('speech_synthesize', { text });
     if (Array.isArray(result)) {
