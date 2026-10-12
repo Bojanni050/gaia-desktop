@@ -151,6 +151,23 @@ export const voiceApi = {
   onContinuous: (handler) => listen('voice://continuous', (event) => handler(event.payload)),
   /** The user started talking over Gaia. Rust has already stopped her voice; cancel the turn too. */
   onBargeIn: (handler) => listen('voice://barge-in', () => handler()),
+
+  // The wake word, "Hey Gaia": recognised on this device only; nothing is transcribed or sent until it is
+  // heard. Enrolled by the user (a few recordings, kept in memory only; what is saved is a features file, not
+  // audio) and calibrated to their voice.
+  /** `{ enrolled, enabled, sensitivity, minSensitivity, maxSensitivity, clips, minClips, maxClips }` */
+  wakeStatus: () => invoke('voice_wake_status'),
+  /** Records one enrolment clip (about 3 s). `{ check: { ok, problem, seconds, peak }, accepted, min, max }` */
+  wakeEnrollRecord: () => invoke('voice_wake_enroll_record'),
+  /** Builds and calibrates the wake word from the accepted clips; resolves with the new status. */
+  wakeEnrollFinish: () => invoke('voice_wake_enroll_finish'),
+  wakeEnrollCancel: () => invoke('voice_wake_enroll_cancel'),
+  wakeSet: (enabled) => invoke('voice_wake_set', { enabled }),
+  wakeSetSensitivity: (value) => invoke('voice_wake_set_sensitivity', { value }),
+  /** Deletes the enrolled wake word. */
+  wakeForget: () => invoke('voice_wake_forget'),
+  /** "Hey Gaia" was heard (the chime plays). */
+  onWake: (handler) => listen('voice://wake', () => handler()),
 };
 
 /**

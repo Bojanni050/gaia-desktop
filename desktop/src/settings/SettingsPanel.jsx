@@ -10,6 +10,8 @@ import React, { useEffect, useState } from 'react';
 import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi } from '../server/api';
 import { setSpeechGain } from '../lib/speech';
 import { useVoiceStatus } from '../state/useVoiceStatus';
+import { useWakeWord } from '../state/useWakeWord';
+import WakeEnrollment from './WakeEnrollment';
 import { L } from '../lib/lexicon';
 
 /** The one sentence (if any) explaining the microphone's current problem or notice. */
@@ -41,6 +43,9 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const [settings, setSettings] = useState(null);
   const [audio, setAudio] = useState(null);
   const voice = useVoiceStatus();
+  const wake = useWakeWord();
+  const [enrolling, setEnrolling] = useState(false);
+  const [sensitivity, setSensitivity] = useState(null); // while the slider is being dragged
   const [captureSources, setCaptureSources] = useState([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -67,6 +72,80 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   }
 
   const patch = (part) => setSettings((prev) => ({ ...prev, ...part }));
+
+  /** The "Hey Gaia" block: toggle, sensitivity, and enrolment. */
+  function renderWake() {
+    const w = wake.status;
+    return (
+      <div className="wake-block">
+        <h4 className="wake-title">{L.wakeSection}</h4>
+        <p className="capability-line">{L.wakeHint}</p>
+        <p className="capability-line">{w && w.enrolled ? L.wakeEnrolled : L.wakeNotEnrolled}</p>
+        <label className="field field-toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(w && w.enabled)}
+            disabled={!w || !w.enrolled}
+            onChange={async (e) => {
+              const on = e.target.checked;
+              patch({ voice: { ...settings.voice, wakeWordEnabled: on } });
+              if (await wake.setEnabled(on) && on && !(voice.status && voice.status.micEnabled)) {
+                await voice.setEnabled(true);
+              }
+            }}
+          />
+          <span>{L.wakeToggle}</span>
+        </label>
+        {w && w.enrolled && (
+          <label className="field">
+            <span>{L.wakeSensitivity}</span>
+            <div className="volume-row">
+              <span className="capability-line">{L.wakeMoreSensitive}</span>
+              <input
+                type="range"
+                min={w.minSensitivity}
+                max={w.maxSensitivity}
+                step="0.01"
+                value={sensitivity ?? w.sensitivity}
+                onChange={(e) => setSensitivity(Number(e.target.value))}
+                onMouseUp={() => sensitivity !== null && wake.setSensitivity(sensitivity).then(() => setSensitivity(null))}
+                onKeyUp={() => sensitivity !== null && wake.setSensitivity(sensitivity).then(() => setSensitivity(null))}
+                onBlur={() => sensitivity !== null && wake.setSensitivity(sensitivity).then(() => setSensitivity(null))}
+              />
+              <span className="capability-line">{L.wakeStricter}</span>
+            </div>
+          </label>
+        )}
+        {w && w.enrolled && <p className="capability-line">{L.wakeSensitivityHint}</p>}
+        {listenState === 'waiting' && <p className="capability-line mic-note">{L.wakeWaiting}</p>}
+        {enrolling ? (
+          <WakeEnrollment
+            onClose={() => setEnrolling(false)}
+            onDone={(status) => {
+              wake.enrolled(status);
+              patch({ voice: { ...settings.voice, wakeEnrolled: true, wakeSensitivity: status.sensitivity } });
+            }}
+          />
+        ) : (
+          <div className="field-row">
+            <button type="button" onClick={() => setEnrolling(true)}>
+              {w && w.enrolled ? L.wakeReEnrol : L.wakeEnrol}
+            </button>
+            {w && w.enrolled && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (await wake.forget()) patch({ voice: { ...settings.voice, wakeEnrolled: false, wakeWordEnabled: false } });
+                }}
+              >
+                {L.wakeForget}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Hands-free: the preference is saved at once; switching it on also switches the microphone on, which
   // the user just asked for. (The microphone switch itself is never remembered across launches.)
@@ -263,11 +342,12 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <span>{L.settingsContinuous}</span>
               </label>
               <p className="capability-line">{L.settingsContinuousHint}</p>
-              {listenState !== 'off' && (
+              {listenState !== 'off' && listenState !== 'waiting' && (
                 <p className="capability-line mic-note">
                   {listenState === 'hearing' ? L.settingsContinuousHearing : L.settingsContinuousOn}
                 </p>
               )}
+              {renderWake()}
               <label className="field field-toggle">
                 <input
                   type="checkbox"

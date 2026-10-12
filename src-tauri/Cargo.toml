@@ -31,5 +31,6 @@ url = "2"
 keyring = { version = "3", features = ["windows-native"] }
 cpal = "0.18"
 aec3 = "0.4"
+rustpotter = "3"
 rodio = "0.23"
 chrono = "0.4"
