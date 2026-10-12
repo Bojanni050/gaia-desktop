@@ -4,6 +4,7 @@
 mod aec_sim;
 mod echo;
 mod replay;
+mod stt;
 mod harness;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{ErrorKind, SampleFormat};
@@ -20,6 +21,15 @@ fn main() {
         ),
         Some("echo-selftest") => echo::selftest(),
         Some("echo-replay") => replay::run(args[2..].to_vec()),
+        Some("stt-test") => {
+            let lang = args.iter().position(|a| a == "--lang").and_then(|i| args.get(i + 1)).cloned();
+            let mut dirs: Vec<String> = Vec::new();
+            let mut i = 2;
+            while i < args.len() {
+                if args[i] == "--lang" { i += 2; } else { dirs.push(args[i].clone()); i += 1; }
+            }
+            stt::run(dirs, lang)
+        }
         Some("echo-test") => {
             let save = args.iter().any(|a| a == "--save");
             let path = args.get(2).filter(|a| !a.starts_with("--")).cloned();

@@ -145,3 +145,19 @@ Best aec3 variant per run (relaxed 4x, cold unless noted); onset = seconds after
 - Run-to-run variation is large: the baseline repeat removed about 27 dB less echo than run 2, with similar user level. The cause is unknown (speaker/volume change, seat, the user's voice level, room).
 - The far run shows a cold start problem: 17 to 20 dB until the filter converged, then 30 to 35 dB on a second pass, so the first reply in a session is the riskiest.
 - Caveats: 5 runs from one room and one setup; false events measured over only 7 s per run; no ground truth for when the user began to speak; **speech-to-text quality on the attenuated speech is still unmeasured**.
+
+### Dutch speech-to-text on echo-cancelled audio (Mistral Voxtral, `voxtral-mini-latest`)
+
+`stt-test` cuts the 12-19 s window where the user talks over Gaia and transcribes it raw and after four echo-cancellation variants (language auto-detected; the key is read from the `MISTRAL_API_KEY` environment variable only and never stored). Audio was sent to api.mistral.ai.
+
+| Run | What the user said | raw mic | sonora default | aec3 default | aec3 relaxed x4 |
+|---|---|---|---|---|---|
+| run 3 | a sentence (story) | good | good, minor word errors | good | good, minor word errors |
+| loud | a sentence | good | good, minor word errors | good | good |
+| far | a sentence | good | worse (dropped words) | worse (dropped words) | good (about as good as raw) |
+| run 2, baseline | not confirmed (the script said to count aloud) | run 2: filler-word gibberish; baseline: empty | empty | empty | empty |
+
+- **Echo cancellation does not break Dutch STT** when the user speaks a sentence: all variants stayed close to the raw transcript, and `aec3` with relaxed suppression matched raw best in the hard (far-from-mic) run.
+- Raw mic transcripts did not contain Gaia's own (reference) speech, because the user was louder than the echo. Without AEC the echo would still be transcribed whenever the user is silent, which is why AEC remains necessary.
+- The two runs run 2 and baseline returned empty or nonsense text for every variant **including the raw mic**, so those are inconclusive (what the user said in them is unconfirmed, and the model may reject short or numeric speech, or the user may not have been heard). Repeat them with spoken sentences.
+- Auto language detection handled Dutch; no `language` hint was needed.

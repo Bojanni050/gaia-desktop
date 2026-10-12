@@ -37,7 +37,7 @@ fn p95(v: &[f32]) -> f32 {
     s.get(((s.len() as f32 - 1.0) * 0.95) as usize).copied().unwrap_or(0.0)
 }
 
-fn sonora_pass(reference: &[f32], mic: &[f32]) -> Vec<f32> {
+pub(crate) fn sonora_pass(reference: &[f32], mic: &[f32]) -> Vec<f32> {
     let cfg = Config { echo_canceller: Some(EchoCanceller::default()), ..Default::default() };
     let mut apm = AudioProcessing::builder()
         .config(cfg)
@@ -57,7 +57,7 @@ fn sonora_pass(reference: &[f32], mic: &[f32]) -> Vec<f32> {
     out
 }
 
-fn aec3_run(reference: &[f32], mic: &[f32], cfg: Option<EchoCanceller3Config>) -> Vec<f32> {
+pub(crate) fn aec3_run(reference: &[f32], mic: &[f32], cfg: Option<EchoCanceller3Config>) -> Vec<f32> {
     let fmt = AudioFormat::ten_ms(SR as u32, 1);
     let mut b = linear::builder(fmt, fmt)
         .initial_delay_ms(40)
@@ -81,7 +81,7 @@ fn aec3_run(reference: &[f32], mic: &[f32], cfg: Option<EchoCanceller3Config>) -
 }
 
 /// Less aggressive suppression: masking thresholds raised, nearend-dominant state entered more easily and held longer.
-fn gentle(level: u8) -> EchoCanceller3Config {
+pub(crate) fn gentle(level: u8) -> EchoCanceller3Config {
     let mut c = EchoCanceller3Config::default();
     let k = if level == 1 { 2.0 } else { 4.0 };
     let t = |a: f32, b: f32, e: f32| MaskingThresholds::new(a, b, e);
