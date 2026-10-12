@@ -11,7 +11,7 @@
  * after a reply already exists, never changes what was said, and its own
  * failure can never affect the turn (see runTurn).
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
 import { getSpeechInfo } from '../server/api';
@@ -37,6 +37,9 @@ export function useConversation(server) {
   // thing to show by then), and `finally` clears it so a failed turn can
   // never leave a stale "Step 2 of 3" hanging over the thread.
   const [progress, setProgress] = useState(null);
+  // The turn in flight, if any. A turn that was cancelled (the user interrupted) may finish after a new
+  // one has started; only the current turn is allowed to touch the busy/streaming state.
+  const currentTurn = useRef(null);
 
   const active = threads.find((t) => t.id === activeId) || null;
 
@@ -93,6 +96,8 @@ export function useConversation(server) {
       // letting her talk over the answer she is about to give. Playback is
       // presentation-only, so this never touches the turn itself.
       stopSpeech();
+      const turn = { requestId: null, cancelled: false };
+      currentTurn.current = turn;
       setBusy(true);
       const assistantId = localId();
       // Stamped the moment the reply first exists — the turn time is when the
@@ -141,6 +146,8 @@ export function useConversation(server) {
         // which is what lets History reopen this same thread later.
         const body = buildStreamTurnBody(history, threadId);
         const fullReply = await server.streamTurn(body, (delta) => {
+          // Deltas already on their way when the turn was cancelled are dropped.
+          if (turn.cancelled) return;
           // Plan progress rides its OWN frame and is never content: show
           // it while that step runs, drop it the instant the step ends
           // (the next step's `start` — or the reply itself — takes over).
@@ -154,7 +161,9 @@ export function useConversation(server) {
           setProgress(null);
           if (delta.reasoningContent) fullReasoning += delta.reasoningContent;
           appendToAssistant(delta.content);
-        });
+        }, turn);
+        // Interrupted while the last bytes arrived: what is on screen stays, nothing is spoken.
+        if (turn.cancelled) return;
         // A turn that streamed no content deltas at all (empty reply) must
         // surface as a failure rather than leaving a blank bubble — either
         // the server reported the failure on the stream itself (calm
@@ -207,6 +216,8 @@ export function useConversation(server) {
           }
         })();
       } catch (error) {
+        // An interruption is not a failure: the text received so far stays, with no error bubble.
+        if (turn.cancelled) return;
         const phrase = phraseTurnError(error);
         if (!assistantCreatedAt) assistantCreatedAt = new Date().toISOString();
         setThreads((prev) =>
@@ -225,18 +236,42 @@ export function useConversation(server) {
           })
         );
       } finally {
-        setBusy(false);
-        setStreaming(false);
-        setProgress(null);
+        if (currentTurn.current === turn) {
+          currentTurn.current = null;
+          setBusy(false);
+          setStreaming(false);
+          setProgress(null);
+        }
       }
     },
     [server]
   );
 
+  /**
+   * Stops the turn in flight (the user interrupted Gaia). The connection is closed through Rust so
+   * Gaia Cloud can stop generating; the reply received so far stays in the thread. Returns whether a
+   * turn was running.
+   */
+  const cancel = useCallback(() => {
+    const turn = currentTurn.current;
+    if (!turn || turn.cancelled) return false;
+    turn.cancelled = true;
+    currentTurn.current = null;
+    if (turn.requestId && server.cancelTurn) {
+      Promise.resolve(server.cancelTurn(turn.requestId)).catch(() => {});
+    }
+    setBusy(false);
+    setStreaming(false);
+    setProgress(null);
+    return true;
+  }, [server]);
+
   const send = useCallback(
-    (rawText, attachments = []) => {
+    (rawText, attachments = [], options = {}) => {
       const content = rawText.trim();
-      if (!content || busy) return;
+      if (!content || (busy && !options.interrupt)) return;
+      // Spoken over a running turn: the new question replaces it.
+      if (options.interrupt) cancel();
 
       const base = active || { id: localId(), title: null, messages: [] };
       const threadId = base.id;
@@ -266,7 +301,7 @@ export function useConversation(server) {
       setActiveId(threadId);
       return runTurn(threadId, history);
     },
-    [active, busy, runTurn]
+    [active, busy, runTurn, cancel]
   );
 
   /** Retry a failed assistant message: drop it and everything after, resend. */
@@ -285,5 +320,5 @@ export function useConversation(server) {
     [threads, activeId, busy, runTurn]
   );
 
-  return { threads, active, activeId, busy, streaming, progress, newThread, openThread, deleteThread, hydrateThread, send, retry };
+  return { threads, active, activeId, busy, streaming, progress, newThread, openThread, deleteThread, hydrateThread, send, retry, cancel };
 }

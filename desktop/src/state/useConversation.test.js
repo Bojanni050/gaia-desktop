@@ -213,3 +213,145 @@ describe("Gaia's voice gate", () => {
     expect(stopSpeech).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('interrupting a turn', () => {
+  /** A server whose turn streams one delta and then waits, until it is cancelled (or finished by hand). */
+  function hangingServer() {
+    const turns = [];
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta, handle) => {
+        const turn = { handle, onDelta };
+        turns.push(turn);
+        handle.requestId = `req-${turns.length}`;
+        onDelta({ content: 'Hoi, ik ben aan het ' });
+        return new Promise((resolve, reject) => {
+          turn.resolve = resolve;
+          turn.reject = reject;
+        });
+      }),
+      cancelTurn: vi.fn(async (requestId) => {
+        const turn = turns.find((t) => t.handle.requestId === requestId);
+        turn.reject(new Error('turn cancelled'));
+        return true;
+      }),
+    };
+    return { server, turns };
+  }
+
+  beforeEach(() => {
+    playSpeech.mockClear();
+    stopSpeech.mockClear();
+  });
+
+  it('cancel() closes the turn through the server, keeps the text so far, and shows no error', async () => {
+    const { server } = hangingServer();
+    const { result } = renderHook(() => useConversation(server));
+    act(() => {
+      result.current.send('vertel me iets');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(true));
+    await waitFor(() => expect(result.current.active.messages.at(-1).content).toBe('Hoi, ik ben aan het '));
+
+    let cancelled;
+    act(() => {
+      cancelled = result.current.cancel();
+    });
+    expect(cancelled).toBe(true);
+    expect(server.cancelTurn).toHaveBeenCalledWith('req-1');
+    expect(result.current.busy).toBe(false);
+    await act(async () => { await tick(20); });
+
+    const last = result.current.active.messages.at(-1);
+    expect(last.content).toBe('Hoi, ik ben aan het ');
+    expect(last.failed).toBeUndefined();
+    expect(playSpeech).not.toHaveBeenCalled();
+    expect(result.current.busy).toBe(false);
+  });
+
+  it('cancel() with nothing running does nothing', () => {
+    const { server } = hangingServer();
+    const { result } = renderHook(() => useConversation(server));
+    let cancelled;
+    act(() => {
+      cancelled = result.current.cancel();
+    });
+    expect(cancelled).toBe(false);
+    expect(server.cancelTurn).not.toHaveBeenCalled();
+  });
+
+  it('a late delta from the cancelled turn is dropped', async () => {
+    const { server, turns } = hangingServer();
+    const { result } = renderHook(() => useConversation(server));
+    act(() => {
+      result.current.send('vertel me iets');
+    });
+    await waitFor(() => expect(turns.length).toBe(1));
+    act(() => {
+      result.current.cancel();
+    });
+    act(() => turns[0].onDelta({ content: 'NA DE STOP' }));
+    expect(result.current.active.messages.at(-1).content).toBe('Hoi, ik ben aan het ');
+  });
+
+  it('a spoken question replaces the running turn, and the old turn finishing late cannot clobber the new one', async () => {
+    const { server, turns } = hangingServer();
+    const { result } = renderHook(() => useConversation(server));
+    act(() => {
+      result.current.send('eerste vraag');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(true));
+
+    act(() => {
+      result.current.send('tweede vraag, hardop', [], { interrupt: true });
+    });
+    await waitFor(() => expect(turns.length).toBe(2));
+    expect(server.cancelTurn).toHaveBeenCalledWith('req-1');
+    // let the cancelled first turn's promise settle (its `finally` must not reset the new turn's state)
+    await act(async () => { await tick(30); });
+    expect(result.current.busy).toBe(true);
+
+    await act(async () => {
+      turns[1].resolve('Het antwoord op de tweede vraag.');
+      await tick(20);
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    const userTurns = result.current.active.messages.filter((m) => m.role === 'user').map((m) => m.content);
+    expect(userTurns).toEqual(['eerste vraag', 'tweede vraag, hardop']);
+  });
+
+  it('without the interrupt option a question during a running turn is still ignored', async () => {
+    const { server, turns } = hangingServer();
+    const { result } = renderHook(() => useConversation(server));
+    act(() => {
+      result.current.send('eerste vraag');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(true));
+    act(() => {
+      result.current.send('tweede vraag');
+    });
+    await act(async () => { await tick(20); });
+    expect(turns.length).toBe(1);
+    expect(server.cancelTurn).not.toHaveBeenCalled();
+  });
+
+  it('hands the server a handle so the turn can be cancelled before any text arrives', async () => {
+    let seen;
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta, handle) => {
+        seen = handle;
+        handle.requestId = 'early';
+        return new Promise(() => {});
+      }),
+      cancelTurn: vi.fn(async () => true),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    act(() => {
+      result.current.send('hallo');
+    });
+    await waitFor(() => expect(seen).toBeDefined());
+    act(() => {
+      result.current.cancel();
+    });
+    expect(server.cancelTurn).toHaveBeenCalledWith('early');
+  });
+});

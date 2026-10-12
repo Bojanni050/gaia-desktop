@@ -10,6 +10,7 @@ import EpisodeTimeline from './logos/EpisodeTimeline';
 import UnderstandingRail from './cognition/UnderstandingRail';
 import { serverApi, presenceApi, settingsApi } from './server/api';import { useConversation } from './state/useConversation';
 import { useServerStatus } from './state/useServerStatus';
+import { useVoiceSession } from './state/useVoiceSession';
 import { setSpeechGain } from './lib/speech';
 import { L } from './lib/lexicon';
 
@@ -28,6 +29,8 @@ export default function App() {
   const [logosOpen, setLogosOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
+  // Hands-free: turns what Rust hears into conversation (and interruptions into cancelled turns).
+  const voiceSession = useVoiceSession({ conversation });
 
   useEffect(() => {
     presenceApi.get().catch(() => {});
@@ -85,8 +88,9 @@ export default function App() {
     presenceApi.setQuiet(next).catch(() => {});
   }, []);
 
-  // The orb rests quiet by default; Gaia is present, not performative.
-  const presenceState = 'quiet';
+  // The orb rests quiet by default; Gaia is present, not performative. While she hears the user speak
+  // hands-free it listens with them.
+  const presenceState = voiceSession.state === 'hearing' ? 'listening' : 'quiet';
   const whisper =
     status === 'offline'
       ? L.healthWhisper
@@ -131,6 +135,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           quiet={quiet}
           onQuietChange={handleQuiet}
+          listenState={voiceSession.state}
         />
       )}
 
