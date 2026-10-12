@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ArrowUp, Loader2, Mic, MicOff, Paperclip, X } from 'lucide-react';
+import { ArrowUp, Loader2, Paperclip, Speech, X } from 'lucide-react';
 import { libraryApi } from '../server/api';
 import { usePushToTalk } from '../state/usePushToTalk';
 import VoiceControls from './VoiceControls';
@@ -132,10 +132,8 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
           >
             {ptt.phase === 'transcribing' ? (
               <Loader2 size={16} className="spin" />
-            ) : ptt.micOn ? (
-              <Mic size={16} />
             ) : (
-              <MicOff size={16} />
+              <Speech size={16} />
             )}
           </button>
         )}
