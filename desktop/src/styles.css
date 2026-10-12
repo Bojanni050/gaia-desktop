@@ -987,3 +987,70 @@ body {
   .episode-observation { grid-template-columns: 64px 1fr; }
   .episode-shot { width: 64px; height: 48px; }
 }
+
+/* ------------------------------------------------------------- research status
+   Work Gaia put out at Hermes. The running line is deliberately quiet — it is
+   not a conversation turn. The question is deliberately not: a command that
+   needs a person's permission gets the weight of a question. */
+
+.research-status {
+  max-width: 760px; margin: 0 auto; padding: 10px 40px 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.research-running {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  color: var(--text-faint); font-family: var(--serif); font-style: italic;
+  font-size: 0.88rem; line-height: 1.5;
+}
+
+.research-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: research-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes research-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+.research-question {
+  border: 1px solid var(--accent-line); border-radius: 10px;
+  background: var(--surface-2); padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.research-question-title {
+  margin: 0; color: var(--text); font-family: var(--serif); font-size: 0.95rem;
+}
+
+.research-question-note { margin: 0; color: var(--text-muted); font-size: 0.85rem; }
+
+.research-command {
+  margin: 0; padding: 10px 12px; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text-muted);
+  font-family: var(--mono); font-size: 0.78rem; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.research-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.research-choice, .research-open {
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--surface-3);
+  color: var(--text); font-family: var(--sans); font-size: 0.82rem;
+}
+
+.research-choice:hover, .research-open:hover { border-color: var(--accent-line); }
+
+.research-choice:disabled { opacity: 0.5; cursor: default; }
+
+.research-choice-deny { color: var(--text-muted); }
+
+.research-elsewhere {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  color: var(--text-faint); font-size: 0.85rem;
+}
+
+.research-error { margin: 0; color: var(--accent); font-size: 0.82rem; }

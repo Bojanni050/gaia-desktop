@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import MessageView from './MessageView';
 import Composer from './Composer';
+import ResearchStatus from './ResearchStatus';
 import Presence from '../presence/Presence';
 import { PresenceOrb } from '../presence/PresenceOrb';
 import { getGreeting } from '../lib/greeting';
@@ -12,7 +13,7 @@ import { stepProgressLabel } from '../state/stepProgress';
  * moment (orb + greeting), messages, the thinking row, and the composer
  * dock with Gaia's presence above it.
  */
-export default function Conversation({ thread, busy, streaming, progress, presenceState, whisper, onSend, onRetry }) {
+export default function Conversation({ thread, busy, streaming, progress, presenceState, whisper, onSend, onRetry, research, onOpenResearchConversation }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const messages = thread?.messages || [];
@@ -100,6 +101,17 @@ export default function Conversation({ thread, busy, streaming, progress, presen
           <PresenceOrb state="quiet" size={18} />
           <span>{whisper}</span>
         </div>
+      )}
+
+      {research && (
+        <ResearchStatus
+          running={research.running}
+          awaiting={research.awaiting}
+          finished={research.finished}
+          activeConversationId={thread?.id}
+          onAnswer={research.answer}
+          onOpen={onOpenResearchConversation}
+        />
       )}
 
       <div className="composer-dock">

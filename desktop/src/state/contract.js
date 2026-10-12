@@ -234,3 +234,72 @@ export function parseEpisodeEvidence(response) {
     };
   });
 }
+
+// --- research jobs (work Gaia put out at Hermes) ----------------------------
+// A research turn is answered immediately and the findings arrive later: the
+// server writes them into the conversation, so nothing about the result crosses
+// this seam. What does cross it is the queue — that something is running, that
+// a run is waiting on a decision, and that a finished job has not been seen yet
+// — plus the two things a person can do: answer, and acknowledge.
+//
+// The queue is a plain ask (GET research/jobs) rather than a subscription,
+// because a run can outlive the window, a reconnect, or the app itself; only a
+// durable ask survives that. Server-side: researchRoutes.js.
+
+/**
+ * The three lists, kept apart on purpose: work in progress, a QUESTION waiting
+ * for a person, and work that ended unseen. A client must not be able to
+ * silence a question by acknowledging a result.
+ */
+export function buildResearchJobsRequest() {
+  return { method: 'get', path: 'research/jobs' };
+}
+
+export function parseResearchJobs(response) {
+  const list = (value) => (Array.isArray(value) ? value : []);
+  return {
+    running: list(response?.body?.running),
+    awaiting: list(response?.body?.awaiting),
+    finished: list(response?.body?.finished),
+  };
+}
+
+/** Marks one finished job as seen, so it is announced exactly once. */
+export function buildResearchAckRequest(id) {
+  return { method: 'post', path: `research/jobs/${encodeURIComponent(id)}/ack` };
+}
+
+/**
+ * The person's decision on a run that parked. `choice` must be one of the job's
+ * own `approval.choices` — the server refuses anything else, and Gaia decides
+ * nothing here: this forwards a human decision, the only moment a run is
+ * granted permission.
+ */
+export function buildResearchApprovalRequest(id, choice) {
+  return { method: 'post', path: `research/jobs/${encodeURIComponent(id)}/approval`, body: { choice } };
+}
+
+/**
+ * The question in a job, when there is one, narrowed to what the card needs.
+ * Absent for every job that is not waiting on a person.
+ */
+export function parseResearchApproval(job) {
+  const approval = job?.approval;
+  if (!approval || typeof approval.command !== 'string' || approval.command.length === 0) return null;
+  return {
+    command: approval.command,
+    description: typeof approval.description === 'string' ? approval.description : '',
+    choices: Array.isArray(approval.choices) && approval.choices.length > 0
+      ? approval.choices.filter((choice) => typeof choice === 'string')
+      : ['once', 'deny'],
+  };
+}
+
+/**
+ * The research job a turn just started, when there is one. The turn's own reply
+ * never carries the findings — only the fact that something is running.
+ */
+export function parseTurnResearch(response) {
+  const research = response?.body?.research;
+  return research && typeof research === 'object' ? research : null;
+}
