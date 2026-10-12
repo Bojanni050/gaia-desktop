@@ -67,6 +67,13 @@ pub fn run() {
             );
             app.manage(mic);
             app.manage(presence::PresenceController::new());
+
+            // Gaia's voice: playback lives in Rust (spec: AEC needs the playback signal), with the
+            // saved volume/mute applied from the first reply.
+            app.manage(speech::PlaybackEngine::new(
+                loaded.audio.volume,
+                loaded.audio.muted,
+            ));
             
             // Desktop version metadata
             app.manage(version::DesktopVersion::new());
@@ -110,6 +117,9 @@ pub fn run() {
             library::library_delete_file,
             // speech
             speech::speech_synthesize,
+            speech::speech_play,
+            speech::speech_stop,
+            speech::speech_set_gain,
             // notifications
             notifications::notify,
             // settings
