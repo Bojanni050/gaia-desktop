@@ -23,6 +23,13 @@
 //! - transcripts that are obviously a recognizer hallucinating on noise are discarded here.
 //!
 //! The desktop never interprets what is said: the transcript goes to the UI, which sends it as a turn.
+//!
+//! **The wake word** ("Hey Gaia", see `wake.rs`) gates all of this. With continuous conversation on she is
+//! always attentive. With only the wake word on, the microphone is listened to *locally and for that phrase
+//! only*: the live speech detector keeps tracking the room, but whatever it finds is thrown away and nothing
+//! is transcribed or sent anywhere. The phrase arms her for a conversation (a chime says so); she stays
+//! attentive while the user speaks, while a reply is being thought and spoken, and for a short follow-up
+//! window afterwards, then goes back to waiting. Saying the phrase while she is speaking also interrupts her.
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -38,10 +45,12 @@ use super::ptt::{Spawner, TranscribeError, Transcriber, Transcript, TranscriptEv
 use super::stream::Downsampler;
 use super::utterance;
 use super::vad::{SegEvent, Segmenter, SegmenterConfig, FRAME_SAMPLES};
+use super::wake::{RustpotterSpotter, WakeSpotter, DEFAULT_SENSITIVITY};
 use super::{MicController, VoiceError};
 
 pub const CONTINUOUS_EVENT: &str = "voice://continuous";
 pub const BARGE_IN_EVENT: &str = "voice://barge-in";
+pub const WAKE_EVENT: &str = "voice://wake";
 
 /// Speech this long while Gaia is speaking is an interruption, not a cough or leftover echo.
 const BARGE_IN_MS: u32 = 250;
@@ -61,10 +70,50 @@ pub enum RenderCmd {
 
 pub type RenderSink = Arc<dyn Fn(RenderCmd) + Send + Sync>;
 
+/// How long she stays attentive after the wake word, in 10 ms blocks.
+#[derive(Debug, Clone, Copy)]
+pub struct ArmTiming {
+    /// After the phrase: time to start speaking.
+    pub wake_window: u32,
+    /// While the user is speaking: attentive until this long after they stop.
+    pub speech_extend: u32,
+    /// After an utterance is sent: she may be thinking for a while before she answers.
+    pub think_hold: u32,
+    /// While she speaks, and after: a window for a follow-up without saying the phrase again.
+    pub follow_up: u32,
+}
+
+impl Default for ArmTiming {
+    fn default() -> Self {
+        Self { wake_window: 800, speech_extend: 500, think_hold: 6_000, follow_up: 1_000 }
+    }
+}
+
+/// Builds the wake-word detector from the saved reference and the sensitivity; `None` when there is no
+/// reference (not enrolled) or it cannot be used.
+pub type SpotterFactory = Arc<dyn Fn(Option<&[u8]>, f32) -> Option<Box<dyn WakeSpotter>> + Send + Sync>;
+
+fn rustpotter_factory() -> SpotterFactory {
+    Arc::new(|reference, sensitivity| {
+        reference
+            .and_then(|bytes| RustpotterSpotter::from_reference(bytes, sensitivity).ok())
+            .map(|s| Box::new(s) as Box<dyn WakeSpotter>)
+    })
+}
+
+struct WakeCfg {
+    reference: Option<Arc<Vec<u8>>>,
+    sensitivity: f32,
+    /// Bumped on every change so the listening thread rebuilds its detector.
+    version: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum ListenState {
     Off,
+    /// Only the wake word is being listened for, locally; nothing is transcribed or sent.
+    Waiting,
     /// Waiting for the user to speak.
     Listening,
     /// An utterance is in progress.
@@ -79,6 +128,8 @@ pub enum ContinuousEvent {
     State(ListenState),
     /// The user started talking over Gaia: stop her voice now.
     BargeIn,
+    /// The wake word was heard. (She is armed; play the chime.)
+    Wake,
     Transcript(TranscriptEvent),
 }
 
@@ -117,6 +168,13 @@ struct Inner {
     barge_in: AtomicBool,
     /// Set while hands-free mode runs; push-to-talk refuses to start meanwhile (one tap at a time).
     exclusive: Arc<AtomicBool>,
+    /// Always attentive (continuous conversation).
+    continuous: AtomicBool,
+    /// Attentive after the wake word.
+    wake: AtomicBool,
+    wake_cfg: Mutex<WakeCfg>,
+    factory: SpotterFactory,
+    arm: ArmTiming,
     active: Mutex<Option<Active>>,
     render_tx: Mutex<Sender<RenderCmd>>,
     /// Serialises transcriptions so transcripts arrive in the order they were spoken.
@@ -137,6 +195,22 @@ impl ContinuousListener {
         exclusive: Arc<AtomicBool>,
         barge_in: bool,
     ) -> Self {
+        Self::new_with_wake(mic, transcriber, emit, spawn, exclusive, barge_in, rustpotter_factory(), ArmTiming::default())
+    }
+
+    /// As [`ContinuousListener::new`], with the wake-word detector factory and the attention timing chosen
+    /// (tests use a scripted detector and short timings).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_wake(
+        mic: MicController,
+        transcriber: Arc<dyn Transcriber>,
+        emit: Emitter,
+        spawn: Spawner,
+        exclusive: Arc<AtomicBool>,
+        barge_in: bool,
+        factory: SpotterFactory,
+        arm: ArmTiming,
+    ) -> Self {
         let (render_tx, _unused) = mpsc::channel();
         Self {
             inner: Arc::new(Inner {
@@ -146,6 +220,11 @@ impl ContinuousListener {
                 spawn,
                 barge_in: AtomicBool::new(barge_in),
                 exclusive,
+                continuous: AtomicBool::new(false),
+                wake: AtomicBool::new(false),
+                wake_cfg: Mutex::new(WakeCfg { reference: None, sensitivity: DEFAULT_SENSITIVITY, version: 0 }),
+                factory,
+                arm,
                 active: Mutex::new(None),
                 render_tx: Mutex::new(render_tx),
                 order: Arc::new(tokio::sync::Mutex::new(())),
@@ -169,8 +248,49 @@ impl ContinuousListener {
         self.inner.barge_in.store(enabled, Ordering::SeqCst);
     }
 
-    /// Starts hands-free listening. Needs the microphone on.
+    /// Gives the listener the enrolled wake word (`None` forgets it). Takes effect within a moment.
+    pub fn set_wake_reference(&self, reference: Option<Vec<u8>>) {
+        let mut cfg = self.inner.wake_cfg.lock().expect("wake cfg poisoned");
+        cfg.reference = reference.map(Arc::new);
+        cfg.version += 1;
+    }
+
+    pub fn set_sensitivity(&self, sensitivity: f32) {
+        let mut cfg = self.inner.wake_cfg.lock().expect("wake cfg poisoned");
+        cfg.sensitivity = sensitivity;
+        cfg.version += 1;
+    }
+
+    /// True when a wake word is enrolled (a reference is loaded and usable).
+    pub fn has_wake_word(&self) -> bool {
+        (self.inner.factory)(
+            self.inner.wake_cfg.lock().expect("wake cfg poisoned").reference.as_ref().map(|r| r.as_slice()),
+            DEFAULT_SENSITIVITY,
+        )
+        .is_some()
+    }
+
+    /// Sets which of the two ways of being attentive are on, and starts or stops listening to match:
+    /// `continuous` = always attentive, `wake` = attentive after "Hey Gaia". Neither means no listening at
+    /// all. Starting needs the microphone on (`mic_off` otherwise; the flags are kept for later).
+    pub fn apply(&self, continuous: bool, wake: bool) -> Result<(), VoiceError> {
+        self.inner.continuous.store(continuous, Ordering::SeqCst);
+        self.inner.wake.store(wake, Ordering::SeqCst);
+        if continuous || wake {
+            self.start_listening()
+        } else {
+            self.stop();
+            Ok(())
+        }
+    }
+
+    /// Starts always-attentive hands-free listening. Needs the microphone on.
     pub fn start(&self) -> Result<(), VoiceError> {
+        self.inner.continuous.store(true, Ordering::SeqCst);
+        self.start_listening()
+    }
+
+    fn start_listening(&self) -> Result<(), VoiceError> {
         let mut active = self.inner.active.lock().expect("listener poisoned");
         if active.is_some() {
             return Ok(());
@@ -218,7 +338,7 @@ impl ContinuousListener {
             thread: Some(thread),
         });
         drop(active);
-        (self.inner.emit)(ContinuousEvent::State(ListenState::Listening));
+        // The listening thread announces the first state itself (Listening or Waiting) on its first block.
         Ok(())
     }
 
@@ -236,7 +356,7 @@ impl ContinuousListener {
     }
 }
 
-/// The listening thread: owns the downsampler, the echo canceller and the segmenter.
+/// The listening thread: owns the downsampler, the echo canceller, the segmenter and the wake detector.
 fn run(
     inner: Arc<Inner>,
     first_sink: Arc<CaptureSink>,
@@ -258,7 +378,12 @@ fn run(
             return;
         }
     };
+    // The segmenter runs on everything, armed or not, so it always knows the room; while she is not armed
+    // what it finds is thrown away (see below).
     let mut seg = Segmenter::new(SegmenterConfig::default());
+    let mut spotter: Option<Box<dyn WakeSpotter>> = None;
+    let mut spotter_version = u64::MAX;
+    let arm = inner.arm;
 
     let mut pending: Vec<f32> = Vec::new(); // 16 kHz, awaiting a full block
     let mut half: Vec<f32> = Vec::new(); // first block of the 20 ms frame
@@ -269,6 +394,9 @@ fn run(
     let mut barged = false;
     let mut hearing = false;
     let mut clean = vec![0.0f32; BLOCK];
+    let mut now: u64 = 0; // 10 ms blocks processed
+    let mut armed_until: u64 = 0;
+    let mut announced: Option<bool> = None;
 
     'outer: loop {
         if stop.load(Ordering::SeqCst) {
@@ -282,9 +410,9 @@ fn run(
 
         // The microphone may have been switched off or restarted on another device.
         match inner.mic.capture_sink() {
-            Some(now) if !Arc::ptr_eq(&now, &sink) => {
+            Some(now_sink) if !Arc::ptr_eq(&now_sink, &sink) => {
                 sink.detach_tap();
-                sink = now;
+                sink = now_sink;
                 let (t, r) = mpsc::channel::<Vec<f32>>();
                 audio_rx = r;
                 sink.attach_tap(t);
@@ -292,14 +420,26 @@ fn run(
                 pending.clear();
                 half.clear();
                 seg.reset();
+                if let Some(s) = spotter.as_mut() {
+                    s.reset();
+                }
                 hearing = false;
                 continue;
             }
             Some(_) => {}
             None => {
-                // switched off (or failed): hands-free ends with it
+                // switched off (or failed): listening ends with it
                 seg.reset();
                 break 'outer;
+            }
+        }
+
+        // A changed wake word or sensitivity rebuilds the detector.
+        {
+            let cfg = inner.wake_cfg.lock().expect("wake cfg poisoned");
+            if cfg.version != spotter_version {
+                spotter = (inner.factory)(cfg.reference.as_ref().map(|r| r.as_slice()), cfg.sensitivity);
+                spotter_version = cfg.version;
             }
         }
 
@@ -322,6 +462,7 @@ fn run(
             let block: Vec<f32> = pending.drain(..BLOCK).collect();
             let render: Vec<f32> = (0..BLOCK).map(|_| render_queue.pop_front().unwrap_or(0.0)).collect();
             aec.process(&render, &block, &mut clean);
+            now += 1;
 
             let playing = !render_queue.is_empty();
             let speaking = playing || tail > 0;
@@ -338,6 +479,36 @@ fn run(
             }
             was_speaking = speaking;
 
+            // The wake word. (With continuous conversation on she is always attentive: the phrase is then
+            // just speech.) Heard while she is speaking, it also interrupts her.
+            let always = inner.continuous.load(Ordering::SeqCst);
+            let wake_on = inner.wake.load(Ordering::SeqCst);
+            let was_armed = always || now <= armed_until;
+            if wake_on && !always {
+                if let Some(detector) = spotter.as_mut() {
+                    if detector.push(&clean) {
+                        if speaking && !barged {
+                            barged = true;
+                            (inner.emit)(ContinuousEvent::BargeIn);
+                        }
+                        armed_until = now + arm.wake_window as u64;
+                        (inner.emit)(ContinuousEvent::Wake);
+                    }
+                }
+            }
+            // A conversation in progress stays open while she speaks.
+            if speaking && was_armed && !always {
+                armed_until = armed_until.max(now + arm.follow_up as u64);
+            }
+            let armed = always || now <= armed_until;
+            if announced != Some(armed) {
+                announced = Some(armed);
+                (inner.emit)(ContinuousEvent::State(if armed { ListenState::Listening } else { ListenState::Waiting }));
+                if !armed {
+                    hearing = false;
+                }
+            }
+
             half.extend_from_slice(&clean);
             if half.len() < FRAME_SAMPLES {
                 continue;
@@ -345,7 +516,7 @@ fn run(
             let frame: Vec<f32> = half.drain(..FRAME_SAMPLES).collect();
 
             // Half-duplex: not listening while Gaia speaks (and briefly after). Anything in progress is dropped.
-            let deaf = (speaking && !inner.barge_in.load(Ordering::SeqCst)) || cooldown > 0;
+            let deaf = armed && ((speaking && !inner.barge_in.load(Ordering::SeqCst)) || cooldown > 0);
             if cooldown > 0 && !speaking {
                 cooldown -= 1;
             }
@@ -358,7 +529,13 @@ fn run(
                 continue;
             }
 
-            match seg.push_frame(&frame) {
+            let event = seg.push_frame(&frame);
+            if !armed {
+                // Waiting for the wake word: the room is tracked, but nothing found in it is acted on, so
+                // nothing is ever transcribed or sent while she is not attentive.
+                continue;
+            }
+            match event {
                 Some(SegEvent::Started) => {
                     hearing = true;
                     (inner.emit)(ContinuousEvent::State(ListenState::Hearing));
@@ -370,8 +547,12 @@ fn run(
                 Some(SegEvent::Utterance(samples)) => {
                     hearing = false;
                     submit(&inner, samples);
+                    armed_until = armed_until.max(now + arm.think_hold as u64);
                 }
                 None => {}
+            }
+            if seg.in_speech() {
+                armed_until = armed_until.max(now + arm.speech_extend as u64);
             }
             if speaking && !barged && seg.in_speech() && seg.speech_ms() >= BARGE_IN_MS {
                 barged = true;
@@ -739,6 +920,251 @@ mod tests {
         })
         .await;
         assert!(r.listener.is_active());
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    // --- the wake word ----------------------------------------------------------------------------------
+
+    /// A stand-in for the real detector: "hears" the wake word at the start of the Nth loud burst.
+    struct ScriptedSpotter {
+        fire_on: usize,
+        bursts: usize,
+        was_loud: bool,
+    }
+
+    impl WakeSpotter for ScriptedSpotter {
+        fn push(&mut self, audio: &[f32]) -> bool {
+            let loud = rms(audio) > 0.1;
+            let rising = loud && !self.was_loud;
+            self.was_loud = loud;
+            if rising {
+                self.bursts += 1;
+                return self.bursts == self.fire_on;
+            }
+            false
+        }
+        fn reset(&mut self) {
+            self.was_loud = false;
+        }
+    }
+
+    fn rms(x: &[f32]) -> f32 {
+        (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
+    }
+
+    /// Short attention windows (10 ms blocks) so the tests fit between the fake microphone's bursts.
+    fn quick_arm() -> ArmTiming {
+        ArmTiming { wake_window: 150, speech_extend: 30, think_hold: 30, follow_up: 30 }
+    }
+
+    struct WakeRig {
+        rig: Rig,
+        built: Arc<AtomicUsize>,
+    }
+
+    /// A listener whose detector fires on the `fire_on`-th burst. `enrolled` decides whether a reference
+    /// exists at all (without one the factory returns no detector, as in production).
+    fn wake_rig(mode: Mode, fire_on: usize, enrolled: bool) -> WakeRig {
+        let fake = Fake::new(mode);
+        let mic = MicController::new(
+            fake.clone(),
+            Arc::new(|_| {}),
+            Timing {
+                poll: Duration::from_millis(5),
+                first_frames_timeout: Duration::from_secs(5),
+                no_frames_timeout: Duration::from_secs(5),
+                max_restarts: 3,
+                restart_window: Duration::from_secs(60),
+            },
+        );
+        let transcriber = FakeTranscriber::saying("hoe laat is het");
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        let l2 = log.clone();
+        let handle = Handle::current();
+        let exclusive = Arc::new(AtomicBool::new(false));
+        let built = Arc::new(AtomicUsize::new(0));
+        let built2 = built.clone();
+        let factory: SpotterFactory = Arc::new(move |reference, _sensitivity| {
+            built2.fetch_add(1, Ordering::SeqCst);
+            reference.map(|_| Box::new(ScriptedSpotter { fire_on, bursts: 0, was_loud: false }) as Box<dyn WakeSpotter>)
+        });
+        let listener = ContinuousListener::new_with_wake(
+            mic.clone(),
+            transcriber.clone(),
+            Arc::new(move |e| l2.lock().unwrap().push(e)),
+            Arc::new(move |f| {
+                handle.spawn(f);
+            }),
+            exclusive.clone(),
+            true,
+            factory,
+            quick_arm(),
+        );
+        if enrolled {
+            listener.set_wake_reference(Some(vec![1, 2, 3]));
+        }
+        WakeRig { rig: Rig { fake, mic, listener, log, transcriber, exclusive }, built }
+    }
+
+    fn wakes(log: &Log) -> usize {
+        log.lock().unwrap().iter().filter(|e| matches!(e, ContinuousEvent::Wake)).count()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn waiting_for_the_wake_word_transcribes_nothing_until_it_is_heard() {
+        let w = wake_rig(Mode::Bursts, 2, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+
+        wait_for("the wake word", || wakes(&r.log) >= 1).await;
+        wait_for("the question after it", || !transcripts(&r.log).is_empty()).await;
+
+        // The first burst was speech too, but she was not attentive: it never left the device.
+        assert_eq!(r.transcriber.calls.load(Ordering::SeqCst), 1, "only the burst after the wake word was sent");
+        let events = r.log.lock().unwrap().clone();
+        let wake_at = events.iter().position(|e| matches!(e, ContinuousEvent::Wake)).unwrap();
+        let first_transcript = events.iter().position(|e| matches!(e, ContinuousEvent::Transcript(_))).unwrap();
+        assert!(wake_at < first_transcript, "the phrase comes first");
+        let waiting_before_wake = events[..wake_at]
+            .iter()
+            .any(|e| matches!(e, ContinuousEvent::State(ListenState::Waiting)));
+        assert!(waiting_before_wake, "she announced that she was waiting, not listening");
+        assert_eq!(transcripts(&r.log)[0].source, "continuous");
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn attention_ends_after_the_conversation_and_later_speech_is_ignored_again() {
+        let w = wake_rig(Mode::Bursts, 2, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+        wait_for("the transcript", || !transcripts(&r.log).is_empty()).await;
+        wait_for("back to waiting", || {
+            let s = states(&r.log);
+            let last_listening = s.iter().rposition(|x| *x == ListenState::Listening);
+            let last_waiting = s.iter().rposition(|x| *x == ListenState::Waiting);
+            matches!((last_listening, last_waiting), (Some(l), Some(w)) if w > l)
+        })
+        .await;
+        // two more bursts go by while she is not attentive
+        tokio::time::sleep(Duration::from_millis(1_500)).await;
+        assert_eq!(transcripts(&r.log).len(), 1, "speech after the conversation ended is not sent");
+        assert_eq!(r.transcriber.calls.load(Ordering::SeqCst), 1);
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn saying_the_phrase_while_gaia_speaks_interrupts_her() {
+        let w = wake_rig(Mode::Bursts, 1, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+        (r.listener.render_sink())(RenderCmd::Start(reply_audio(20)));
+        wait_for("the wake word", || wakes(&r.log) >= 1).await;
+        let events = r.log.lock().unwrap().clone();
+        let barge = events.iter().position(|e| matches!(e, ContinuousEvent::BargeIn)).expect("an interruption");
+        let wake = events.iter().position(|e| matches!(e, ContinuousEvent::Wake)).unwrap();
+        assert!(barge < wake, "her voice is stopped first, then the chime");
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn continuous_conversation_makes_the_phrase_unnecessary() {
+        let w = wake_rig(Mode::Bursts, 99, true); // the detector never fires
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(true, true).unwrap();
+        wait_for("a transcript without any wake word", || !transcripts(&r.log).is_empty()).await;
+        assert_eq!(wakes(&r.log), 0);
+        assert!(!states(&r.log).contains(&ListenState::Waiting), "always attentive: never waiting");
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn with_neither_mode_on_nothing_listens() {
+        let w = wake_rig(Mode::Bursts, 1, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, false).unwrap();
+        assert!(!r.listener.is_active());
+        let sink = r.fake.last_sink.lock().unwrap().clone().unwrap();
+        assert!(!sink.is_tapping(), "no tap, no audio");
+        r.listener.apply(false, true).unwrap();
+        assert!(r.listener.is_active());
+        r.listener.apply(false, false).unwrap();
+        assert!(!r.listener.is_active());
+        assert!(!r.exclusive.load(Ordering::SeqCst));
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn starting_needs_the_microphone_on() {
+        let w = wake_rig(Mode::Bursts, 1, true);
+        let r = &w.rig;
+        assert_eq!(r.listener.apply(false, true).unwrap_err().code, "mic_off");
+        assert!(!r.listener.is_active());
+        assert!(!r.exclusive.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn switching_the_microphone_off_ends_wake_listening_too() {
+        let w = wake_rig(Mode::Quiet, 1, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+        wait_for("waiting", || states(&r.log).contains(&ListenState::Waiting)).await;
+        r.mic.set_enabled(false, None);
+        wait_for("ended", || !r.listener.is_active()).await;
+        assert_eq!(states(&r.log).last(), Some(&ListenState::Off));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_new_wake_word_or_sensitivity_rebuilds_the_detector() {
+        let w = wake_rig(Mode::Quiet, 99, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+        wait_for("the first detector", || w.built.load(Ordering::SeqCst) >= 1).await;
+        let before = w.built.load(Ordering::SeqCst);
+        r.listener.set_sensitivity(0.65);
+        wait_for("a rebuild after the sensitivity changed", || w.built.load(Ordering::SeqCst) > before).await;
+        let before = w.built.load(Ordering::SeqCst);
+        r.listener.set_wake_reference(Some(vec![9, 9]));
+        wait_for("a rebuild after re-enrolling", || w.built.load(Ordering::SeqCst) > before).await;
+        r.listener.set_wake_reference(None);
+        assert!(!r.listener.has_wake_word(), "forgotten means no detector can be built");
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_wake_word_that_is_not_enrolled_never_wakes_and_never_sends() {
+        let w = wake_rig(Mode::Bursts, 1, false);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+        tokio::time::sleep(Duration::from_millis(1_200)).await;
+        assert_eq!(wakes(&r.log), 0);
+        assert_eq!(r.transcriber.calls.load(Ordering::SeqCst), 0);
+        assert!(states(&r.log).contains(&ListenState::Waiting));
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn push_to_talk_cannot_start_while_the_wake_word_is_listening() {
+        let w = wake_rig(Mode::Bursts, 99, true);
+        let r = &w.rig;
+        r.mic.set_enabled(true, None);
+        r.listener.apply(false, true).unwrap();
+        assert!(r.exclusive.load(Ordering::SeqCst), "the microphone tap is claimed");
         r.listener.stop();
         r.mic.set_enabled(false, None);
     }

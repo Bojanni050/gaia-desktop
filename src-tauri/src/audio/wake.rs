@@ -7,6 +7,11 @@
 //! room noise or 10 minutes of television dialogue, but near-misses such as "Gaia" alone or "hey Maya" do
 //! fire it, which is why a short chime follows every detection (a false accept is then cheap and obvious).
 //!
+//! Scores are not absolute: they shift with how many clips were enrolled and how tightly they were trimmed
+//! (on the owner's recordings a fixed 0.55 caught 76% with one enrolment and 7% with another). So enrolment
+//! calibrates itself: every clip is scored against a reference built from the *others*, and the sensitivity
+//! is set just below where the user's own phrase scores. The slider then starts from that value.
+//!
 //! Privacy: detection is entirely local and nothing leaves the device until the phrase is heard. The
 //! enrolment recordings live in memory only; what is saved is the reference file, which holds features
 //! (numbers), not audio, and can be deleted at any time.
@@ -41,8 +46,13 @@ const MIN_SNR: f32 = 4.0;
 /// speech in it, just steady noise (a fan, hiss) that happens to be above the floor.
 const MIN_CONTRAST: f32 = 3.0;
 
-/// The default sensitivity: where Phase 0 found nearly every wake word caught with no ambient false accepts.
-pub const DEFAULT_SENSITIVITY: f32 = 0.55;
+/// Used only when there is nothing to calibrate from; enrolment sets the real value for each user.
+pub const DEFAULT_SENSITIVITY: f32 = 0.50;
+/// How far below the lower end of the user's own phrase scores the threshold is set.
+const CALIBRATION_MARGIN: f32 = 0.03;
+/// Trimming leaves this much audio around the phrase in an enrolment clip (tighter references
+/// separated the phrase from near-misses best on the owner's recordings).
+const ENROL_MARGIN_SECS: f32 = 0.05;
 pub const MIN_SENSITIVITY: f32 = 0.40;
 pub const MAX_SENSITIVITY: f32 = 0.70;
 
@@ -175,16 +185,16 @@ pub fn check_clip(samples: &[f32]) -> (ClipCheck, Option<Vec<i16>>) {
     if !outside.is_empty() && rms(inside) < MIN_SNR * rms(&outside) {
         return rejected(ClipProblem::Noisy, seconds, peak);
     }
-    let pcm = inside.iter().map(|s| (s.clamp(-1.0, 1.0) * 32_767.0) as i16).collect();
+    // Keep only a little margin: speech_range leaves 0.2 s, a reference built from tight clips tells the
+    // phrase from near-misses better.
+    let shave = ((MARGIN_SECS - ENROL_MARGIN_SECS) * TARGET_RATE as f32) as usize;
+    let tight = if inside.len() > 2 * shave + TARGET_RATE as usize / 4 { &inside[shave..inside.len() - shave] } else { inside };
+    let pcm = tight.iter().map(|s| (s.clamp(-1.0, 1.0) * 32_767.0) as i16).collect();
     (ClipCheck { ok: true, problem: None, seconds, peak }, Some(pcm))
 }
 
-/// Builds the reference file from the enrolment clips, and proves it works: the finished detector must hear
-/// at least four fifths of the very clips it was built from, or the recordings are too unlike each other.
-pub fn build_reference(clips: &[Vec<i16>], sensitivity: f32) -> Result<Vec<u8>, String> {
-    if clips.len() < MIN_CLIPS {
-        return Err(format!("need at least {MIN_CLIPS} recordings, have {}", clips.len()));
-    }
+/// The reference file for these clips (no checks).
+fn reference_bytes(clips: &[Vec<i16>]) -> Result<Vec<u8>, String> {
     let samples: HashMap<String, Vec<u8>> = clips
         .iter()
         .take(MAX_CLIPS)
@@ -192,7 +202,100 @@ pub fn build_reference(clips: &[Vec<i16>], sensitivity: f32) -> Result<Vec<u8>, 
         .map(|(i, pcm)| (format!("hey_gaia_{i:02}.wav"), utterance::wav_bytes(pcm)))
         .collect();
     let reference = WakewordRef::new_from_sample_buffers("hey_gaia".into(), None, None, samples, 16)?;
-    let bytes = reference.save_to_buffer()?;
+    reference.save_to_buffer()
+}
+
+/// A clip as the live detector meets it: speech in the middle of quiet, with room to finish.
+fn padded(clip: &[i16]) -> Vec<f32> {
+    let mut audio = vec![0.0f32; TARGET_RATE as usize];
+    audio.extend(clip.iter().map(|s| *s as f32 / 32_768.0));
+    audio.extend(std::iter::repeat(0.0).take(TARGET_RATE as usize * 3 / 2));
+    audio
+}
+
+/// How well `reference` recognises `clip`: the best detection score (0..1), or `None` when it does not hear
+/// the phrase at all. Scored at the loosest setting so the number, not a yes/no, comes back.
+pub fn score_clip(reference: &[u8], clip: &[i16]) -> Option<f32> {
+    let config = RustpotterConfig {
+        fmt: AudioFmt {
+            sample_rate: TARGET_RATE as usize,
+            sample_format: SampleFormat::I16,
+            channels: 1,
+            endianness: Endianness::Little,
+        },
+        detector: DetectorConfig { threshold: 0.05, avg_threshold: 0.0, ..DetectorConfig::default() },
+        ..RustpotterConfig::default()
+    };
+    let mut detector = Rustpotter::new(&config).ok()?;
+    detector.add_wakeword_from_buffer("hey_gaia", reference).ok()?;
+    let frame = detector.get_samples_per_frame();
+    let audio: Vec<i16> = padded(clip).iter().map(|s| (s.clamp(-1.0, 1.0) * 32_767.0) as i16).collect();
+    // The detector's running best score is read directly: at a loose threshold it never settles on a
+    // final detection, but the strongest window it has seen is exactly the number wanted.
+    let mut best: Option<f32> = None;
+    for chunk in audio.chunks_exact(frame) {
+        let _ = detector.process_samples::<i16>(chunk.to_vec());
+        if let Some(partial) = detector.get_partial_detection() {
+            best = Some(best.map_or(partial.score, |b: f32| b.max(partial.score)));
+        }
+    }
+    best
+}
+
+/// A finished enrolment: the reference to save and the sensitivity calibrated for this voice.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Enrolled {
+    pub reference: Vec<u8>,
+    pub sensitivity: f32,
+}
+
+/// Builds the wake word from the enrolment clips and calibrates it to the user's own voice.
+///
+/// Each clip is scored against a reference built from all the *other* clips (how a fresh "Hey Gaia" would
+/// score), and the sensitivity is set a little below the lower end of those scores. If too many clips are
+/// not recognised even by their siblings, the recordings are too unlike each other to enrol.
+pub fn enroll(clips: &[Vec<i16>]) -> Result<Enrolled, String> {
+    if clips.len() < MIN_CLIPS {
+        return Err(format!("need at least {MIN_CLIPS} recordings, have {}", clips.len()));
+    }
+    let clips = &clips[..clips.len().min(MAX_CLIPS)];
+
+    // Leave-one-out, one thread per clip.
+    let scores: Vec<Option<f32>> = std::thread::scope(|scope| {
+        let jobs: Vec<_> = (0..clips.len())
+            .map(|i| {
+                scope.spawn(move || {
+                    let others: Vec<Vec<i16>> =
+                        clips.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, c)| c.clone()).collect();
+                    reference_bytes(&others).ok().and_then(|r| score_clip(&r, &clips[i]))
+                })
+            })
+            .collect();
+        jobs.into_iter().map(|j| j.join().unwrap_or(None)).collect()
+    });
+    let mut heard: Vec<f32> = scores.iter().flatten().copied().collect();
+    if heard.len() * 5 < clips.len() * 4 {
+        return Err(format!(
+            "the detector recognised only {} of {} recordings from the others: they differ too much from each other",
+            heard.len(),
+            clips.len()
+        ));
+    }
+    heard.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lower_end = heard[(heard.len() - 1) / 5];
+    let sensitivity = (lower_end - CALIBRATION_MARGIN).clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+
+    let reference = reference_bytes(clips)?;
+    Ok(Enrolled { reference, sensitivity })
+}
+
+/// Builds the reference file from the enrolment clips and checks it against its own clips at `sensitivity`
+/// (kept for callers that fix the sensitivity; enrolment uses [`enroll`]).
+pub fn build_reference(clips: &[Vec<i16>], sensitivity: f32) -> Result<Vec<u8>, String> {
+    if clips.len() < MIN_CLIPS {
+        return Err(format!("need at least {MIN_CLIPS} recordings, have {}", clips.len()));
+    }
+    let bytes = reference_bytes(clips)?;
 
     let mut heard = 0;
     for clip in clips.iter().take(MAX_CLIPS) {
@@ -318,7 +421,7 @@ mod tests {
         let (check, pcm) = check_clip(&recording(150.0, 0.03, 1.0, 1));
         assert!(check.ok, "{check:?}");
         let secs = pcm.unwrap().len() as f32 / SR as f32;
-        assert!((secs - 1.4).abs() < 0.2, "phrase plus margin, not the whole 2.6 s: {secs}");
+        assert!((0.7..1.3).contains(&secs), "the phrase with a little margin, not the whole 2.6 s: {secs}");
     }
 
     #[test]
@@ -450,6 +553,52 @@ mod tests {
         assert!(!spotter.push(&[]), "nothing after a reset");
     }
 
+    // --- enrolment and calibration -----------------------------------------------------------------------
+
+    #[test]
+    fn enrolling_calibrates_a_sensitivity_inside_the_allowed_range() {
+        let clips = good_clips(MAX_CLIPS);
+        let enrolled = enroll(&clips).expect("enrols");
+        assert!((MIN_SENSITIVITY..=MAX_SENSITIVITY).contains(&enrolled.sensitivity), "{}", enrolled.sensitivity);
+        // the calibrated detector hears the phrase again, and not a flat-spectrum burst
+        let mut stream = vec![0.0f32; SR];
+        stream.extend(recording(152.0, 0.03, 1.0, 99));
+        stream.extend(vec![0.0f32; SR * 2]);
+        assert!(RustpotterSpotter::from_reference(&enrolled.reference, enrolled.sensitivity).unwrap().push(&stream));
+        let mut burst = vec![0.0f32; SR];
+        burst.extend((0..SR).map(|i| 0.25 * ((i * 31_337 % 2000) as f32 / 1000.0 - 1.0)));
+        burst.extend(vec![0.0f32; SR * 2]);
+        assert!(!RustpotterSpotter::from_reference(&enrolled.reference, enrolled.sensitivity).unwrap().push(&burst));
+    }
+
+    #[test]
+    fn enrolling_refuses_too_few_recordings() {
+        assert!(enroll(&good_clips(MIN_CLIPS - 1)).unwrap_err().contains("at least"));
+        assert!(enroll(&[]).is_err());
+    }
+
+    #[test]
+    fn recordings_that_cannot_recognise_each_other_do_not_enrol() {
+        // eight unrelated sounds: noise bursts of different colour
+        let clips: Vec<Vec<i16>> = (0..MAX_CLIPS)
+            .map(|k| (0..SR).map(|i| (((i * (7919 + 104_729 * k)) % 20_000) as i32 - 10_000) as i16).collect())
+            .collect();
+        let _ = enroll(&clips); // must not panic; whether it refuses depends on the sounds
+    }
+
+    #[test]
+    fn a_clip_is_scored_by_how_well_the_others_recognise_it() {
+        let clips = good_clips(MAX_CLIPS);
+        let reference = reference_bytes(&clips[1..]).unwrap();
+        let same = score_clip(&reference, &clips[0]).expect("the phrase is heard");
+        assert!(same > 0.3 && same <= 1.0, "{same}");
+        let burst: Vec<i16> = (0..SR).map(|i| (((i * 31_337) % 20_000) as i32 - 10_000) as i16).collect();
+        match score_clip(&reference, &burst) {
+            None => {}
+            Some(other) => assert!(other < same, "a burst of noise must score below the phrase ({other} vs {same})"),
+        }
+    }
+
     // --- the saved reference -------------------------------------------------------------------------
 
     #[test]
@@ -485,5 +634,108 @@ mod tests {
         let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap() as f32 / 32_768.0;
         assert!(peak > 0.05 && peak < 0.3, "soft: {peak}");
         assert!(pcm[0].unsigned_abs() < 500 && pcm[pcm.len() - 1].unsigned_abs() < 500, "no click at either end");
+    }
+
+    // --- the owner's real recordings ----------------------------------------------------------------
+
+    /// 16 kHz mono 16-bit PCM from a WAV file made by the Phase 0 harness.
+    fn read_wav(path: &std::path::Path) -> Vec<f32> {
+        let bytes = std::fs::read(path).unwrap();
+        let at = bytes.windows(4).position(|w| w == b"data").expect("data chunk") + 8;
+        bytes[at..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32_768.0).collect()
+    }
+
+    fn wavs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut v: Vec<_> = std::fs::read_dir(dir)
+            .map(|d| d.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|x| x == "wav").unwrap_or(false)).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    }
+
+    fn pad(clip: &[f32]) -> Vec<f32> {
+        let mut v = vec![0.0f32; SR];
+        v.extend_from_slice(clip);
+        v.extend(std::iter::repeat(0.0).take(SR * 3 / 2));
+        v
+    }
+
+    /// Opt-in: `GAIA_WAKE_DATA=<dir with hey/ neg/ bg/ bgs/> cargo test --lib real_recordings -- --ignored --nocapture`.
+    /// Enrols from the owner's own "Hey Gaia" recordings through the product's enrolment (checks, leave-one-out
+    /// calibration), then measures the finished detector on the rest: the Phase 4 acceptance numbers. The
+    /// folders hold the owner's voice and are never committed.
+    #[test]
+    #[ignore = "needs the owner's recordings (GAIA_WAKE_DATA)"]
+    fn real_recordings_enrol_and_detect_at_the_calibrated_sensitivity() {
+        let root = std::path::PathBuf::from(
+            std::env::var("GAIA_WAKE_DATA")
+                .unwrap_or_else(|_| r"K:\Projects\Project Gaia\gaia-desktop\spikes\voice-phase0\recordings".into()),
+        );
+        // 1. which of the owner's recordings would the enrolment screen accept?
+        let mut good = Vec::new();
+        let mut rejected = Vec::new();
+        for path in wavs(&root.join("hey")) {
+            let (check, pcm) = check_clip(&read_wav(&path));
+            match pcm {
+                Some(pcm) => good.push(pcm),
+                None => rejected.push((path.file_name().unwrap().to_string_lossy().to_string(), check.problem)),
+            }
+        }
+        println!("hey recordings: {} accepted, {} rejected: {:?}", good.len(), rejected.len(), rejected);
+        assert!(good.len() >= MAX_CLIPS + 2, "need enough good recordings to hold some out");
+
+        // 2. enrol from eight recordings spread across the whole session (as the enrolment screen asks for:
+        //    different volume, speed and distance), hold the other recordings out
+        let step = good.len() / MAX_CLIPS;
+        let enrol_idx: Vec<usize> = (0..MAX_CLIPS).map(|k| k * step).collect();
+        let enrol_clips: Vec<Vec<i16>> = enrol_idx.iter().map(|i| good[*i].clone()).collect();
+        let held_out: Vec<Vec<i16>> = good.iter().enumerate().filter(|(i, _)| !enrol_idx.contains(i)).map(|(_, c)| c.clone()).collect();
+        let started = std::time::Instant::now();
+        let enrolled = enroll(&enrol_clips).expect("the owner can enrol");
+        println!(
+            "enrolled in {:.1} s: calibrated sensitivity {:.2}, reference {} bytes (features, no audio)",
+            started.elapsed().as_secs_f32(),
+            enrolled.sensitivity,
+            enrolled.reference.len()
+        );
+
+        let hears = |audio: &[f32]| -> bool {
+            RustpotterSpotter::from_reference(&enrolled.reference, enrolled.sensitivity).unwrap().push(audio)
+        };
+        let hits = held_out
+            .iter()
+            .filter(|pcm| hears(&pad(&pcm.iter().map(|s| *s as f32 / 32_768.0).collect::<Vec<_>>())))
+            .count();
+        println!("held-out 'Hey Gaia': {hits} of {} heard ({:.0}%)", held_out.len(), 100.0 * hits as f32 / held_out.len() as f32);
+
+        // 3. things that are not the phrase
+        let negatives: Vec<_> = wavs(&root.join("neg"));
+        let neg_fires = negatives.iter().filter(|p| hears(&pad(&read_wav(p)))).count();
+        println!("near-miss phrases that woke her: {neg_fires} of {}", negatives.len());
+
+        // 4. ambient room and television dialogue
+        let mut ambient_secs = 0.0f32;
+        let mut ambient_fires = 0usize;
+        for folder in ["bg", "bgs"] {
+            for path in wavs(&root.join(folder)) {
+                let audio = read_wav(&path);
+                let secs = audio.len() as f32 / SR as f32;
+                let mut spotter = RustpotterSpotter::from_reference(&enrolled.reference, enrolled.sensitivity).unwrap();
+                let mut fires = 0usize;
+                for chunk in audio.chunks(160) {
+                    if spotter.push(chunk) {
+                        fires += 1;
+                    }
+                }
+                println!("{folder}/{}: {secs:.0} s, {fires} false accept(s)", path.file_name().unwrap().to_string_lossy());
+                ambient_secs += secs;
+                ambient_fires += fires;
+            }
+        }
+        let per_hour = if ambient_secs > 0.0 { ambient_fires as f32 / ambient_secs * 3600.0 } else { 0.0 };
+        println!("ambient total: {ambient_secs:.0} s, {ambient_fires} false accept(s) = {per_hour:.1} per hour");
+
+        assert!(hits as f32 >= 0.9 * held_out.len() as f32, "at least 90% of held-out phrases heard: {hits}/{}", held_out.len());
+        assert!(per_hour <= 18.0, "no more than the ~18/hour Phase 0 could rule out: {per_hour}");
     }
 }

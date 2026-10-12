@@ -130,6 +130,17 @@ pub fn run() {
                             }
                             let _ = listen_handle.emit(audio::continuous::BARGE_IN_EVENT, ());
                         }
+                        audio::continuous::ContinuousEvent::Wake => {
+                            // "Hey Gaia" was heard: a soft chime says so (a false accept is then cheap and
+                            // obvious), and the UI is told she is listening.
+                            let h = listen_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Some(playback) = h.try_state::<speech::PlaybackEngine>() {
+                                    let _ = playback.play(audio::wake::chime_wav()).await;
+                                }
+                            });
+                            let _ = listen_handle.emit(audio::continuous::WAKE_EVENT, ());
+                        }
                         audio::continuous::ContinuousEvent::Transcript(t) => {
                             let _ = listen_handle.emit(audio::ptt::TRANSCRIPT_EVENT, t);
                         }
