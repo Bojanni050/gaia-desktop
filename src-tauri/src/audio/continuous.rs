@@ -823,7 +823,14 @@ mod tests {
         let (_, product_barge, product_heard) = results[0];
         assert_eq!(product_barge, 0, "Gaia must not interrupt herself");
         assert_eq!(product_heard, 0, "Gaia's own voice must not be sent for transcription");
-        println!("control had {} interruption(s): {}", results[1].1, if results[1].1 > 0 { "the test is meaningful in this room" } else { "no echo reached the microphone, so this room proves little" });
+        // Without the reference she is not known to be speaking, so the control cannot "interrupt"; what it
+        // shows is her own voice being heard as the user's: utterances that would have been transcribed.
+        let control_heard = results[1].2;
+        println!(
+            "control heard her own voice as {control_heard} utterance(s): {}",
+            if control_heard > 0 { "the room echoes, so this test is meaningful" } else { "no echo reached the microphone, so this room proves little" }
+        );
+        assert!(control_heard > 0, "the control must hear her own voice, or this test proves nothing in this room");
     }
 
     fn r_transcripts(log: &Log) -> usize {
