@@ -277,6 +277,15 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <input type="checkbox" checked={quiet} onChange={(e) => onQuietChange(e.target.checked)} />
                 <span>{L.settingsQuiet}</span>
               </label>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.audio?.speakReplies ?? true}
+                  onChange={(e) => patch({ audio: { ...settings.audio, speakReplies: e.target.checked } })}
+                />
+                <span>{L.settingsSpeakReplies}</span>
+              </label>
+              <p className="capability-line">{L.settingsSpeakRepliesHint}</p>
               <label className="field">
                 <span>{L.settingsVolume}</span>
                 <div className="volume-row">

@@ -15,7 +15,7 @@ import { useCallback, useRef, useState } from 'react';
 import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
 import { getSpeechInfo } from '../server/api';
-import { playSpeech, stopSpeech } from '../lib/speech';
+import { playSpeech, speaksReplies, stopSpeech } from '../lib/speech';
 import { shouldSpeak } from '../lib/language';
 
 let counter = 1;
@@ -204,6 +204,8 @@ export function useConversation(server) {
         // failure mode.
         (async () => {
           try {
+            // Switched off in Settings: no request of any kind, so no speech provider is called.
+            if (!speaksReplies()) return;
             const info = await getSpeechInfo(server.request);
             if (!shouldSpeak(fullReply, info && info.languages)) return;
             // Synthesis and playback both happen in Rust (speech_play).

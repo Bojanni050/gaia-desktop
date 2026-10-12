@@ -9,10 +9,10 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 // Playback itself happens in Rust: asserted through, never with. These tests
 // verify *whether* Gaia speaks and with which text, not that sound plays.
-vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}), stopSpeech: vi.fn() }));
+vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}), stopSpeech: vi.fn(), speaksReplies: vi.fn(() => true) }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { playSpeech, stopSpeech } from '../lib/speech';
+import { playSpeech, speaksReplies, stopSpeech } from '../lib/speech';
 import { useConversation } from './useConversation';
 
 const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -161,6 +161,20 @@ describe("Gaia's voice gate", () => {
 
     await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(dutchReply));
     await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
+  });
+
+  it('makes no speech request at all when speaking replies is switched off', async () => {
+    speaksReplies.mockReturnValueOnce(false);
+    const server = serverWithReply(dutchReply, { configured: true, provider: 'mistral', languages: ['en', 'nl'] });
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('kun je dit uitspreken?');
+    });
+
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(playSpeech).not.toHaveBeenCalled();
+    expect(server.request).not.toHaveBeenCalled(); // not even the voice info
     expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
   });
 
