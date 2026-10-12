@@ -131,6 +131,11 @@ pub fn run() {
                             let _ = listen_handle.emit(audio::continuous::BARGE_IN_EVENT, ());
                         }
                         audio::continuous::ContinuousEvent::Wake => {
+                            // Every wake-up is counted and logged (time only), so the false-accept rate can be
+                            // measured by leaving the app running.
+                            if let Some(log) = listen_handle.try_state::<audio::wake::WakeLog>() {
+                                log.record();
+                            }
                             // "Hey Gaia" was heard: a soft chime says so (a false accept is then cheap and
                             // obvious), and the UI is told she is listening.
                             let h = listen_handle.clone();
@@ -179,6 +184,7 @@ pub fn run() {
                 mic_claim.clone(),
             ));
             app.manage(wake_store);
+            app.manage(audio::wake::WakeLog::new(app.path().app_config_dir().ok()));
 
             // The tray keeps Gaia reachable while she listens with the window closed.
             tray::install(app)?;

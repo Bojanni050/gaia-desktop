@@ -356,6 +356,91 @@ impl WakeStore {
 }
 
 // ------------------------------------------------------------------------------------------------
+// The wake-up log
+// ------------------------------------------------------------------------------------------------
+
+/// Counts every "Hey Gaia" wake-up and writes one line per wake to `<config>/wake/wake-log.txt` (and to
+/// stderr), so the false-accept rate can be measured by leaving the app running: a count of wake-ups nobody
+/// asked for, over an hour. A line holds only the time and the count, never audio or words.
+pub struct WakeLog {
+    path: PathBuf,
+    state: std::sync::Mutex<LogState>,
+}
+
+struct LogState {
+    count: u64,
+    started: std::time::Instant,
+    last: Option<std::time::Instant>,
+}
+
+/// "4m12s", "1h03m05s", "7s".
+fn span(secs: u64) -> String {
+    let (h, m, s) = (secs / 3600, (secs / 60) % 60, secs % 60);
+    if h > 0 {
+        format!("{h}h{m:02}m{s:02}s")
+    } else if m > 0 {
+        format!("{m}m{s:02}s")
+    } else {
+        format!("{s}s")
+    }
+}
+
+impl WakeLog {
+    pub fn new(config_dir: Option<PathBuf>) -> Self {
+        Self {
+            path: config_dir.unwrap_or_else(std::env::temp_dir).join("wake").join("wake-log.txt"),
+            state: std::sync::Mutex::new(LogState { count: 0, started: std::time::Instant::now(), last: None }),
+        }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Wake-ups since this launch.
+    pub fn count(&self) -> u64 {
+        self.state.lock().map(|s| s.count).unwrap_or(0)
+    }
+
+    /// Records one wake-up and returns the line written, e.g.
+    /// `2026-10-12 14:03:22 wake #3 (4m12s since the previous, 18m40s since start)`.
+    pub fn record(&self) -> String {
+        let now = std::time::Instant::now();
+        let (n, since_start, since_last) = {
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            state.count += 1;
+            let since_last = state.last.map(|t| now.duration_since(t).as_secs());
+            state.last = Some(now);
+            (state.count, now.duration_since(state.started).as_secs(), since_last)
+        };
+        let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let line = match since_last {
+            Some(gap) => format!("{stamp} wake #{n} ({} since the previous, {} since start)", span(gap), span(since_start)),
+            None => format!("{stamp} wake #{n} ({} since start)", span(since_start)),
+        };
+        eprintln!("[wake] {line}");
+        self.append(n == 1, &line);
+        line
+    }
+
+    fn append(&self, first: bool, line: &str) {
+        use std::io::Write;
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&self.path) {
+            if first {
+                let _ = writeln!(file, "--- app started, wake-up log ---");
+            }
+            let _ = writeln!(file, "{line}");
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
 // The confirmation chime
 // ------------------------------------------------------------------------------------------------
 
@@ -737,5 +822,28 @@ mod tests {
 
         assert!(hits as f32 >= 0.9 * held_out.len() as f32, "at least 90% of held-out phrases heard: {hits}/{}", held_out.len());
         assert!(per_hour <= 18.0, "no more than the ~18/hour Phase 0 could rule out: {per_hour}");
+    }
+    #[test]
+    fn the_wake_log_counts_and_writes_one_line_per_wake_with_no_audio() {
+        let dir = std::env::temp_dir().join(format!("gaia-wake-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let log = WakeLog::new(Some(dir.clone()));
+        assert_eq!(log.count(), 0);
+        let first = log.record();
+        let second = log.record();
+        assert_eq!(log.count(), 2);
+        assert!(first.contains("wake #1") && second.contains("wake #2"));
+        assert!(second.contains("since the previous"));
+        let text = std::fs::read_to_string(log.path()).unwrap();
+        assert_eq!(text.lines().filter(|l| l.contains(" wake #")).count(), 2);
+        assert!(text.starts_with("--- app started"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn spans_read_naturally() {
+        assert_eq!(span(7), "7s");
+        assert_eq!(span(252), "4m12s");
+        assert_eq!(span(3785), "1h03m05s");
     }
 }
