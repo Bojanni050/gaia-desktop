@@ -22,6 +22,7 @@ pub struct Settings {
     pub server: ServerConfig,
     pub notifications: NotificationSettings,
     pub audio: AudioSettings,
+    pub voice: VoiceSettings,
     pub capture: CaptureSettings,
     pub mcp: crate::mcp::McpSettings,
 }
@@ -41,7 +42,9 @@ impl Default for NotificationSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AudioSettings {
-    /// Preferred input device id, if the user chose one.
+    /// Legacy: preferred input device. Migrated into `voice.input_device` on load
+    /// (see [`migrate_legacy_input`]) and never written back.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_input: Option<String>,
     /// Playback volume for Gaia's voice, 0.0 (silent) to 1.0 (full). Applied
     /// locally at playback — WebView2 gives Windows no per-app slider of its
@@ -60,6 +63,57 @@ impl Default for AudioSettings {
             muted: false,
         }
     }
+}
+
+/// Voice (background conversation) preferences for this device.
+///
+/// The master microphone switch is deliberately **not** persisted: every launch
+/// starts with the microphone off, and only an explicit user action turns it on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VoiceSettings {
+    /// Master microphone switch. Runtime only (`serde(skip)`): always false after launch.
+    #[serde(skip)]
+    pub mic_enabled: bool,
+    /// Continuous conversation mode (Phase 3).
+    pub continuous_enabled: bool,
+    /// Local "Hey Gaia" wake word (Phase 4).
+    pub wake_word_enabled: bool,
+    /// Input device id (`DeviceId` string, e.g. `wasapi:{...}`); `None` = system default.
+    /// An id that no longer exists falls back to the default device.
+    pub input_device: Option<String>,
+    /// True once a wake word has been enrolled on this device (Phase 4).
+    pub wake_enrolled: bool,
+    /// Wake word detector sensitivity (maps to the detector threshold).
+    pub wake_sensitivity: f32,
+    /// Voice interruption while Gaia speaks (Phase 3).
+    pub barge_in_enabled: bool,
+}
+
+impl Default for VoiceSettings {
+    fn default() -> Self {
+        Self {
+            mic_enabled: false,
+            continuous_enabled: false,
+            wake_word_enabled: false,
+            input_device: None,
+            wake_enrolled: false,
+            wake_sensitivity: 0.55,
+            barge_in_enabled: true,
+        }
+    }
+}
+
+/// One-time migration of the legacy `audio.preferredInput` into `voice.inputDevice`.
+/// Returns true when anything changed (the caller then persists the settings).
+pub fn migrate_legacy_input(settings: &mut Settings) -> bool {
+    let Some(legacy) = settings.audio.preferred_input.take() else {
+        return false;
+    };
+    if settings.voice.input_device.is_none() && !legacy.trim().is_empty() {
+        settings.voice.input_device = Some(legacy);
+    }
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -81,6 +135,11 @@ impl SettingsState {
     pub fn open(config_dir: Option<std::path::PathBuf>) -> Self {
         let store = store::FileSettingsStore::open(config_dir);
         let mut current = store.load().unwrap_or_default();
+
+        // Legacy audio.preferredInput → voice.inputDevice.
+        if migrate_legacy_input(&mut current) {
+            let _ = store.save(&current);
+        }
 
         // One-time migration: a token written to settings.json by an
         // earlier version moves into the OS credential store and out of
@@ -107,6 +166,19 @@ impl SettingsState {
             settings.server.auth_token = Some(token);
         }
         settings
+    }
+
+    /// Applies `f` to the current settings and persists them (used by commands that change one
+    /// preference, e.g. the selected input device). The auth token never goes to the JSON file when
+    /// it lives in the OS credential store.
+    pub fn update(&self, f: impl FnOnce(&mut Settings)) -> Result<(), SettingsError> {
+        let mut guard = self.current.write().expect("settings lock poisoned");
+        f(&mut guard);
+        let mut to_persist = guard.clone();
+        if secrets::load_token().is_some() {
+            to_persist.server.auth_token = None;
+        }
+        self.store.save(&to_persist)
     }
 
     fn replace(&self, settings: Settings) {
@@ -156,6 +228,59 @@ mod tests {
         let audio = AudioSettings::default();
         assert_eq!(audio.volume, 1.0);
         assert!(!audio.muted);
+    }
+
+    #[test]
+    fn voice_defaults_are_off_and_unenrolled() {
+        let voice = VoiceSettings::default();
+        assert!(!voice.mic_enabled);
+        assert!(!voice.continuous_enabled);
+        assert!(!voice.wake_word_enabled);
+        assert!(!voice.wake_enrolled);
+        assert!(voice.input_device.is_none());
+        assert!(voice.barge_in_enabled);
+        assert!((voice.wake_sensitivity - 0.55).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn settings_without_a_voice_block_still_parse() {
+        let settings: Settings =
+            serde_json::from_str(r#"{ "audio": { "volume": 0.5 } }"#).expect("legacy settings parse");
+        assert!(!settings.voice.mic_enabled);
+        assert!(settings.voice.input_device.is_none());
+    }
+
+    #[test]
+    fn the_master_mic_switch_is_never_persisted_or_restored() {
+        let mut settings = Settings::default();
+        settings.voice.mic_enabled = true;
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(!json.contains("micEnabled"), "mic state must not be written: {json}");
+        let restored: Settings =
+            serde_json::from_str(r#"{ "voice": { "micEnabled": true, "continuousEnabled": true } }"#).unwrap();
+        assert!(!restored.voice.mic_enabled, "a stored micEnabled must be ignored");
+        assert!(restored.voice.continuous_enabled);
+    }
+
+    #[test]
+    fn legacy_preferred_input_migrates_once_and_is_not_written_back() {
+        let mut settings: Settings =
+            serde_json::from_str(r#"{ "audio": { "preferredInput": "mic-1" } }"#).unwrap();
+        assert!(migrate_legacy_input(&mut settings));
+        assert_eq!(settings.voice.input_device.as_deref(), Some("mic-1"));
+        assert!(settings.audio.preferred_input.is_none());
+        assert!(!serde_json::to_string(&settings).unwrap().contains("preferredInput"));
+        assert!(!migrate_legacy_input(&mut settings), "second run changes nothing");
+    }
+
+    #[test]
+    fn migration_keeps_an_explicit_voice_device() {
+        let mut settings: Settings = serde_json::from_str(
+            r#"{ "audio": { "preferredInput": "old" }, "voice": { "inputDevice": "new" } }"#,
+        )
+        .unwrap();
+        migrate_legacy_input(&mut settings);
+        assert_eq!(settings.voice.input_device.as_deref(), Some("new"));
     }
 
     #[test]

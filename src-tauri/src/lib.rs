@@ -50,7 +50,22 @@ pub fn run() {
 
             // Local capability subsystems.
             app.manage(capture::CaptureManager::new());
-            app.manage(audio::AudioSubsystem::new());
+            // The microphone engine. The master switch is runtime-only, so every launch starts
+            // with the microphone off; nothing opens until the user switches it on.
+            let handle = app.handle().clone();
+            let mic = audio::MicController::new(
+                std::sync::Arc::new(audio::CpalBackend),
+                std::sync::Arc::new(move |event| {
+                    use tauri::Emitter;
+                    let _ = match &event {
+                        audio::VoiceEvent::State(s) => handle.emit(audio::VOICE_STATE_EVENT, s),
+                        audio::VoiceEvent::Error(e) => handle.emit(audio::VOICE_ERROR_EVENT, e),
+                        audio::VoiceEvent::Level(l) => handle.emit(audio::VOICE_LEVEL_EVENT, l),
+                    };
+                }),
+                audio::Timing::default(),
+            );
+            app.manage(mic);
             app.manage(presence::PresenceController::new());
             
             // Desktop version metadata
@@ -82,7 +97,10 @@ pub fn run() {
             capture::capture_submit,
             // audio
             audio::audio_get_status,
-            audio::audio_set_permission,
+            audio::voice_get_status,
+            audio::voice_list_devices,
+            audio::voice_set_mic_enabled,
+            audio::voice_select_device,
             // history
             history::history_export_conversation,
             // library
