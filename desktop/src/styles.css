@@ -329,6 +329,13 @@ body {
 
 /* ---------------------------------------------------------------- main / conversation */
 .gaia-main { height: 100vh; overflow: hidden; }
+.voice-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-bottom: 3px; }
+.voice-control { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border, rgba(127,127,127,0.25)); background: transparent; color: var(--text-faint); cursor: pointer; transition: color 0.15s ease, background-color 0.15s ease; }
+.voice-control:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+.voice-control:disabled { opacity: 0.6; cursor: default; }
+.voice-control.is-on { color: var(--accent); border-color: var(--accent); }
+.voice-control.is-hearing { animation: composer-mic-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .voice-control.is-hearing { animation: none; } }
 .conversation { display: flex; flex-direction: column; height: 100vh; }
 .conversation-scroll { flex: 1; overflow-y: auto; }
 .conversation-column { max-width: 760px; margin: 0 auto; padding: 0 40px; }

@@ -124,6 +124,7 @@ export default function App() {
           streaming={conversation.streaming}
           progress={conversation.progress}
           presenceState={presenceState}
+          listenState={voiceSession.state}
           whisper={whisper}
           onSend={conversation.send}
           onRetry={conversation.retry}
