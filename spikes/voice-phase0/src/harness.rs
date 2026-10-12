@@ -421,3 +421,7 @@ pub fn score_model() {
     }
     println!("(bg windows overlap, so a single noise event can count twice)");
 }
+
+pub fn to_16k_mono_pub(samples: &[f32], rate: u32, channels: usize) -> Vec<i16> {
+    to_16k_mono(samples, rate, channels)
+}

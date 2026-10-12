@@ -86,3 +86,16 @@ cargo build --release
 | 0.60 | 20 | 0 | 0 |
 
 One session; the audio's language was not recorded. Zero events in 10 minutes supports only "under roughly 18 per hour". The near-miss weakness is unchanged.
+
+## Real-room echo test (harness, built; live run pending)
+
+```powershell
+.\target\release\voice-phase0.exe echo-selftest        # synthetic room, no audio played
+.\target\release\voice-phase0.exe echo-test [ref.wav] [--save]
+```
+
+`echo-test` plays a 21 s reference through the default speakers while recording the default mic, then runs `sonora` AEC offline. The reference defaults to the most continuous, loud 21 s of `recordings/bgs/bgs_001.wav` (real speech, normalised to peak 0.5), or a synthetic signal if that file is absent. Script: stay silent for 12 s while "Gaia" speaks, then talk over her from the NOW prompt until 19 s.
+
+It reports: measured render-to-mic lag (and a system-latency estimate), ERLE on the far-end-only part, and a barge-in table: false-trigger rate (8–10 s) and hit rate while you talk (13–19 s) with a threshold of 3 x the 95th percentile of the settled far-end-only frame levels, for the raw mic and after AEC. Targets used for the verdict: ERLE at least 20 dB, false triggers at most 5%, hit rate at least 60%. Nothing is saved unless `--save` (16 kHz wavs in the gitignored `recordings/echo/`).
+
+The synthetic self-test recovers the true 590 ms lag exactly and gives ERLE 34 dB, 0% false triggers and 65% hit rate after AEC (raw mic: 0% / 13%). Real-room numbers are not yet measured.

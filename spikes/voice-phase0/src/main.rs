@@ -2,6 +2,7 @@
 //!   voice-phase0 devices              list input/output devices with stable ids
 //!   voice-phase0 meter [secs] [id]    capture, print level only — nothing is written to disk
 mod aec_sim;
+mod echo;
 mod harness;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{ErrorKind, SampleFormat};
@@ -16,6 +17,12 @@ fn main() {
             args.get(2).and_then(|s| s.parse().ok()).unwrap_or(5),
             args.get(3).cloned(),
         ),
+        Some("echo-selftest") => echo::selftest(),
+        Some("echo-test") => {
+            let save = args.iter().any(|a| a == "--save");
+            let path = args.get(2).filter(|a| !a.starts_with("--")).cloned();
+            echo::run(path, save)
+        }
         Some("collect") => harness::collect(
             args.get(2).map(String::as_str).unwrap_or("hey"),
             args.get(3).and_then(|s| s.parse().ok()).unwrap_or(10),
