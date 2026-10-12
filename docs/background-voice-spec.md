@@ -65,7 +65,7 @@ Settled (see `background-voice-phase0-findings.md` for evidence):
 | Trained model (tiny) | 0.90 | 3 of 8 | 0 of 4 | 80 |
 | Trained model (tiny) | 0.98 | 1 of 8 | 0 of 4 | 0 |
 
-  The trained model has no usable threshold at this data size. DTW references catch every wake word at 0.50 with no ambient false accepts, but fire on deliberate near-misses ("Gaia", "hey Maya"). Caveats: one 10-minute ambient recording of unknown speech content; one recording session; small held-out sets. **A speech-heavy ambient test (talk or TV dialogue, ideally Dutch) is still required** to confirm DTW is workable. openWakeWord (pretrained embedding) is built only if that test fails.
+  The trained model has no usable threshold at this data size. DTW references catch every wake word at 0.50 with no ambient false accepts, but fire on deliberate near-misses ("Gaia", "hey Maya"). Caveats: one 10-minute ambient recording of unknown speech content; one recording session; small held-out sets. **Speech-heavy ambient test (done 2026-10-12, 10 minutes of TV, peak level 0.82):** 0 false accepts per hour at thresholds 0.54 and above, about 6 per hour at 0.50 (one event in 10 minutes). One session, language of the audio unrecorded, so treat it as "under roughly 18 per hour", not zero. DTW stays the wake-word choice; openWakeWord is built only if later testing in other rooms or conditions fails.
 
 Consequences carried into this spec:
 
@@ -73,7 +73,7 @@ Consequences carried into this spec:
 - Default threshold about 0.55 (user-adjustable via `wakeSensitivity`), plus a confirmation tone so false accepts are cheap.
 - Rustpotter pulls a stale `candle-core 0.2.2` that only compiles with `half` pinned to 2.4.1: commit the pin in `Cargo.lock` and treat Rustpotter as a maintenance risk (fallback: openWakeWord via `ort`).
 
-Still open after Phase 0: real-room AEC on speakers, Dutch STT quality with Mistral Voxtral transcription, speech-heavy ambient test, and Cloud's behaviour when a streaming turn is aborted.
+Still open after Phase 0: real-room AEC on speakers, Dutch STT quality with Mistral Voxtral transcription, and Cloud's behaviour when a streaming turn is aborted.
 
 ## 5. Architecture
 
@@ -204,7 +204,7 @@ Cloud: `services/gaia-api/src/server.js`, new `src/speech/*Stt.js`, `adminRoutes
 
 ### Phase 0 — Spikes and decisions (throwaway code, no product merge)
 
-**Status (2026-10-12): mostly done.** Done: capture, AEC options (synthetic), Cloud abort audit, wake-word comparison (DTW vs trained). Remaining: speech-heavy ambient test, real-room AEC on speakers, Dutch STT test. Spike code: branch `spike/voice-phase0`, `spikes/voice-phase0/`.
+**Status (2026-10-12): mostly done.** Done: capture, AEC options (synthetic), Cloud abort audit, wake-word comparison (DTW vs trained), speech-heavy ambient test. Remaining: real-room AEC on speakers, Dutch STT test. Spike code: branch `spike/voice-phase0`, `spikes/voice-phase0/`.
 - Rustpotter vs openWakeWord on the owner's voice, Dutch and English "Hey Gaia".
 - AEC spike: Rust playback → reference → AEC, on the owner's actual speakers.
 - Mistral transcription API: Dutch accuracy, latency, terms.
@@ -242,7 +242,7 @@ VAD, segmentation, `/speech/transcribe`, `voice://transcript`, mic button in the
 Rustpotter DTW references with a user **enrollment flow** (record 5 to 8 clips of "Hey Gaia", features computed, raw clips discarded), independent toggle, sensitivity slider, confirmation tone.
 - **Accept:**
   - Enrollment rejects unusable clips (empty, near-silent, over-long, noisy) and asks for a re-record; it refuses to finish with fewer than 5 good clips.
-  - On the owner's recorded set: at least 95% of held-out "Hey Gaia" detected at the default sensitivity, and no ambient false accepts in one hour of speech-heavy audio (targets are provisional until the speech-heavy test is run).
+  - On the owner's recorded set: at least 95% of held-out "Hey Gaia" detected at the default sensitivity, and no ambient false accepts in one hour of speech-heavy audio. Phase 0 reference point: at 0.54 DTW detected 35 of 36 with no false accepts in 10 minutes of TV; a one-hour test is still needed.
   - "Hey Gaia" arms a conversation from Idle.
   - Over one hour of TV/music the false-accept count meets the target set in Phase 0.
   - All four combinations of continuous × wake behave as specified; master off disables both.
@@ -271,7 +271,7 @@ Sentence-level TTS streaming for latency, Dutch tuning, level meter polish, opti
 
 ## 12. Open items
 
-- Remaining Phase 0 tests: speech-heavy ambient (wake word), real-room AEC on speakers, Dutch STT with Mistral Voxtral transcription.
+- Remaining Phase 0 tests: real-room AEC on speakers, Dutch STT with Mistral Voxtral transcription. Wake word: re-test in other rooms and at other times before Phase 4 targets are fixed.
 - VAD crate choice (Silero via `ort` vs a lightweight crate) — not yet spiked.
 - Cloud interruption semantics (C2) and whether Cloud tolerates `modality` (C3).
 - Whether the continuous-mode "any speech is uploaded" posture is acceptable or a local-STT option is wanted.

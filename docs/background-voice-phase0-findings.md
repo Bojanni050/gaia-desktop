@@ -73,3 +73,16 @@ cargo build --release
 - Split is deterministic (every 3rd `hey`/`neg` clip held out; ambient audio is cut in time, first 70% trains the `none` class, last 30% is the false-accept test). Model is saved to `recordings/_model.rpw` (gitignored).
 - Validated on synthetic tone data only (pipeline runs end to end; synthetic numbers are meaningless). Real accuracy needs your recordings.
 - Reading the result: the real question is whether some threshold gives high held-out `hey` hits **and** low `neg` / `bg` false accepts, which the DTW reference mode did not on near-miss negatives.
+
+### Speech-heavy ambient test (2026-10-12)
+
+10 minutes of TV (peak level 0.82), scored against the five-reference DTW wake word with `GAIA_BG_LABEL=bgs ... score 5`:
+
+| Threshold | "Hey" hits (of 36) | Near-miss negatives firing (of 20) | Ambient false accepts / hour |
+|---|---|---|---|
+| 0.50 | 36 | 14 | 6 |
+| 0.54 | 35 | 11 | 0 |
+| 0.57 | 31 | 6 | 0 |
+| 0.60 | 20 | 0 | 0 |
+
+One session; the audio's language was not recorded. Zero events in 10 minutes supports only "under roughly 18 per hour". The near-miss weakness is unchanged.
