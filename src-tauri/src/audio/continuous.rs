@@ -305,7 +305,15 @@ fn run(
 
         while let Ok(cmd) = render_rx.try_recv() {
             match cmd {
-                RenderCmd::Start(samples) => render_queue.extend(samples.iter().copied()),
+                // A reply that starts while an earlier one is still fading out plays *over* it: mix, not queue.
+                RenderCmd::Start(samples) => {
+                    for (i, s) in samples.iter().enumerate() {
+                        match render_queue.get_mut(i) {
+                            Some(existing) => *existing += *s,
+                            None => render_queue.push_back(*s),
+                        }
+                    }
+                }
                 RenderCmd::Stop { keep_ms } => render_queue.truncate(keep_ms as usize * 16),
             }
         }
@@ -410,6 +418,56 @@ fn submit(inner: &Arc<Inner>, samples: Vec<f32>) {
             (inner.emit)(ContinuousEvent::State(ListenState::Listening));
         }
     }));
+}
+
+// ------------------------------------------------------------------------------------------------
+// Tauri commands
+// ------------------------------------------------------------------------------------------------
+
+fn settings_error(e: crate::settings::SettingsError) -> VoiceError {
+    VoiceError {
+        code: "settings".into(),
+        message: e.to_string(),
+    }
+}
+
+/// Turns hands-free listening on or off, and remembers the preference. Turning it on needs the microphone
+/// on (that switch stays an explicit act of its own); with the microphone off the preference is saved and
+/// takes effect the next time the user switches the microphone on.
+#[tauri::command]
+pub fn voice_continuous_set(
+    listener: tauri::State<'_, ContinuousListener>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    enabled: bool,
+) -> Result<bool, VoiceError> {
+    settings.update(|s| s.voice.continuous_enabled = enabled).map_err(settings_error)?;
+    if enabled {
+        match listener.start() {
+            Ok(()) => {}
+            Err(e) if e.code == "mic_off" => {} // saved; starts when the microphone is switched on
+            Err(e) => return Err(e),
+        }
+    } else {
+        listener.stop();
+    }
+    Ok(listener.is_active())
+}
+
+/// Whether the user can interrupt Gaia by talking over her (otherwise her speech is simply not listened to).
+#[tauri::command]
+pub fn voice_set_barge_in(
+    listener: tauri::State<'_, ContinuousListener>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    enabled: bool,
+) -> Result<(), VoiceError> {
+    settings.update(|s| s.voice.barge_in_enabled = enabled).map_err(settings_error)?;
+    listener.set_barge_in(enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn voice_continuous_state(listener: tauri::State<'_, ContinuousListener>) -> bool {
+    listener.is_active()
 }
 
 #[cfg(test)]
@@ -683,5 +741,92 @@ mod tests {
         assert!(r.listener.is_active());
         r.listener.stop();
         r.mic.set_enabled(false, None);
+    }
+
+    // --- real speakers + real microphone ----------------------------------------------------------
+
+    /// Speech-like synthetic reply (harmonics of a wandering pitch under a syllable envelope), 16 kHz.
+    fn speechlike_reply(secs: usize) -> Vec<i16> {
+        let mut seed = 99u64;
+        let mut rnd = move || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as f32 / (1u64 << 31) as f32) * 2.0 - 1.0
+        };
+        let (mut ph, mut env, mut pitch) = (0f32, 0f32, 130f32);
+        (0..16_000 * secs)
+            .map(|i| {
+                if i % 4_000 == 0 {
+                    env = if rnd() > -0.3 { 0.6 + 0.4 * rnd().abs() } else { 0.0 };
+                }
+                if i % 320 == 0 {
+                    pitch = 130.0 * (1.0 + 0.15 * rnd());
+                }
+                ph += std::f32::consts::TAU * pitch / 16_000.0;
+                let v: f32 = (1..=8).map(|h| (ph * h as f32).sin() / h as f32).sum();
+                (0.5 * env * v * 32_767.0).clamp(-32_000.0, 32_000.0) as i16
+            })
+            .collect()
+    }
+
+    /// Opt-in hardware test: `cargo test --lib real_speakers_do_not_make_gaia -- --ignored --nocapture`.
+    /// PLAYS about 10 s of speech-like sound through the default speakers twice and listens on the real
+    /// microphone: **stay silent while it runs**. The first run has the echo reference connected (the
+    /// product); the second, a control, does not. The product run must produce no interruption of her
+    /// own voice; the control shows whether the room actually echoes enough for the test to mean anything.
+    #[test]
+    #[ignore = "plays sound through the speakers and listens on the microphone"]
+    fn real_speakers_do_not_make_gaia_interrupt_herself() {
+        use super::super::CpalBackend;
+        use crate::speech::PlaybackEngine;
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let wav = utterance::wav_bytes(&speechlike_reply(10));
+        let mut results = Vec::new();
+        for connected in [true, false] {
+            let log: Log = Arc::new(Mutex::new(Vec::new()));
+            let l2 = log.clone();
+            let mic = MicController::new(Arc::new(CpalBackend), Arc::new(|_| {}), Timing::default());
+            let handle = rt.handle().clone();
+            let transcriber = FakeTranscriber::saying("(heard something)");
+            let listener = ContinuousListener::new(
+                mic.clone(),
+                transcriber.clone(),
+                Arc::new(move |e| l2.lock().unwrap().push(e)),
+                Arc::new(move |f| {
+                    handle.spawn(f);
+                }),
+                Arc::new(AtomicBool::new(false)),
+                true,
+            );
+            let playback = PlaybackEngine::new(0.5, false);
+            if connected {
+                playback.set_render_sink(listener.render_sink());
+            }
+            let status = mic.set_enabled(true, None);
+            assert_eq!(status.state, super::super::MicState::Listening, "{status:?}");
+            listener.start().expect("start");
+            std::thread::sleep(Duration::from_millis(1_500)); // the room is measured while quiet
+
+            let outcome = rt.block_on(playback.play(wav.clone()));
+            std::thread::sleep(Duration::from_millis(800));
+            let barge = barge_ins(&log);
+            let heard = r_transcripts(&log);
+            println!(
+                "echo reference {}: playback {:?}, interruptions of her own voice: {barge}, utterances sent for transcription: {heard}",
+                if connected { "CONNECTED (the product)" } else { "disconnected (control)" },
+                outcome
+            );
+            listener.stop();
+            mic.set_enabled(false, None);
+            results.push((connected, barge, heard));
+        }
+        let (_, product_barge, product_heard) = results[0];
+        assert_eq!(product_barge, 0, "Gaia must not interrupt herself");
+        assert_eq!(product_heard, 0, "Gaia's own voice must not be sent for transcription");
+        println!("control had {} interruption(s): {}", results[1].1, if results[1].1 > 0 { "the test is meaningful in this room" } else { "no echo reached the microphone, so this room proves little" });
+    }
+
+    fn r_transcripts(log: &Log) -> usize {
+        transcripts(log).len() + log.lock().unwrap().iter().filter(|e| matches!(e, ContinuousEvent::State(ListenState::Transcribing))).count()
     }
 }

@@ -11,12 +11,19 @@
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player};
+use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 use serde::Serialize;
 use tokio::sync::oneshot;
+
+use crate::audio::continuous::{RenderCmd, RenderSink};
+use crate::audio::stream::Downsampler;
+
+/// Where playback reports what Gaia is playing (the echo canceller's reference). Set once, after the
+/// hands-free listener exists; shared with the playback thread.
+type SharedRender = Arc<Mutex<Option<RenderSink>>>;
 
 /// Default time an interrupted reply takes to ease out. Short enough to read as instant.
 pub const DEFAULT_FADE_MS: u64 = 150;
@@ -84,6 +91,7 @@ struct Fading {
 /// Handle to the playback thread. Cheap to share; commands are queued to the thread.
 pub struct PlaybackEngine {
     tx: mpsc::Sender<Cmd>,
+    render: SharedRender,
     /// Bumped by every `begin` and `cancel`; a synthesis that finishes after the epoch moved on is dropped.
     epoch: Arc<AtomicU64>,
 }
@@ -91,12 +99,15 @@ pub struct PlaybackEngine {
 impl PlaybackEngine {
     pub fn new(volume: f32, muted: bool) -> Self {
         let (tx, rx) = mpsc::channel();
+        let render: SharedRender = Arc::new(Mutex::new(None));
+        let thread_render = render.clone();
         std::thread::Builder::new()
             .name("gaia-playback".into())
-            .spawn(move || run(rx, volume, muted))
+            .spawn(move || run(rx, volume, muted, thread_render))
             .expect("playback thread");
         Self {
             tx,
+            render,
             epoch: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -131,12 +142,45 @@ impl PlaybackEngine {
         let _ = self.tx.send(Cmd::Stop { fade_ms });
     }
 
+    /// Reports what is being played to `sink` (the hands-free listener's echo canceller).
+    pub fn set_render_sink(&self, sink: RenderSink) {
+        *self.render.lock().expect("render poisoned") = Some(sink);
+    }
+
     pub fn set_gain(&self, volume: f32, muted: bool) {
         let _ = self.tx.send(Cmd::Gain { volume, muted });
     }
 }
 
-fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool) {
+/// The decoded reply as the echo canceller wants it: mono, 16 kHz, at the same loudness it is played
+/// at (the canceller learns the gain of the room itself, so the clip is not scaled here).
+pub fn reference_16k(audio: &[u8]) -> Option<Vec<f32>> {
+    let decoder = Decoder::new(Cursor::new(audio.to_vec())).ok()?;
+    let channels = decoder.channels().get() as usize;
+    let rate = decoder.sample_rate().get();
+    let mut mono: Vec<f32> = Vec::new();
+    let mut frame_sum = 0.0f32;
+    let mut in_frame = 0usize;
+    for s in decoder {
+        frame_sum += s;
+        in_frame += 1;
+        if in_frame == channels {
+            mono.push(frame_sum / channels as f32);
+            frame_sum = 0.0;
+            in_frame = 0;
+        }
+    }
+    let mut out = Vec::with_capacity(mono.len() * 16_000 / rate.max(1) as usize + 1);
+    Downsampler::new(rate).push(&mono, &mut out);
+    Some(out)
+}
+
+fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) {
+    let report = move |cmd: RenderCmd| {
+        if let Some(sink) = render.lock().expect("render poisoned").as_ref() {
+            sink(cmd);
+        }
+    };
     let mut gain = effective_volume(volume, muted);
     let mut sink: Option<MixerDeviceSink> = None;
     let mut current: Option<Playing> = None;
@@ -144,6 +188,8 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool) {
     let mut last_active = Instant::now();
 
     let start_fade = |p: Playing, ms: u64, gain: f32, fading: &mut Vec<Fading>| {
+        // Only the fade-out is still audible: that is all the echo canceller should still expect to hear.
+        report(RenderCmd::Stop { keep_ms: ms as u32 });
         if ms == 0 {
             p.player.stop();
             let _ = p.done.send(PlayOutcome::Stopped);
@@ -177,10 +223,14 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool) {
                     }
                 }
                 let mixer = sink.as_ref().expect("sink just opened").mixer();
+                let reference = reference_16k(&audio);
                 match Decoder::new(Cursor::new(audio)) {
                     Ok(source) => {
                         let player = Player::connect_new(mixer);
                         player.set_volume(gain);
+                        if let Some(samples) = reference {
+                            report(RenderCmd::Start(Arc::new(samples)));
+                        }
                         player.append(source);
                         current = Some(Playing { player, done });
                         last_active = Instant::now();
@@ -297,6 +347,22 @@ mod tests {
         wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
         wav.extend_from_slice(&pcm);
         wav
+    }
+
+    #[test]
+    fn the_echo_reference_is_the_reply_as_mono_16k() {
+        let wav = tone_wav(1.0); // 16 kHz mono already
+        let reference = reference_16k(&wav).expect("decodes");
+        assert!((reference.len() as i32 - 16_000).abs() <= 4, "{} samples", reference.len());
+        let peak = reference.iter().fold(0f32, |a, s| a.max(s.abs()));
+        assert!(peak > 0.05 && peak < 0.2, "tone amplitude 3000/32768 survives: {peak}");
+        let crossings = reference.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+        assert!((crossings as i32 - 880).abs() < 30, "440 Hz stays 440 Hz: {crossings} crossings");
+    }
+
+    #[test]
+    fn a_reply_that_cannot_be_decoded_has_no_reference() {
+        assert!(reference_16k(&[1, 2, 3, 4]).is_none());
     }
 
     #[tokio::test]

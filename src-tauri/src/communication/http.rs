@@ -218,7 +218,14 @@ impl GaiaServerClient for HttpGaiaClient {
         tokio::spawn(async move {
             let mut buffer = String::new();
             loop {
-                match response.chunk().await {
+                // Stop the moment nobody is listening any more (the turn was cancelled): returning drops
+                // the response, which closes the connection, so the server sees the disconnect at once
+                // instead of when it next happens to send something.
+                let next = tokio::select! {
+                    chunk = response.chunk() => chunk,
+                    _ = tx.closed() => return,
+                };
+                match next {
                     Ok(Some(bytes)) => {
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
                         // SSE frames are separated by a blank line; a chunk
@@ -454,5 +461,47 @@ mod tests {
             parse_sse_frame("data: {oops"),
             Some(Err(CommunicationError::Transport(_)))
         ));
+    }
+
+    /// The promise behind interrupting Gaia: when the turn stream is dropped, the connection is closed
+    /// right away, so the server sees the disconnect while it is still generating and can stop.
+    #[tokio::test]
+    async fn dropping_the_turn_stream_closes_the_connection_at_once() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 8192];
+            let mut got = Vec::new();
+            while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = sock.read(&mut buf).await.unwrap();
+                got.extend_from_slice(&buf[..n]);
+            }
+            let frame = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+            sock.write_all(head.as_bytes()).await.unwrap();
+            sock.write_all(format!("{:x}\r\n{frame}\r\n", frame.len()).as_bytes()).await.unwrap();
+            // The server is now "still thinking": silent, until the client goes away.
+            loop {
+                match sock.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+            let _ = closed_tx.send(());
+        });
+
+        let client = HttpGaiaClient::new(url, None);
+        let mut deltas = client.stream_turn(serde_json::json!({ "messages": [] })).await.unwrap();
+        let first = deltas.recv().await.expect("a delta").expect("not an error");
+        assert_eq!(first.content.as_deref(), Some("hi"));
+
+        drop(deltas); // the user interrupted
+        tokio::time::timeout(Duration::from_secs(3), closed_rx)
+            .await
+            .expect("the server should see the connection close promptly, not whenever it next speaks")
+            .unwrap();
     }
 }

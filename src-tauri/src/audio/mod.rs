@@ -441,15 +441,23 @@ pub fn voice_list_devices(mic: tauri::State<'_, MicController>) -> Vec<AudioDevi
 pub fn voice_set_mic_enabled(
     mic: tauri::State<'_, MicController>,
     ptt: tauri::State<'_, ptt::PttController>,
+    listener: tauri::State<'_, continuous::ContinuousListener>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
     enabled: bool,
 ) -> VoiceStatus {
-    // Switching the microphone off ends any recording at once: nothing recorded is ever kept or sent.
+    // Switching the microphone off ends any recording and any hands-free listening at once: nothing
+    // recorded is ever kept or sent.
     if !enabled {
         ptt.cancel();
+        listener.stop();
     }
-    let preferred = settings.get().voice.input_device;
-    mic.set_enabled(enabled, preferred)
+    let current = settings.get();
+    let status = mic.set_enabled(enabled, current.voice.input_device);
+    // The user switching the microphone on is what authorises hands-free listening (if they chose it).
+    if enabled && current.voice.continuous_enabled && status.mic_enabled {
+        let _ = listener.start();
+    }
+    status
 }
 
 #[tauri::command]
