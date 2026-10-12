@@ -186,7 +186,8 @@ pub fn analyze(mic: &[f32], reference: &[f32], save: Option<&Path>) -> Report {
     // barge-in detectability: threshold = 3 x p95 of frame rms in 5-8 s (far-end only);
     // false rate on 8-10 s, hit rate on the 13-19 s double-talk window
     let rate = |x: &[f32]| -> (f32, f32) {
-        let thr = 3.0 * pct(&frame_rms(seg(x, 5.0, 8.0)), 0.95);
+        // floor 0.005 (-46 dBFS): after AEC the settled residual is near digital silence, so 3 x p95 alone would be absurdly low
+        let thr = (3.0 * pct(&frame_rms(seg(x, 5.0, 8.0)), 0.95)).max(0.005);
         let above = |a: f32, b: f32| {
             let fr = frame_rms(seg(x, a, b));
             fr.iter().filter(|r| **r > thr).count() as f32 / fr.len().max(1) as f32
@@ -209,7 +210,7 @@ fn print_report(r: &Report) {
     println!("\n=== echo test result ===");
     println!("total render->mic lag (incl. start offset): {:.0} ms", r.lag_ms);
     println!("echo removed, far-end only 5-10 s (ERLE): {:.1} dB   (residual {:.1} dB vs raw mic)", r.erle_db, r.residual_db_vs_mic);
-    println!("barge-in detection with threshold = 3 x p95 of the settled far-end-only frames:");
+    println!("barge-in detection with threshold = max(3 x p95 of the settled far-end-only frames, 0.005):");
     println!("                      false trigger (8-10 s)   hit rate while you talk (13-19 s)");
     println!("  raw mic                   {:>5.0}%                    {:>5.0}%", r.raw.0 * 100.0, r.raw.1 * 100.0);
     println!("  after AEC                 {:>5.0}%                    {:>5.0}%", r.aec.0 * 100.0, r.aec.1 * 100.0);
@@ -334,8 +335,8 @@ pub fn run(ref_path: Option<String>, save: bool) {
     let glitches = xr.load(Ordering::Relaxed);
     let mic: Vec<f32> = crate::harness::to_16k_mono_pub(&captured, irate, ich).iter().map(|s| *s as f32 / 32768.0).collect();
     println!("captured {:.1} s, {glitches} audio glitch(es); capture started {issue_offset_ms} ms before playback was issued", mic.len() as f32 / SR as f32);
-    let report = analyze(&mic, &reference, if save { Some(Path::new("recordings/echo")) } else { None });
+    let report = analyze(&mic, &reference, if save { Some(Path::new(&format!("recordings/echo/{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)))) } else { None });
     println!("(system latency estimate: lag minus issue offset = {:.0} ms, +/- ~30 ms)", report.lag_ms - issue_offset_ms as f32);
     print_report(&report);
-    if save { println!("saved mic_aligned.wav, aec_out.wav, reference.wav in recordings/echo/ (gitignored: it is your voice)"); }
+    if save { println!("saved mic_aligned.wav, aec_out.wav, reference.wav in recordings/echo/<timestamp>/ (gitignored: it is your voice)"); }
 }

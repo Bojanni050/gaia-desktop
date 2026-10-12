@@ -99,3 +99,15 @@ One session; the audio's language was not recorded. Zero events in 10 minutes su
 It reports: measured render-to-mic lag (and a system-latency estimate), ERLE on the far-end-only part, and a barge-in table: false-trigger rate (8–10 s) and hit rate while you talk (13–19 s) with a threshold of 3 x the 95th percentile of the settled far-end-only frame levels, for the raw mic and after AEC. Targets used for the verdict: ERLE at least 20 dB, false triggers at most 5%, hit rate at least 60%. Nothing is saved unless `--save` (16 kHz wavs in the gitignored `recordings/echo/`).
 
 The synthetic self-test recovers the true 590 ms lag exactly and gives ERLE 34 dB, 0% false triggers and 65% hit rate after AEC (raw mic: 0% / 13%). Real-room numbers are not yet measured.
+
+### Real-room echo test, results so far (owner's speakers + HyperX SoloCast, sonora default config)
+
+| Run | ERLE (5-10 s) | False triggers (8-10 s) | Hit rate (13-19 s) | Raw mic hit rate |
+|---|---|---|---|---|
+| 1 | 18.5 dB | 25% | 40% | 7% |
+| 2 | 52.8 dB | 0% | 83% (66% with a 0.005 noise floor) | 8% |
+
+- Speaker-to-mic path about 60 ms (560 ms total minus the 500 ms start offset).
+- **Runs differ a lot** (cause unknown: volume, seat position, or run-to-run convergence), so two runs are not a verdict; at least three more are needed.
+- Run 2 per-second levels show the AEC output sitting near digital silence (rms about 0.0001) from the first second, which means AEC3's **suppressor is gating the output** rather than only subtracting the echo. During double talk the output keeps 0.01-0.025 rms (raw mic 0.02-0.08): the user's speech passes but attenuated. Whether that speech is still good enough for **speech-to-text** is untested and is the real question: transcribe `aec_out.wav` vs the raw mic in the Dutch STT test.
+- The hit/false metric is easy to satisfy with a gating suppressor, so the harness now applies a 0.005 (-46 dBFS) floor to the threshold, as a real VAD would have.
