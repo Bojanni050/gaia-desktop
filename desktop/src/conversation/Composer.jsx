@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import { ArrowUp, Loader2, Mic, MicOff, Paperclip, X } from 'lucide-react';
 import { libraryApi } from '../server/api';
 import { usePushToTalk } from '../state/usePushToTalk';
+import VoiceControls from './VoiceControls';
 import { L } from '../lib/lexicon';
 
 /**
@@ -18,7 +19,7 @@ import { L } from '../lib/lexicon';
  * typed text — unless a turn is already running or a draft is being typed, in which case it is put in
  * the text box instead, so nothing spoken is ever lost or sent over something half-written.
  */
-export default function Composer({ onSend, busy, onDraftChange }) {
+export default function Composer({ onSend, busy, onDraftChange, listenState = 'off' }) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attaching, setAttaching] = useState(false);
@@ -138,6 +139,7 @@ export default function Composer({ onSend, busy, onDraftChange }) {
             )}
           </button>
         )}
+        <VoiceControls listenState={listenState} />
         <textarea
           ref={taRef}
           className="composer-input"

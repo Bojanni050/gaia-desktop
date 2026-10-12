@@ -12,7 +12,7 @@ import { stepProgressLabel } from '../state/stepProgress';
  * moment (orb + greeting), messages, the thinking row, and the composer
  * dock with Gaia's presence above it.
  */
-export default function Conversation({ thread, busy, streaming, progress, presenceState, whisper, onSend, onRetry }) {
+export default function Conversation({ thread, busy, streaming, progress, presenceState, listenState, whisper, onSend, onRetry }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const messages = thread?.messages || [];
@@ -107,7 +107,7 @@ export default function Conversation({ thread, busy, streaming, progress, presen
           <div className="dock-presence">
             <PresenceOrb state={busy ? 'thinking' : hasDraft ? 'listening' : presenceState} size={22} />
           </div>
-          <Composer onSend={onSend} busy={busy} onDraftChange={setHasDraft} />
+          <Composer onSend={onSend} busy={busy} onDraftChange={setHasDraft} listenState={listenState} />
         </div>
       </div>
     </section>
