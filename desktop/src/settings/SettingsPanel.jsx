@@ -7,7 +7,7 @@
  * soft "saved" state and quietly returns — never a jump or a flash.
  */
 import React, { useEffect, useState } from 'react';
-import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi } from '../server/api';
+import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi, speechApi } from '../server/api';
 import { setSpeechGain } from '../lib/speech';
 import { useVoiceStatus } from '../state/useVoiceStatus';
 import { useWakeWord } from '../state/useWakeWord';
@@ -43,6 +43,12 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const [settings, setSettings] = useState(null);
   const [audio, setAudio] = useState(null);
   const voice = useVoiceStatus();
+  const [outputDevices, setOutputDevices] = useState([]);
+  const refreshOutputs = () =>
+    speechApi.listOutputDevices().then((d) => setOutputDevices(d || [])).catch(() => {});
+  useEffect(() => {
+    refreshOutputs();
+  }, []);
   const wake = useWakeWord();
   const [enrolling, setEnrolling] = useState(false);
   const [sensitivity, setSensitivity] = useState(null); // while the slider is being dragged
@@ -286,6 +292,25 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <span>{L.settingsSpeakReplies}</span>
               </label>
               <p className="capability-line">{L.settingsSpeakRepliesHint}</p>
+              <label className="field">
+                <span>{L.settingsOutputDevice}</span>
+                <select
+                  value={settings.audio?.outputDevice || ''}
+                  onFocus={refreshOutputs}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    patch({ audio: { ...settings.audio, outputDevice: id } });
+                    speechApi.selectOutputDevice(id).catch(() => {});
+                  }}
+                >
+                  <option value="">{L.settingsMicDefault}</option>
+                  {outputDevices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="field">
                 <span>{L.settingsVolume}</span>
                 <div className="volume-row">

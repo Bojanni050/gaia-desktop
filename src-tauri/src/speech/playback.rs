@@ -18,6 +18,9 @@ use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 use serde::Serialize;
 use tokio::sync::oneshot;
 
+use cpal::traits::{DeviceTrait, HostTrait};
+
+use crate::audio::capture::{info_for, AudioDeviceInfo};
 use crate::audio::continuous::{RenderCmd, RenderSink};
 use crate::audio::stream::Downsampler;
 
@@ -56,6 +59,40 @@ enum Cmd {
         volume: f32,
         muted: bool,
     },
+    /// Switches the output device (`None` = system default). Whatever is playing is cut off.
+    Device(Option<String>),
+}
+
+/// The speakers/headphones Gaia's voice can be played through. `is_default` marks the system default.
+pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
+    let host = cpal::default_host();
+    let default_id = host
+        .default_output_device()
+        .and_then(|d| d.id().ok())
+        .map(|i| i.to_string());
+    host.output_devices()
+        .map(|devices| {
+            devices
+                .filter_map(|d| info_for(&d, default_id.as_deref()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Opens the chosen output device, or the system default when none is chosen or the chosen one is
+/// gone or will not open (a saved device that was unplugged must not silence Gaia).
+fn open_sink(wanted: Option<&str>) -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
+    let chosen = wanted.and_then(|id| {
+        let device = cpal::default_host().device_by_id(&id.parse::<cpal::DeviceId>().ok()?)?;
+        DeviceSinkBuilder::from_device(device)
+            .ok()?
+            .open_sink_or_fallback()
+            .ok()
+    });
+    match chosen {
+        Some(sink) => Ok(sink),
+        None => DeviceSinkBuilder::open_default_sink(),
+    }
 }
 
 /// Volume at `elapsed` into a linear fade from `from` to silence over `fade`.
@@ -150,6 +187,11 @@ impl PlaybackEngine {
     pub fn set_gain(&self, volume: f32, muted: bool) {
         let _ = self.tx.send(Cmd::Gain { volume, muted });
     }
+
+    /// Plays through the output device `id` (`None` = system default) from now on.
+    pub fn set_device(&self, id: Option<String>) {
+        let _ = self.tx.send(Cmd::Device(id));
+    }
 }
 
 /// The decoded reply as the echo canceller wants it: mono, 16 kHz, at the same loudness it is played
@@ -183,6 +225,7 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
     };
     let mut gain = effective_volume(volume, muted);
     let mut sink: Option<MixerDeviceSink> = None;
+    let mut device: Option<String> = None;
     let mut current: Option<Playing> = None;
     let mut fading: Vec<Fading> = Vec::new();
     let mut last_active = Instant::now();
@@ -211,7 +254,7 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
                     start_fade(old, DEFAULT_FADE_MS, gain, &mut fading);
                 }
                 if sink.is_none() {
-                    match DeviceSinkBuilder::open_default_sink() {
+                    match open_sink(device.as_deref()) {
                         Ok(mut s) => {
                             s.log_on_drop(false);
                             sink = Some(s);
@@ -249,6 +292,22 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
                 gain = effective_volume(volume, muted);
                 if let Some(p) = &current {
                     p.player.set_volume(gain);
+                }
+            }
+            Ok(Cmd::Device(id)) => {
+                if id != device {
+                    device = id;
+                    // The old device's mixer goes away with its sink, so what plays on it ends now.
+                    if let Some(p) = current.take() {
+                        start_fade(p, 0, gain, &mut fading);
+                    }
+                    for f in fading.drain(..) {
+                        f.player.stop();
+                        if let Some(done) = f.done {
+                            let _ = done.send(PlayOutcome::Stopped);
+                        }
+                    }
+                    sink = None;
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}

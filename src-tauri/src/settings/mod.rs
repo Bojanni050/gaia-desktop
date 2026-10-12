@@ -57,12 +57,16 @@ pub struct AudioSettings {
     /// (so nothing is synthesised and no text-to-speech provider is called), unlike `muted`, which
     /// still fetches the audio and only silences it.
     pub speak_replies: bool,
+    /// Output device id (`DeviceId` string) Gaia's voice plays through; `None` = system default.
+    /// An id that no longer exists falls back to the default device.
+    pub output_device: Option<String>,
 }
 
 impl Default for AudioSettings {
     fn default() -> Self {
         Self {
             preferred_input: None,
+            output_device: None,
             volume: 1.0,
             muted: false,
             speak_replies: true,

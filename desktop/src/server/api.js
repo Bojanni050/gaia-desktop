@@ -207,6 +207,10 @@ export const speechApi = {
   /** Eases the current reply out over `fadeMs` and cancels one still being synthesised. */
   stop: (fadeMs) => invoke('speech_stop', { fadeMs }),
   setGain: (volume, muted) => invoke('speech_set_gain', { volume, muted }),
+  /** Output devices Gaia's voice can play through: `[{ id, name, isDefault }]`. */
+  listOutputDevices: () => invoke('speech_list_output_devices'),
+  /** `id` is a device id from listOutputDevices, or null for the system default. Persisted. */
+  selectOutputDevice: (id) => invoke('speech_select_output_device', { id }),
   async synthesize(text) {
     const result = await invoke('speech_synthesize', { text });
     if (Array.isArray(result)) {
