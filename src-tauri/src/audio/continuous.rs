@@ -40,7 +40,7 @@ use std::time::Duration;
 use serde::Serialize;
 
 use super::capture::CaptureSink;
-use super::echo::{EchoCanceller, BLOCK};
+use super::echo::{EchoCanceller, EchoGate, BLOCK};
 use super::ptt::{Spawner, TranscribeError, Transcriber, Transcript, TranscriptEvent};
 use super::stream::Downsampler;
 use super::utterance;
@@ -54,10 +54,26 @@ pub const WAKE_EVENT: &str = "voice://wake";
 
 /// Speech this long while Gaia is speaking is an interruption, not a cough or leftover echo.
 const BARGE_IN_MS: u32 = 250;
-/// How long after Gaia's voice ends her echo may still be decaying in the room (in 10 ms blocks).
-const ECHO_TAIL_BLOCKS: u32 = 20;
+/// How long after Gaia's voice ends her echo may still be arriving: speakers and monitors add output delay
+/// on top of the room, so her last words are still sounding after the reference has run out (in 10 ms blocks).
+const ECHO_TAIL_BLOCKS: u32 = 40;
+/// Speech that begins in the last stretch of a reply, or in the tail after it, is her own last words coming
+/// back, not the user talking over her: the canceller is least sure there (the reference has just run out,
+/// and a delay it has not locked onto leaks the end of a short reply). Such an utterance is never sent for
+/// transcription. In 16 kHz samples (800 ms).
+const ECHO_END_ZONE_SAMPLES: usize = 12_800;
+/// The same at the other end: the canceller has not yet locked onto a new reply in its first moments, so
+/// speech that begins within this long of the start of a reply is her own voice too (800 ms).
+const ECHO_START_ZONE_SAMPLES: usize = 12_800;
 /// With barge-in off, how long after Gaia stops before listening resumes (in 10 ms blocks).
 const HALF_DUPLEX_COOLDOWN_BLOCKS: u32 = 40;
+
+/// Whether speech beginning now is probably her own voice: it begins in the first or last moments of a reply
+/// (or in the tail after it), where the echo canceller is least sure. `remaining` is what is left of the
+/// reply to play and `played` what has been played of it, both in 16 kHz samples.
+fn in_echo_zone(speaking: bool, playing: bool, remaining: usize, played: usize) -> bool {
+    speaking && (remaining < ECHO_END_ZONE_SAMPLES || (playing && played < ECHO_START_ZONE_SAMPLES))
+}
 
 /// What Gaia is playing, as the listener needs it: the reference for the echo canceller.
 #[derive(Debug, Clone)]
@@ -391,6 +407,10 @@ fn run(
     let mut tail = 0u32; // blocks of echo tail left after Gaia stops
     let mut cooldown = 0u32; // blocks of deafness left (barge-in off)
     let mut was_speaking = false;
+    let mut gate = EchoGate::new(); // quiets what is no louder than her own leftover echo
+    let mut render_half: Vec<f32> = Vec::new(); // what was played over the 20 ms frame being assembled
+    let mut reply_pos = 0usize; // samples of the current reply played so far
+    let mut onset_in_echo_zone = false; // the utterance in progress began while her voice was ending
     let mut barged = false;
     let mut hearing = false;
     let mut clean = vec![0.0f32; BLOCK];
@@ -447,6 +467,9 @@ fn run(
             match cmd {
                 // A reply that starts while an earlier one is still fading out plays *over* it: mix, not queue.
                 RenderCmd::Start(samples) => {
+                    if render_queue.is_empty() {
+                        reply_pos = 0; // a new reply, not one laid over another
+                    }
                     for (i, s) in samples.iter().enumerate() {
                         match render_queue.get_mut(i) {
                             Some(existing) => *existing += *s,
@@ -465,6 +488,9 @@ fn run(
             now += 1;
 
             let playing = !render_queue.is_empty();
+            if playing {
+                reply_pos += BLOCK;
+            }
             let speaking = playing || tail > 0;
             if playing {
                 tail = ECHO_TAIL_BLOCKS;
@@ -510,10 +536,14 @@ fn run(
             }
 
             half.extend_from_slice(&clean);
+            render_half.extend_from_slice(&render);
             if half.len() < FRAME_SAMPLES {
                 continue;
             }
-            let frame: Vec<f32> = half.drain(..FRAME_SAMPLES).collect();
+            let mut frame: Vec<f32> = half.drain(..FRAME_SAMPLES).collect();
+            let played: Vec<f32> = render_half.drain(..FRAME_SAMPLES).collect();
+            // While she speaks, only what is clearly louder than her own leftover echo reaches the detector.
+            gate.apply(&mut frame, &played);
 
             // Half-duplex: not listening while Gaia speaks (and briefly after). Anything in progress is dropped.
             let deaf = armed && ((speaking && !inner.barge_in.load(Ordering::SeqCst)) || cooldown > 0);
@@ -537,6 +567,7 @@ fn run(
             }
             match event {
                 Some(SegEvent::Started) => {
+                    onset_in_echo_zone = in_echo_zone(speaking, playing, render_queue.len(), reply_pos);
                     hearing = true;
                     (inner.emit)(ContinuousEvent::State(ListenState::Hearing));
                 }
@@ -546,15 +577,30 @@ fn run(
                 }
                 Some(SegEvent::Utterance(samples)) => {
                     hearing = false;
-                    submit(&inner, samples);
-                    armed_until = armed_until.max(now + arm.think_hold as u64);
+                    if onset_in_echo_zone {
+                        // Her own last words, heard again: not sent, not answered.
+                        eprintln!(
+                            "[voice] dropped {:.1} s of speech that began as Gaia's voice was ending (her own echo)",
+                            samples.len() as f32 / 16_000.0
+                        );
+                        onset_in_echo_zone = false;
+                        (inner.emit)(ContinuousEvent::State(ListenState::Listening));
+                    } else {
+                        eprintln!(
+                            "[voice] heard {:.1} s of speech{}",
+                            samples.len() as f32 / 16_000.0,
+                            if speaking { " while Gaia was speaking (interruption)" } else { "" }
+                        );
+                        submit(&inner, samples);
+                        armed_until = armed_until.max(now + arm.think_hold as u64);
+                    }
                 }
                 None => {}
             }
             if seg.in_speech() {
                 armed_until = armed_until.max(now + arm.speech_extend as u64);
             }
-            if speaking && !barged && seg.in_speech() && seg.speech_ms() >= BARGE_IN_MS {
+            if speaking && !barged && !onset_in_echo_zone && seg.in_speech() && seg.speech_ms() >= BARGE_IN_MS {
                 barged = true;
                 (inner.emit)(ContinuousEvent::BargeIn);
             }
@@ -750,6 +796,16 @@ mod tests {
     /// own tone stands in for the user talking over her).
     fn reply_audio(secs: usize) -> Arc<Vec<f32>> {
         Arc::new((0..16_000 * secs).map(|i| 0.1 * ((i * 31) % 100) as f32 / 100.0 - 0.05).collect())
+    }
+
+    #[test]
+    fn speech_in_the_first_or_last_moments_of_a_reply_is_her_echo_the_middle_is_not() {
+        let at = |remaining: usize, played: usize| in_echo_zone(true, remaining > 0, remaining, played);
+        assert!(at(100_000, 4_000), "just after a reply began");
+        assert!(at(5_000, 100_000), "as it is ending");
+        assert!(at(0, 100_000), "in the tail after it");
+        assert!(!at(100_000, 100_000), "in the middle of it");
+        assert!(!in_echo_zone(false, false, 0, 0), "nothing is playing");
     }
 
     #[test]
@@ -1256,6 +1312,383 @@ mod tests {
             if control_heard > 0 { "the room echoes, so this test is meaningful" } else { "no echo reached the microphone, so this room proves little" }
         );
         assert!(control_heard > 0, "the control must hear her own voice, or this test proves nothing in this room");
+    }
+
+    // The fake microphone is quiet for 1.5 s and then speaks for 1 s, over and over, and runs faster than real
+    // time; the speech first begins about 1.5 s into the reply (the reply is consumed with the microphone).
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn speech_that_begins_as_her_reply_is_ending_is_her_own_echo_and_is_not_sent() {
+        let r = rig(Mode::Bursts, true);
+        r.mic.set_enabled(true, None);
+        r.listener.start().unwrap();
+        // 1.8 s of reply: the first burst begins with only a fraction of a second of it left (and stays in the
+        // end zone even if the listener picks the reply up a little late); the next burst is after it.
+        (r.listener.render_sink())(RenderCmd::Start(Arc::new(reply_audio(2)[..28_800].to_vec())));
+        wait_for("a transcript", || !transcripts(&r.log).is_empty()).await;
+        let heard_before_first_transcription = {
+            let s = states(&r.log);
+            let first = s.iter().position(|x| *x == ListenState::Transcribing).expect("a transcription began");
+            s[..first].iter().filter(|x| **x == ListenState::Hearing).count()
+        };
+        assert!(
+            heard_before_first_transcription >= 2,
+            "the burst that began as her reply was ending must be skipped, not transcribed ({heard_before_first_transcription} heard)"
+        );
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn speech_in_the_middle_of_her_reply_is_still_an_interruption_and_is_sent() {
+        let r = rig(Mode::Bursts, true);
+        r.mic.set_enabled(true, None);
+        r.listener.start().unwrap();
+        (r.listener.render_sink())(RenderCmd::Start(reply_audio(20)));
+        wait_for("the transcript of the interruption", || !transcripts(&r.log).is_empty()).await;
+        assert!(barge_ins(&r.log) >= 1);
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn speech_well_after_her_reply_has_ended_is_sent() {
+        let r = rig(Mode::Bursts, true);
+        r.mic.set_enabled(true, None);
+        r.listener.start().unwrap();
+        (r.listener.render_sink())(RenderCmd::Start(reply_audio(1))); // over long before the speech begins
+        wait_for("the transcript", || !transcripts(&r.log).is_empty()).await;
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    /// Opt-in hardware test: `cargo test --lib real_speakers_three_replies -- --ignored --nocapture`.
+    /// PLAYS three replies of different length through the default speakers, one after the other, with the
+    /// echo reference connected like the product, and reports for each how many times she interrupted herself
+    /// and how many pieces of her own voice were sent for transcription. **Stay silent while it runs**
+    /// (about 40 s), and switch the microphone off in the running app first, or it will answer the test.
+    #[test]
+    #[ignore = "plays sound through the speakers and listens on the microphone"]
+    fn real_speakers_three_replies_do_not_make_gaia_answer_herself() {
+        use super::super::CpalBackend;
+        use crate::speech::PlaybackEngine;
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mic = MicController::new(Arc::new(CpalBackend), Arc::new(|_| {}), Timing::default());
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        let l2 = log.clone();
+        let handle = rt.handle().clone();
+        let transcriber = FakeTranscriber::saying("(heard something)");
+        let listener = ContinuousListener::new(
+            mic.clone(),
+            transcriber.clone(),
+            Arc::new(move |e| l2.lock().unwrap().push(e)),
+            Arc::new(move |f| {
+                handle.spawn(f);
+            }),
+            Arc::new(AtomicBool::new(false)),
+            true,
+        );
+        let playback = PlaybackEngine::new(0.5, false);
+        playback.set_render_sink(listener.render_sink());
+        let status = mic.set_enabled(true, None);
+        assert_eq!(status.state, super::super::MicState::Listening, "{status:?}");
+        listener.start().expect("start");
+        std::thread::sleep(Duration::from_millis(2_000)); // the room is measured while quiet
+
+        let mut all_ok = true;
+        for (name, secs) in [("long reply (8 s)", 8usize), ("short reply (2 s)", 2), ("very short reply (1 s)", 1)] {
+            let barge_before = barge_ins(&log);
+            let heard_before = r_transcripts(&log);
+            let wav = utterance::wav_bytes(&speechlike_reply(secs));
+            let outcome = rt.block_on(playback.play(wav));
+            std::thread::sleep(Duration::from_millis(3_000)); // what comes back after she stops
+            let barge = barge_ins(&log) - barge_before;
+            let heard = r_transcripts(&log) - heard_before;
+            println!("{name}: playback {outcome:?}, interruptions of her own voice: {barge}, pieces of her own voice sent for transcription: {heard}");
+            all_ok &= barge == 0 && heard == 0;
+        }
+        listener.stop();
+        mic.set_enabled(false, None);
+        assert!(all_ok, "she must neither interrupt nor answer herself, for any reply length");
+    }
+
+    /// Opt-in hardware test: `cargo test --lib measure_the_speaker_to_microphone_delay -- --ignored --nocapture`.
+    /// PLAYS four replies through the default speakers and, for each, measures how long after the playback
+    /// command her voice reaches the microphone (cross-correlation of what was played with what was heard)
+    /// and how loudly. **Stay silent while it runs** (about 30 s) and switch the microphone off in the app.
+    #[test]
+    #[ignore = "plays sound through the speakers and listens on the microphone"]
+    fn measure_the_speaker_to_microphone_delay() {
+        use super::super::stream::Downsampler;
+        use super::super::CpalBackend;
+        use crate::speech::PlaybackEngine;
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mic = MicController::new(Arc::new(CpalBackend), Arc::new(|_| {}), Timing::default());
+        let status = mic.set_enabled(true, None);
+        assert_eq!(status.state, super::super::MicState::Listening, "{status:?}");
+        let sink = mic.capture_sink().expect("capture sink");
+        let (tx, rx) = mpsc::channel::<Vec<f32>>();
+        sink.attach_tap(tx);
+        let heard: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+        let heard2 = heard.clone();
+        let rate = sink.sample_rate();
+        let collector = std::thread::spawn(move || {
+            let mut down = Downsampler::new(rate);
+            while let Ok(chunk) = rx.recv() {
+                let mut out = Vec::new();
+                down.push(&chunk, &mut out);
+                heard2.lock().unwrap().extend(out);
+            }
+        });
+
+        // What was played, and where in the microphone stream it began.
+        let starts: Arc<Mutex<Vec<(usize, Arc<Vec<f32>>)>>> = Arc::new(Mutex::new(Vec::new()));
+        let (s2, h3) = (starts.clone(), heard.clone());
+        let playback = PlaybackEngine::new(0.5, false);
+        playback.set_render_sink(Arc::new(move |cmd| {
+            if let RenderCmd::Start(samples) = cmd {
+                s2.lock().unwrap().push((h3.lock().unwrap().len(), samples));
+            }
+        }));
+        std::thread::sleep(Duration::from_millis(1_500));
+
+        let secs_list = [6usize, 2, 2, 3];
+        for secs in secs_list {
+            let wav = utterance::wav_bytes(&speechlike_reply(secs));
+            let _ = rt.block_on(playback.play(wav));
+            std::thread::sleep(Duration::from_millis(3_000));
+        }
+        mic.set_enabled(false, None);
+        drop(sink);
+        let _ = collector.join();
+
+        let mic16 = heard.lock().unwrap().clone();
+        // Keep the recording (what the microphone heard and what was played, on one timeline) so the canceller
+        // can be tuned offline against this room: GAIA_ECHO_DUMP is the directory, default the temp directory.
+        {
+            let dir = std::path::PathBuf::from(std::env::var("GAIA_ECHO_DUMP").unwrap_or_else(|_| std::env::temp_dir().display().to_string()));
+            let mut render = vec![0.0f32; mic16.len()];
+            for (at, reference) in starts.lock().unwrap().iter() {
+                for (i, v) in reference.iter().enumerate() {
+                    if let Some(slot) = render.get_mut(at + i) {
+                        *slot += *v;
+                    }
+                }
+            }
+            let bytes = |x: &[f32]| x.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+            std::fs::write(dir.join("echo-mic16.f32"), bytes(&mic16)).unwrap();
+            std::fs::write(dir.join("echo-render16.f32"), bytes(&render)).unwrap();
+            println!("recording kept in {}", dir.display());
+        }
+        let quiet_rms = (mic16[..16_000].iter().map(|v| v * v).sum::<f32>() / 16_000.0).sqrt();
+        println!("room noise before playing: rms {quiet_rms:.5}");
+        for (n, (at, reference)) in starts.lock().unwrap().iter().enumerate() {
+            let len = (reference.len()).min(16_000 * 2); // correlate over the first 2 s
+            let norm_ref: f32 = reference[..len].iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-9);
+            let (mut best_lag, mut best) = (0usize, 0f32);
+            for lag in (0..24_000).step_by(16) {
+                if at + lag + len > mic16.len() {
+                    break;
+                }
+                let m = &mic16[at + lag..at + lag + len];
+                let dot: f32 = reference[..len].iter().zip(m).map(|(a, b)| a * b).sum();
+                let norm_m: f32 = m.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-9);
+                let c = (dot / (norm_ref * norm_m)).abs();
+                if c > best {
+                    best = c;
+                    best_lag = lag;
+                }
+            }
+            let loud = &mic16[at + best_lag..(at + best_lag + len).min(mic16.len())];
+            let rms = (loud.iter().map(|v| v * v).sum::<f32>() / loud.len().max(1) as f32).sqrt();
+            println!(
+                "reply {} ({} s): her voice reaches the microphone {} ms after the play command (match {:.2}), level there rms {:.4} = {:.0}x the room",
+                n + 1,
+                secs_list[n],
+                best_lag / 16,
+                best,
+                rms,
+                rms / quiet_rms.max(1e-6)
+            );
+        }
+    }
+
+    /// Offline replay of a recording made by `measure_the_speaker_to_microphone_delay`: the same canceller and
+    /// the same speech detector as the product, over what this room really did, with different settings.
+    /// Nobody spoke during the recording, so every piece of speech the detector finds is Gaia hearing herself.
+    #[test]
+    #[ignore = "needs the recording written by measure_the_speaker_to_microphone_delay (GAIA_ECHO_DUMP)"]
+    fn replay_the_recorded_room_with_different_canceller_settings() {
+        use super::super::echo::relaxed_config;
+        use aec3::api::config::EchoCanceller3Config;
+
+        let dir = std::path::PathBuf::from(std::env::var("GAIA_ECHO_DUMP").unwrap_or_else(|_| std::env::temp_dir().display().to_string()));
+        let load = |name: &str| -> Vec<f32> {
+            std::fs::read(dir.join(name)).unwrap().chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect()
+        };
+        let (mic, render) = (load("echo-mic16.f32"), load("echo-render16.f32"));
+        let rms = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt();
+        let playing: Vec<bool> = render.chunks(BLOCK).map(|b| b.iter().any(|v| v.abs() > 1e-6)).collect();
+
+        let mut variants: Vec<(String, EchoCanceller3Config)> = vec![
+            ("relaxed x4 (the product now)".into(), relaxed_config(4.0)),
+            ("relaxed x2".into(), relaxed_config(2.0)),
+            ("relaxed x1".into(), relaxed_config(1.0)),
+            ("AEC3 defaults".into(), EchoCanceller3Config::default()),
+        ];
+        for (blocks, k) in [(24usize, 4.0f32), (32, 4.0), (48, 4.0), (32, 2.0)] {
+            let mut cfg = relaxed_config(k);
+            cfg.filter.main.length_blocks = blocks;
+            cfg.filter.main_initial.length_blocks = blocks.min(cfg.filter.main_initial.length_blocks.max(blocks / 2));
+            cfg.filter.shadow.length_blocks = blocks.saturating_sub(2).max(12);
+            variants.push((format!("relaxed x{k}, filter {blocks} blocks ({} ms)", blocks * 4), cfg));
+        }
+
+        for (name, config) in variants {
+            let mut aec = EchoCanceller::with_config(config).expect("canceller");
+            let mut clean = vec![0.0f32; mic.len()];
+            for b in 0..mic.len() / BLOCK {
+                let r = &render[b * BLOCK..(b + 1) * BLOCK];
+                let m = &mic[b * BLOCK..(b + 1) * BLOCK];
+                aec.process(r, m, &mut clean[b * BLOCK..(b + 1) * BLOCK]);
+            }
+            // how much of her voice is left while she plays
+            let (mut raw_e, mut out_e, mut n) = (0f32, 0f32, 0usize);
+            for (b, p) in playing.iter().enumerate() {
+                if *p && (b + 1) * BLOCK <= mic.len() {
+                    raw_e += mic[b * BLOCK..(b + 1) * BLOCK].iter().map(|v| v * v).sum::<f32>();
+                    out_e += clean[b * BLOCK..(b + 1) * BLOCK].iter().map(|v| v * v).sum::<f32>();
+                    n += BLOCK;
+                }
+            }
+            let erle = 10.0 * (raw_e.max(1e-12) / out_e.max(1e-12)).log10();
+            // what the product's detector makes of the cleaned signal
+            let mut seg = Segmenter::new(SegmenterConfig::default());
+            let (mut started, mut barge_like, mut was_long) = (0usize, 0usize, false);
+            let mut utterances = 0usize;
+            // where in the recording (seconds from the first sound she played) the detector finds speech
+            let first_sound = render.iter().position(|v| v.abs() > 1e-6).unwrap_or(0);
+            let mut at_secs: Vec<String> = Vec::new();
+            for (fi, frame) in clean.chunks_exact(FRAME_SAMPLES).enumerate() {
+                match seg.push_frame(frame) {
+                    Some(SegEvent::Started) => {
+                        started += 1;
+                        let pos = fi * FRAME_SAMPLES;
+                        // distance into the reply that is playing (or since the last sample of the last reply)
+                        let last_play = render[..pos.min(render.len())].iter().rposition(|v| v.abs() > 1e-6);
+                        at_secs.push(format!(
+                            "{:.1}s{}",
+                            pos.saturating_sub(first_sound) as f32 / 16_000.0,
+                            match last_play {
+                                Some(l) if pos > l => format!(" (+{:.1}s after she paused)", (pos - l) as f32 / 16_000.0),
+                                _ => String::new(),
+                            }
+                        ));
+                    }
+                    Some(SegEvent::Utterance(_)) => utterances += 1,
+                    _ => {}
+                }
+                let long = seg.in_speech() && seg.speech_ms() >= BARGE_IN_MS;
+                if long && !was_long {
+                    barge_like += 1;
+                }
+                was_long = long;
+            }
+            println!(
+                "{name:<34} echo removed {erle:>5.1} dB over {:.0} s of playing | detector: {started} speech starts, {barge_like} would interrupt her, {utterances} utterances sent",
+                n as f32 / 16_000.0
+            );
+            println!("    speech found at: {}", at_secs.join(", "));
+            let _ = rms(&clean);
+        }
+    }
+
+    #[test]
+    #[ignore = "needs the recording written by measure_the_speaker_to_microphone_delay (GAIA_ECHO_DUMP)"]
+    fn replay_the_recorded_room_with_the_echo_gate() {
+        use super::super::echo::{relaxed_config, EchoGate};
+
+        let dir = std::path::PathBuf::from(std::env::var("GAIA_ECHO_DUMP").unwrap_or_else(|_| std::env::temp_dir().display().to_string()));
+        let load = |name: &str| -> Vec<f32> {
+            std::fs::read(dir.join(name)).unwrap().chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect()
+        };
+        let (mic, render) = (load("echo-mic16.f32"), load("echo-render16.f32"));
+        let first_sound = render.iter().position(|v| v.abs() > 1e-6).unwrap_or(0);
+
+        // Cleans `mic`, gates it like the product, runs the detector: (speech starts, would-interrupt count, start times in s)
+        let run = |mic: &[f32], k: f32, gated: bool| -> (usize, usize, Vec<f32>) {
+            let mut aec = EchoCanceller::with_config(super::super::echo::relaxed_config(k)).expect("canceller");
+            let mut clean = vec![0.0f32; mic.len()];
+            for b in 0..mic.len() / BLOCK {
+                aec.process(&render[b * BLOCK..(b + 1) * BLOCK], &mic[b * BLOCK..(b + 1) * BLOCK], &mut clean[b * BLOCK..(b + 1) * BLOCK]);
+            }
+            let mut gate = EchoGate::new();
+            let mut seg = Segmenter::new(SegmenterConfig::default());
+            let (mut started, mut barge_like, mut was_long) = (0usize, 0usize, false);
+            let mut times = Vec::new();
+            for (fi, frame) in clean.chunks_exact(FRAME_SAMPLES).enumerate() {
+                let mut frame = frame.to_vec();
+                if gated {
+                    gate.apply(&mut frame, &render[fi * FRAME_SAMPLES..(fi + 1) * FRAME_SAMPLES]);
+                }
+                if let Some(SegEvent::Started) = seg.push_frame(&frame) {
+                    started += 1;
+                    times.push((fi * FRAME_SAMPLES).saturating_sub(first_sound) as f32 / 16_000.0);
+                }
+                let long = seg.in_speech() && seg.speech_ms() >= BARGE_IN_MS;
+                if long && !was_long {
+                    barge_like += 1;
+                }
+                was_long = long;
+            }
+            let _ = relaxed_config(1.0);
+            (started, barge_like, times)
+        };
+
+        // Nobody spoke in the recording: every detection is Gaia hearing herself.
+        for k in [4.0f32, 2.0] {
+            for gated in [false, true] {
+                let (started, barge, times) = run(&mic, k, gated);
+                println!("quiet room, relaxed x{k}, gate {}: {started} speech starts, {barge} would interrupt her, at {:?} s", if gated { "ON " } else { "off" }, times.iter().map(|x| (x * 10.0).round() / 10.0).collect::<Vec<_>>());
+            }
+        }
+
+        // The user talks over her: speech-like voice added at the microphone for 3 s in the middle of the long reply.
+        let user = {
+            let mut seed = 7u64;
+            let mut rnd = move || {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((seed >> 33) as f32 / (1u64 << 31) as f32) * 2.0 - 1.0
+            };
+            let (mut ph, mut env, mut pitch) = (0f32, 0f32, 210f32);
+            (0..16_000 * 3)
+                .map(|i| {
+                    if i % 4_000 == 0 {
+                        env = 0.7 + 0.3 * rnd().abs();
+                    }
+                    if i % 320 == 0 {
+                        pitch = 210.0 * (1.0 + 0.15 * rnd());
+                    }
+                    ph += std::f32::consts::TAU * pitch / 16_000.0;
+                    env * (1..=8).map(|h| (ph * h as f32).sin() / h as f32).sum::<f32>()
+                })
+                .collect::<Vec<f32>>()
+        };
+        let user_rms = (user.iter().map(|v| v * v).sum::<f32>() / user.len() as f32).sqrt();
+        for target in [0.02f32, 0.04, 0.08] {
+            let mut with_user = mic.clone();
+            let from = first_sound + 16_000 * 2; // 2 s into the long reply
+            for (i, v) in user.iter().enumerate() {
+                with_user[from + i] += v * target / user_rms;
+            }
+            for gated in [false, true] {
+                let (_, _, times) = run(&with_user, 4.0, gated);
+                let caught = times.iter().any(|x| *x >= 2.0 && *x <= 5.5);
+                println!("user talking over her at rms {target}, gate {}: caught = {caught} (detections at {:?} s)", if gated { "ON " } else { "off" }, times.iter().map(|x| (x * 10.0).round() / 10.0).collect::<Vec<_>>());
+            }
+        }
     }
 
     fn r_transcripts(log: &Log) -> usize {
