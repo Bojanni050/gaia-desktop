@@ -25,7 +25,7 @@ fn prompt_for(label: &str) -> &'static str {
     match label {
         "hey" => "say: \"Hey Gaia\"",
         "neg" => "say ANY OTHER phrase (\"hé jij daar\", \"Gaia\", \"hey Maya\", a sentence)",
-        "bg" => "stay silent, or play TV/music/talk normally (ambient false-accept test)",
+        "bg" | "bgs" => "stay silent, or play TV/music/talk normally (ambient false-accept test)",
         _ => "speak",
     }
 }
@@ -256,7 +256,7 @@ pub fn score(n_refs: usize) {
                 let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as f32 / 32768.0;
                 let word = trim(&pcm).len() as f32 / TARGET as f32;
                 // A single "Hey Gaia" is roughly 0.5-1.5 s once trimmed; longer means noise/talking, shorter means a cut-off clip.
-                let ok = pcm.len() >= TARGET as usize / 2 && peak >= 0.05 && (label == "bg" || (0.5..=1.5).contains(&word));
+                let ok = pcm.len() >= TARGET as usize / 2 && peak >= 0.05 && (label.starts_with("bg") || (0.5..=1.5).contains(&word));
                 if !ok {
                     println!("skipping unusable clip {} ({:.2}s, trimmed {word:.2}s, peak {peak:.2})", p.display(), pcm.len() as f32 / TARGET as f32);
                 }
@@ -266,7 +266,7 @@ pub fn score(n_refs: usize) {
     };
     let hey = usable("hey");
     let neg = usable("neg");
-    let bg = usable("bg");
+    let bg = usable(&std::env::var("GAIA_BG_LABEL").unwrap_or_else(|_| "bg".into()));
     println!("clips: hey={} neg={} bg={}", hey.len(), neg.len(), bg.len());
     if hey.len() < n_refs + 2 {
         eprintln!("need at least {} `hey` clips (n_refs {n_refs} + 2 to test)", n_refs + 2);
@@ -389,7 +389,7 @@ fn usable_list(label: &str) -> Vec<PathBuf> {
             let pcm = read_wav(p);
             let peak = pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as f32 / 32768.0;
             let word = trim(&pcm).len() as f32 / TARGET as f32;
-            pcm.len() >= TARGET as usize / 2 && peak >= 0.05 && (label == "bg" || (0.5..=1.5).contains(&word))
+            pcm.len() >= TARGET as usize / 2 && peak >= 0.05 && (label.starts_with("bg") || (0.5..=1.5).contains(&word))
         })
         .collect()
 }
