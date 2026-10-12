@@ -45,7 +45,10 @@ export function usePushToTalk({ onTranscript, api = voiceApi, request = serverAp
     );
     keep(
       api.onTranscript((t) => {
-        if (active && t && typeof t.text === 'string' && handler.current) handler.current(t.text, t);
+        // Hands-free transcripts belong to useVoiceSession; this button acts only on its own.
+        if (active && t && t.source !== 'continuous' && typeof t.text === 'string' && handler.current) {
+          handler.current(t.text, t);
+        }
       })
     );
     // Hide the button when Cloud says it cannot transcribe. If it cannot say (offline, an older

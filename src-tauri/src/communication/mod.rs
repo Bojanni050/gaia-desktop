@@ -70,6 +70,9 @@ pub enum CommunicationError {
     Server { status: u16 },
     #[error("realtime events require a WebSocket connection, which is not implemented yet")]
     WebSocketUnavailable,
+    /// The turn was cancelled on purpose (the user interrupted). Not a failure.
+    #[error("turn cancelled")]
+    Cancelled,
 }
 
 /// The desktop's single link to Gaia Server.
@@ -81,6 +84,8 @@ pub struct ServerLink {
     config: RwLock<ServerConfig>,
     status: RwLock<ConnectionStatus>,
     client: RwLock<Option<Arc<dyn GaiaServerClient>>>,
+    /// One cancel switch per streaming turn in flight, by request id.
+    turn_cancels: std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl ServerLink {
@@ -102,6 +107,7 @@ impl ServerLink {
             config: RwLock::new(config),
             status,
             client: RwLock::new(client),
+            turn_cancels: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -197,25 +203,50 @@ impl ServerLink {
         request_id: String,
     ) -> Result<String, CommunicationError> {
         let client = self.client().ok_or(CommunicationError::NotConfigured)?;
-        let mut deltas = client.stream_turn(body).await?;
-        let mut full_reply = String::new();
-        while let Some(delta) = deltas.recv().await {
-            let delta = delta?;
-            if let Some(content) = &delta.content {
-                full_reply.push_str(content);
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        self.turn_cancels
+            .lock()
+            .expect("turn cancels poisoned")
+            .insert(request_id.clone(), cancel_tx);
+        let outcome = async {
+            let mut deltas = client.stream_turn(body).await?;
+            let mut full_reply = String::new();
+            loop {
+                let delta = tokio::select! {
+                    delta = deltas.recv() => delta,
+                    // Dropping `deltas` on return stops the reader and closes the connection.
+                    _ = &mut cancel_rx => return Err(CommunicationError::Cancelled),
+                };
+                let Some(delta) = delta else { break };
+                let delta = delta?;
+                if let Some(content) = &delta.content {
+                    full_reply.push_str(content);
+                }
+                let _ = app.emit(
+                    TURN_DELTA_EVENT,
+                    &TurnDeltaPayload {
+                        request_id: request_id.clone(),
+                        content: delta.content,
+                        reasoning_content: delta.reasoning_content,
+                        step: delta.step,
+                        error: delta.error,
+                    },
+                );
             }
-            let _ = app.emit(
-                TURN_DELTA_EVENT,
-                &TurnDeltaPayload {
-                    request_id: request_id.clone(),
-                    content: delta.content,
-                    reasoning_content: delta.reasoning_content,
-                    step: delta.step,
-                    error: delta.error,
-                },
-            );
+            Ok(full_reply)
         }
-        Ok(full_reply)
+        .await;
+        self.turn_cancels.lock().expect("turn cancels poisoned").remove(&request_id);
+        outcome
+    }
+
+    /// Cancels a streaming turn that is in flight: the connection is closed and the call returns
+    /// [`CommunicationError::Cancelled`]. Returns false when no such turn is running (already finished).
+    pub fn cancel_turn(&self, request_id: &str) -> bool {
+        match self.turn_cancels.lock().expect("turn cancels poisoned").remove(request_id) {
+            Some(tx) => tx.send(()).is_ok(),
+            None => false,
+        }
     }
 
     /// Spawn the background health loop that keeps the status fresh.
@@ -371,6 +402,13 @@ pub async fn server_stream_turn(
     Ok(link.stream_turn(&app, body, request_id).await?)
 }
 
+/// Cancels the streaming turn started with `request_id` (the user interrupted Gaia). The text received
+/// so far stays on screen; the connection is closed so the server can stop generating.
+#[tauri::command]
+pub fn server_cancel_turn(link: tauri::State<'_, ServerLink>, request_id: String) -> bool {
+    link.cancel_turn(&request_id)
+}
+
 /// Fetch Cloud build version from the server.
 /// Returns the Cloud's build metadata, or an error if unavailable.
 /// This is cached for the session and fetched once during initialization.
@@ -390,4 +428,25 @@ pub async fn version_get_desktop(
     desktop_version: tauri::State<'_, DesktopVersion>,
 ) -> Result<DesktopBuildMeta, String> {
     Ok(desktop_version.get().clone())
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+
+    #[test]
+    fn cancelling_a_turn_that_is_not_running_is_a_calm_no() {
+        let link = ServerLink::new(ServerConfig::default());
+        assert!(!link.cancel_turn("turn-does-not-exist"));
+    }
+
+    #[test]
+    fn a_cancel_switch_fires_once_and_is_then_gone() {
+        let link = ServerLink::new(ServerConfig::default());
+        let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+        link.turn_cancels.lock().unwrap().insert("t1".into(), tx);
+        assert!(link.cancel_turn("t1"));
+        assert!(rx.try_recv().is_ok(), "the running turn is told to stop");
+        assert!(!link.cancel_turn("t1"), "a second cancel finds nothing");
+    }
 }

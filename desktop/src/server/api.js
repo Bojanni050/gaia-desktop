@@ -36,6 +36,12 @@ export const serverApi = {
   request: (request) => invoke('server_request', { request }),
   getCloudVersion: () => invoke('server_get_cloud_version'),
   getDesktopVersion: () => invoke('version_get_desktop'),
+  /**
+   * Cancels a streaming turn that is in flight (the user interrupted): Rust closes the connection, so
+   * Gaia Cloud sees the disconnect and can stop. The pending `streamTurn` rejects; the text already
+   * received stays. Resolves to false when that turn had already finished.
+   */
+  cancelTurn: (requestId) => invoke('server_cancel_turn', { requestId }),
   onStatus: (handler) => listen('server://status', (event) => handler(event.payload)),
   /**
    * Realtime events relayed from Gaia Cloud (ServerLink::spawn_event_bridge,
@@ -63,8 +69,10 @@ export const serverApi = {
    * ends, rejects the same way `request` does on any transport/server
    * failure.
    */
-  streamTurn: async (body, onDelta) => {
+  streamTurn: async (body, onDelta, handle) => {
     const requestId = `turn-${Date.now()}-${streamRequestCounter++}`;
+    // Handed to the caller before anything is sent, so the turn can be cancelled at any moment.
+    if (handle) handle.requestId = requestId;
     const unlisten = await listen('server://turn-delta', (event) => {
       if (event.payload?.requestId !== requestId) return;
       onDelta(event.payload);
@@ -129,8 +137,20 @@ export const voiceApi = {
   pttState: () => invoke('voice_ptt_state'),
   /** `{ state: 'idle'|'recording'|'transcribing'|'noSpeech'|'failed', code?, message? }` */
   onPtt: (handler) => listen('voice://ptt', (event) => handler(event.payload)),
-  /** `{ text, language }`: what was said, as Gaia Cloud heard it. Send it as an ordinary turn. */
+  /** `{ text, language, source }`: what was said, as Gaia Cloud heard it. `source` is `'ptt'` (the mic
+   * button) or `'continuous'` (hands-free); each owner acts only on its own. Send it as an ordinary turn. */
   onTranscript: (handler) => listen('voice://transcript', (event) => handler(event.payload)),
+
+  // Hands-free listening: the microphone stays open and speech is found as it happens. The preference
+  // is saved; it starts when the microphone is on (switching the microphone on is always the user's act).
+  continuousSet: (enabled) => invoke('voice_continuous_set', { enabled }),
+  continuousState: () => invoke('voice_continuous_state'),
+  /** Whether talking over Gaia interrupts her (otherwise her speech is simply not listened to). */
+  setBargeIn: (enabled) => invoke('voice_set_barge_in', { enabled }),
+  /** `{ state: 'off'|'listening'|'hearing'|'transcribing'|'failed', code?, message? }` */
+  onContinuous: (handler) => listen('voice://continuous', (event) => handler(event.payload)),
+  /** The user started talking over Gaia. Rust has already stopped her voice; cancel the turn too. */
+  onBargeIn: (handler) => listen('voice://barge-in', () => handler()),
 };
 
 /**

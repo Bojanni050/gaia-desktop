@@ -7,7 +7,7 @@
  * soft "saved" state and quietly returns — never a jump or a flash.
  */
 import React, { useEffect, useState } from 'react';
-import { settingsApi, serverApi, audioApi, captureApi, mcpApi } from '../server/api';
+import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi } from '../server/api';
 import { setSpeechGain } from '../lib/speech';
 import { useVoiceStatus } from '../state/useVoiceStatus';
 import { L } from '../lib/lexicon';
@@ -37,7 +37,7 @@ function micMessage(voice) {
   return null;
 }
 
-export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
+export default function SettingsPanel({ onClose, quiet, onQuietChange, listenState = 'off' }) {
   const [settings, setSettings] = useState(null);
   const [audio, setAudio] = useState(null);
   const voice = useVoiceStatus();
@@ -67,6 +67,26 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   }
 
   const patch = (part) => setSettings((prev) => ({ ...prev, ...part }));
+
+  // Hands-free: the preference is saved at once; switching it on also switches the microphone on, which
+  // the user just asked for. (The microphone switch itself is never remembered across launches.)
+  const setContinuous = async (checked) => {
+    patch({ voice: { ...settings.voice, continuousEnabled: checked } });
+    try {
+      await voiceApi.continuousSet(checked);
+    } catch (_) {
+      /* the shell is unreachable: the checkbox simply does not take effect */
+    }
+    if (checked && !(voice.status && voice.status.micEnabled)) await voice.setEnabled(true);
+  };
+  const setBargeIn = async (checked) => {
+    patch({ voice: { ...settings.voice, bargeInEnabled: checked } });
+    try {
+      await voiceApi.setBargeIn(checked);
+    } catch (_) {
+      /* ignored: the next successful change wins */
+    }
+  };
 
   const mcpServers = () => settings.mcp?.servers || [];
   const setMcpServers = (servers) => patch({ mcp: { ...settings.mcp, servers } });
@@ -234,6 +254,29 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
                   ))}
                 </select>
               </label>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.voice?.continuousEnabled ?? false}
+                  onChange={(e) => setContinuous(e.target.checked)}
+                />
+                <span>{L.settingsContinuous}</span>
+              </label>
+              <p className="capability-line">{L.settingsContinuousHint}</p>
+              {listenState !== 'off' && (
+                <p className="capability-line mic-note">
+                  {listenState === 'hearing' ? L.settingsContinuousHearing : L.settingsContinuousOn}
+                </p>
+              )}
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.voice?.bargeInEnabled ?? true}
+                  onChange={(e) => setBargeIn(e.target.checked)}
+                />
+                <span>{L.settingsBargeIn}</span>
+              </label>
+              <p className="capability-line">{L.settingsBargeInHint}</p>
               {voice.status && voice.status.state === 'listening' && (
                 <>
                   <p className="capability-line">

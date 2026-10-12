@@ -15,7 +15,7 @@ chrono = "0.4"
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-window-state = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
@@ -30,5 +30,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 url = "2"
 keyring = { version = "3", features = ["windows-native"] }
 cpal = "0.18"
+aec3 = "0.4"
 rodio = "0.23"
 chrono = "0.4"

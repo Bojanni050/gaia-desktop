@@ -23,6 +23,7 @@ pub mod notifications;
 pub mod presence;
 pub mod settings;
 pub mod speech;
+pub mod tray;
 pub mod version;
 
 use tauri::Manager;
@@ -33,6 +34,15 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            // While the microphone is on, closing the window hides it: she keeps listening, the tray says so.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if tray::keeps_running(window.app_handle()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -70,6 +80,8 @@ pub fn run() {
             // Push-to-talk: record one utterance, have Gaia Cloud transcribe it, emit the text. The
             // desktop never interprets it; the UI sends it as an ordinary turn.
             let ptt_handle = app.handle().clone();
+            // One microphone tap at a time: push-to-talk and hands-free listening share this claim.
+            let mic_claim = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let ptt = audio::ptt::PttController::new(
                 mic,
                 std::sync::Arc::new(speech::stt::CloudTranscriber::new(app.handle().clone())),
@@ -77,13 +89,17 @@ pub fn run() {
                     use tauri::Emitter;
                     let _ = match &event {
                         audio::ptt::PttEvent::State(s) => ptt_handle.emit(audio::ptt::PTT_EVENT, s),
-                        audio::ptt::PttEvent::Transcript(t) => ptt_handle.emit(audio::ptt::TRANSCRIPT_EVENT, t),
+                        audio::ptt::PttEvent::Transcript(t) => ptt_handle.emit(
+                            audio::ptt::TRANSCRIPT_EVENT,
+                            audio::ptt::TranscriptEvent::new(t.clone(), "ptt"),
+                        ),
                     };
                 }),
                 std::sync::Arc::new(|future| {
                     tauri::async_runtime::spawn(future);
                 }),
                 std::time::Duration::from_secs(audio::utterance::MAX_RECORDING_SECS),
+                mic_claim.clone(),
             );
             app.manage(ptt);
             app.manage(presence::PresenceController::new());
@@ -94,6 +110,42 @@ pub fn run() {
                 loaded.audio.volume,
                 loaded.audio.muted,
             ));
+
+            // Hands-free listening. Gaia's own voice is the echo canceller's reference, so playback
+            // reports what it plays to the listener. A barge-in stops her voice here, in Rust, at once;
+            // the UI is told so it can cancel the turn that is still streaming.
+            let listen_handle = app.handle().clone();
+            let continuous = audio::continuous::ContinuousListener::new(
+                app.state::<audio::MicController>().inner().clone(),
+                std::sync::Arc::new(speech::stt::CloudTranscriber::new(app.handle().clone())),
+                std::sync::Arc::new(move |event| {
+                    use tauri::Emitter;
+                    match &event {
+                        audio::continuous::ContinuousEvent::State(s) => {
+                            let _ = listen_handle.emit(audio::continuous::CONTINUOUS_EVENT, s);
+                        }
+                        audio::continuous::ContinuousEvent::BargeIn => {
+                            if let Some(playback) = listen_handle.try_state::<speech::PlaybackEngine>() {
+                                playback.stop(speech::DEFAULT_FADE_MS);
+                            }
+                            let _ = listen_handle.emit(audio::continuous::BARGE_IN_EVENT, ());
+                        }
+                        audio::continuous::ContinuousEvent::Transcript(t) => {
+                            let _ = listen_handle.emit(audio::ptt::TRANSCRIPT_EVENT, t);
+                        }
+                    }
+                }),
+                std::sync::Arc::new(|future| {
+                    tauri::async_runtime::spawn(future);
+                }),
+                mic_claim.clone(),
+                loaded.voice.barge_in_enabled,
+            );
+            app.state::<speech::PlaybackEngine>().set_render_sink(continuous.render_sink());
+            app.manage(continuous);
+
+            // The tray keeps Gaia reachable while she listens with the window closed.
+            tray::install(app)?;
             
             // Desktop version metadata
             app.manage(version::DesktopVersion::new());
@@ -116,6 +168,7 @@ pub fn run() {
             communication::server_test_connection,
             communication::server_request,
             communication::server_stream_turn,
+            communication::server_cancel_turn,
             communication::server_get_cloud_version,
             communication::version_get_desktop,
             // capture
@@ -132,6 +185,9 @@ pub fn run() {
             audio::ptt::voice_ptt_stop,
             audio::ptt::voice_ptt_cancel,
             audio::ptt::voice_ptt_state,
+            audio::continuous::voice_continuous_set,
+            audio::continuous::voice_set_barge_in,
+            audio::continuous::voice_continuous_state,
             // history
             history::history_export_conversation,
             // library
