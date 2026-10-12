@@ -245,7 +245,7 @@ pub fn selftest() {
     print_report(&analyze(&mic, &reference, None));
 }
 
-pub fn run(ref_path: Option<String>, save: bool) {
+pub fn run(ref_path: Option<String>, save: bool, label: Option<String>) {
     let (reference, ref_desc) = match ref_path {
         Some(p) => (read_wav16(Path::new(&p)), p),
         None => default_reference(),
@@ -336,8 +336,9 @@ pub fn run(ref_path: Option<String>, save: bool) {
     let mic: Vec<f32> = crate::harness::to_16k_mono_pub(&captured, irate, ich).iter().map(|s| *s as f32 / 32768.0).collect();
     println!("captured {:.1} s, {glitches} audio glitch(es); capture started {issue_offset_ms} ms before playback was issued", mic.len() as f32 / SR as f32);
     let save_dir = std::path::PathBuf::from(format!(
-        "recordings/echo/{}",
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+        "recordings/echo/{}{}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        label.map(|l| format!("_{l}")).unwrap_or_default()
     ));
     let report = analyze(&mic, &reference, if save { Some(save_dir.as_path()) } else { None });
     println!("(system latency estimate: lag minus issue offset = {:.0} ms, +/- ~30 ms)", report.lag_ms - issue_offset_ms as f32);

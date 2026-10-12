@@ -23,7 +23,8 @@ fn main() {
         Some("echo-test") => {
             let save = args.iter().any(|a| a == "--save");
             let path = args.get(2).filter(|a| !a.starts_with("--")).cloned();
-            echo::run(path, save)
+            let label = args.iter().position(|a| a == "--label").and_then(|i| args.get(i + 1)).cloned();
+            echo::run(path, save, label)
         }
         Some("collect") => harness::collect(
             args.get(2).map(String::as_str).unwrap_or("hey"),
