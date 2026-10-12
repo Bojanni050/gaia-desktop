@@ -1,124 +1,83 @@
 /**
- * The playback wrapper's one invariant that matters: only one reply is ever
- * spoken, and a new reply (or a new turn) eases the previous one out and
- * stops it.
- *
- * jsdom has no audio engine and no object-URL support, so both are faked
- * here. The assertions are about which element got played, faded, paused and
- * released, never about sound.
+ * The playback wrapper is thin on purpose: the audio is fetched, decoded and played in Rust. These
+ * tests pin what the wrapper owes the rest of the app: it forwards to the right Tauri commands, keeps
+ * the local gain, treats an interrupted reply as a normal end, and reports a real failure.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  playSpeech,
-  stopSpeech,
-  setSpeechGain,
-  speechSilenced,
-  SPEECH_FADE_MS,
-} from './speech';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-class FakeAudio {
-  constructor(src) {
-    this.src = src;
-    this.volume = 1;
-    this.paused = false;
-    this.listeners = {};
-  }
-  addEventListener(type, fn) {
-    (this.listeners[type] ||= []).push(fn);
-  }
-  emit(type) {
-    (this.listeners[type] || []).forEach((fn) => fn());
-  }
-  play() {
-    return Promise.resolve();
-  }
-  pause() {
-    this.paused = true;
-  }
-}
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => ({ outcome: 'ended' })) }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 
-let made;
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const FADE_DONE = SPEECH_FADE_MS + 60;
+import { invoke } from '@tauri-apps/api/core';
+import { playSpeech, stopSpeech, setSpeechGain, speechSilenced, SPEECH_FADE_MS } from './speech';
 
 beforeEach(() => {
-  made = [];
-  global.Audio = class extends FakeAudio {
-    constructor(src) {
-      super(src);
-      made.push(this);
-    }
-  };
-  URL.createObjectURL = vi.fn(() => 'blob:fake');
-  URL.revokeObjectURL = vi.fn();
+  invoke.mockReset();
+  invoke.mockResolvedValue({ outcome: 'ended' });
   setSpeechGain({ volume: 1, muted: false });
-  stopSpeech();
+  invoke.mockClear();
 });
 
-afterEach(() => {
-  stopSpeech();
+describe('playSpeech', () => {
+  it('hands the reply text to Rust, which synthesizes and plays it', async () => {
+    await expect(playSpeech('hello there')).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'hello there' });
+  });
+
+  it('treats a reply that was stopped on purpose as a normal end, not a failure', async () => {
+    invoke.mockResolvedValue({ outcome: 'stopped' });
+    await expect(playSpeech('cut me off')).resolves.toBeUndefined();
+  });
+
+  it('rejects when the reply could not be spoken', async () => {
+    invoke.mockResolvedValue({ outcome: 'failed', message: 'could not open the speakers' });
+    await expect(playSpeech('hi')).rejects.toThrow('could not open the speakers');
+  });
+
+  it('rejects when the shell itself errors', async () => {
+    invoke.mockRejectedValue(new Error('speech request failed'));
+    await expect(playSpeech('hi')).rejects.toThrow('speech request failed');
+  });
 });
 
-const clip = () => new Uint8Array([1, 2, 3]);
-
-describe('playSpeech barge-in', () => {
-  it('fades the previous clip out, then pauses and releases it', async () => {
-    const first = playSpeech(clip(), 'audio/mpeg');
-    const firstAudio = made[0];
-    const second = playSpeech(clip(), 'audio/mpeg');
-    const secondAudio = made[1];
-
-    // Not cut instantly: the old reply eases down before it stops.
-    await wait(70);
-    expect(firstAudio.paused).toBe(false);
-    expect(firstAudio.volume).toBeLessThan(1);
-
-    await wait(FADE_DONE);
-    expect(firstAudio.paused).toBe(true);
-    expect(URL.revokeObjectURL).toHaveBeenCalled();
-    // Being faded out on purpose resolves the clip — it is not a failure.
-    await expect(first).resolves.toBeUndefined();
-
-    // The new reply is the one still speaking.
-    expect(secondAudio.paused).toBe(false);
-    secondAudio.emit('ended');
-    await expect(second).resolves.toBeUndefined();
-  });
-
-  it('applies the current volume to the element it plays', () => {
-    setSpeechGain({ volume: 0.4, muted: false });
-    playSpeech(clip());
-    expect(made[0].volume).toBe(0.4);
-  });
-
-  it('plays muted as silence', () => {
-    setSpeechGain({ volume: 1, muted: true });
-    expect(speechSilenced()).toBe(true);
-    playSpeech(clip());
-    expect(made[0].volume).toBe(0);
-  });
-
-  it('resolves a clip that is stopped before it ends', async () => {
-    const pending = playSpeech(clip());
+describe('stopSpeech', () => {
+  it('asks Rust to ease the reply out over the fade time', () => {
     stopSpeech();
-    await expect(pending).resolves.toBeUndefined();
-    expect(made[0].paused).toBe(true);
+    expect(invoke).toHaveBeenCalledWith('speech_stop', { fadeMs: SPEECH_FADE_MS });
   });
 
-  it('has nothing left to stop once playback has ended', async () => {
-    const pending = playSpeech(clip());
-    made[0].emit('ended');
-    await pending;
+  it('never throws, even when the shell is unreachable', () => {
+    invoke.mockRejectedValue(new Error('no shell'));
     expect(() => stopSpeech()).not.toThrow();
   });
 });
 
 describe('setSpeechGain', () => {
-  it('clamps volume to the 0..1 range', () => {
+  it('sends the clamped gain to Rust', () => {
     setSpeechGain({ volume: 5 });
-    expect(speechSilenced()).toBe(false);
-    setSpeechGain({ volume: -3 });
+    expect(invoke).toHaveBeenLastCalledWith('speech_set_gain', { volume: 1, muted: false });
+    setSpeechGain({ volume: 0.4, muted: true });
+    expect(invoke).toHaveBeenLastCalledWith('speech_set_gain', { volume: 0.4, muted: true });
+  });
+
+  it('knows when playback would be silent', () => {
+    setSpeechGain({ volume: 0.5, muted: true });
     expect(speechSilenced()).toBe(true);
+    setSpeechGain({ volume: 0, muted: false });
+    expect(speechSilenced()).toBe(true);
+    setSpeechGain({ volume: 0.5, muted: false });
+    expect(speechSilenced()).toBe(false);
+  });
+
+  it('keeps the other field when only one is given', () => {
+    setSpeechGain({ volume: 0.3, muted: false });
+    setSpeechGain({ muted: true });
+    expect(invoke).toHaveBeenLastCalledWith('speech_set_gain', { volume: 0.3, muted: true });
+  });
+
+  it('survives an unreachable shell', () => {
+    invoke.mockRejectedValue(new Error('no shell'));
+    expect(() => setSpeechGain({ volume: 0.2 })).not.toThrow();
   });
 });

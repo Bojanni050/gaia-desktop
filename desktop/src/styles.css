@@ -558,6 +558,32 @@ body {
 }
 .composer-attach:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
 .composer-attach:disabled { opacity: 0.4; cursor: default; }
+.composer-mic {
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+  background: none; color: var(--text-faint); border: none; border-radius: 12px; cursor: pointer;
+  flex-shrink: 0; transition: color 0.2s ease, background-color 0.2s ease;
+}
+.composer-mic:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+.composer-mic:disabled { opacity: 0.6; cursor: default; }
+.composer-mic.is-off { opacity: 0.55; }
+.composer-mic.is-recording { color: var(--bg, #14120f); background: var(--accent); animation: composer-mic-pulse 1.4s ease-in-out infinite; }
+@keyframes composer-mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(203, 163, 106, 0.45); } 50% { box-shadow: 0 0 0 7px rgba(203, 163, 106, 0); } }
+.composer-mic .spin { animation: composer-mic-spin 0.9s linear infinite; }
+@keyframes composer-mic-spin { to { transform: rotate(360deg); } }
+.wake-block { margin: 14px 0 6px; padding-top: 10px; border-top: 1px solid var(--border, rgba(127,127,127,0.2)); }
+.wake-title { font-size: 0.9rem; margin: 0 0 4px; font-family: var(--sans); font-weight: 600; }
+.wake-enrol { margin-top: 10px; padding: 12px; border: 1px solid var(--border, rgba(127,127,127,0.25)); border-radius: 12px; }
+.wake-enrol h4 { margin: 0 0 6px; font-family: var(--sans); font-size: 0.95rem; }
+.wake-prompt { font-size: 1rem; margin: 10px 0; font-family: var(--serif, inherit); }
+.wake-dots { display: flex; gap: 6px; margin: 8px 0; }
+.wake-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border, rgba(127,127,127,0.3)); transition: background-color 0.2s ease; }
+.wake-dot.is-done { background: var(--accent); }
+.wake-ok { color: var(--accent); }
+.composer-mic-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--text-faint); font-family: var(--sans); }
+@media (prefers-reduced-motion: reduce) {
+  .composer-mic.is-recording { animation: none; }
+  .composer-mic .spin { animation-duration: 3s; }
+}
 .composer-input {
   flex: 1; background: none; border: none; outline: none; resize: none;
   color: var(--text); font-family: var(--sans); font-size: 1rem; line-height: 1.6;
@@ -639,6 +665,9 @@ body {
   padding: 6px 10px; cursor: pointer; transition: color 0.2s ease;
 }
 .token-toggle:hover { color: var(--text); }
+.mic-level { height: 6px; border-radius: 3px; background: var(--border, rgba(127,127,127,0.25)); overflow: hidden; margin: 6px 0 4px; }
+.mic-level-fill { height: 100%; background: var(--accent); transition: width 120ms linear; }
+.mic-note { color: var(--text); }
 .capability-line { font-size: 0.84rem; color: var(--text-faint); margin: 4px 0; font-family: var(--sans); }
 .test-result { font-size: 0.8rem; color: var(--text-faint); font-family: var(--sans); }
 .test-online { color: #A9C79A; }

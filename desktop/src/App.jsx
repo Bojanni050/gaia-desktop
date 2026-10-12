@@ -12,6 +12,7 @@ import { serverApi, presenceApi, settingsApi, historyApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useResearchJobs } from './state/useResearchJobs';
 import { useServerStatus } from './state/useServerStatus';
+import { useVoiceSession } from './state/useVoiceSession';
 import { setSpeechGain } from './lib/speech';
 import { L } from './lib/lexicon';
 
@@ -30,6 +31,8 @@ export default function App() {
   const [logosOpen, setLogosOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const conversation = useConversation(serverApi);
+  // Hands-free: turns what Rust hears into conversation (and interruptions into cancelled turns).
+  const voiceSession = useVoiceSession({ conversation });
 
   // Background research: the findings are written into the conversation by the
   // server, so delivery here is "re-read the thread", then mark the job seen.
@@ -128,8 +131,9 @@ export default function App() {
     presenceApi.setQuiet(next).catch(() => {});
   }, []);
 
-  // The orb rests quiet by default; Gaia is present, not performative.
-  const presenceState = 'quiet';
+  // The orb rests quiet by default; Gaia is present, not performative. While she hears the user speak
+  // hands-free it listens with them.
+  const presenceState = voiceSession.state === 'hearing' ? 'listening' : 'quiet';
   const whisper =
     status === 'offline'
       ? L.healthWhisper
@@ -176,6 +180,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           quiet={quiet}
           onQuietChange={handleQuiet}
+          listenState={voiceSession.state}
         />
       )}
 

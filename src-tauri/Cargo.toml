@@ -15,7 +15,7 @@ chrono = "0.4"
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-window-state = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
@@ -25,8 +25,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 async-trait = "0.1"
-tokio = { version = "1", features = ["sync", "time", "rt", "fs"] }
+tokio = { version = "1", features = ["sync", "time", "rt", "rt-multi-thread", "fs", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "stream", "rustls-tls"] }
 url = "2"
 keyring = { version = "3", features = ["windows-native"] }
+cpal = "0.18"
+aec3 = "0.4"
+rustpotter = "3"
+rodio = "0.23"
 chrono = "0.4"

@@ -36,6 +36,12 @@ export const serverApi = {
   request: (request) => invoke('server_request', { request }),
   getCloudVersion: () => invoke('server_get_cloud_version'),
   getDesktopVersion: () => invoke('version_get_desktop'),
+  /**
+   * Cancels a streaming turn that is in flight (the user interrupted): Rust closes the connection, so
+   * Gaia Cloud sees the disconnect and can stop. The pending `streamTurn` rejects; the text already
+   * received stays. Resolves to false when that turn had already finished.
+   */
+  cancelTurn: (requestId) => invoke('server_cancel_turn', { requestId }),
   onStatus: (handler) => listen('server://status', (event) => handler(event.payload)),
   /**
    * Realtime events relayed from Gaia Cloud (ServerLink::spawn_event_bridge,
@@ -63,8 +69,10 @@ export const serverApi = {
    * ends, rejects the same way `request` does on any transport/server
    * failure.
    */
-  streamTurn: async (body, onDelta) => {
+  streamTurn: async (body, onDelta, handle) => {
     const requestId = `turn-${Date.now()}-${streamRequestCounter++}`;
+    // Handed to the caller before anything is sent, so the turn can be cancelled at any moment.
+    if (handle) handle.requestId = requestId;
     const unlisten = await listen('server://turn-delta', (event) => {
       if (event.payload?.requestId !== requestId) return;
       onDelta(event.payload);
@@ -103,6 +111,81 @@ export const audioApi = {
 };
 
 /**
+ * The microphone: Rust's `MicController`. The master switch is runtime-only: the microphone is off at
+ * every launch and only an explicit `setMicEnabled(true)` opens it; `false` drops the capture stream so
+ * Windows releases the device. Status is `{ state: 'off'|'listening'|'error', micEnabled, device,
+ * permission, error: { code, message } | null, glitches }`. Nothing is recorded or sent anywhere yet.
+ */
+export const voiceApi = {
+  getStatus: () => invoke('voice_get_status'),
+  listDevices: () => invoke('voice_list_devices'),
+  setMicEnabled: (enabled) => invoke('voice_set_mic_enabled', { enabled }),
+  /** `id` is a device id from listDevices, or null for the system default. Persisted. */
+  selectDevice: (id) => invoke('voice_select_device', { id }),
+  onState: (handler) => listen('voice://state', (event) => handler(event.payload)),
+  /** Failures and notices: `{ code, message }`. */
+  onError: (handler) => listen('voice://error', (event) => handler(event.payload)),
+  /** Peak input level 0..1, a few times a second while listening. */
+  onLevel: (handler) => listen('voice://level', (event) => handler(event.payload)),
+
+  // Push-to-talk: Rust records one utterance (in memory only), trims it to the speech, has Gaia Cloud
+  // transcribe it, and reports through events. Silence is never uploaded. `pttStart` rejects with
+  // `{ code, message }` (`mic_off`: switch the microphone on first; `busy`).
+  pttStart: () => invoke('voice_ptt_start'),
+  pttStop: () => invoke('voice_ptt_stop'),
+  pttCancel: () => invoke('voice_ptt_cancel'),
+  pttState: () => invoke('voice_ptt_state'),
+  /** `{ state: 'idle'|'recording'|'transcribing'|'noSpeech'|'failed', code?, message? }` */
+  onPtt: (handler) => listen('voice://ptt', (event) => handler(event.payload)),
+  /** `{ text, language, source }`: what was said, as Gaia Cloud heard it. `source` is `'ptt'` (the mic
+   * button) or `'continuous'` (hands-free); each owner acts only on its own. Send it as an ordinary turn. */
+  onTranscript: (handler) => listen('voice://transcript', (event) => handler(event.payload)),
+
+  // Hands-free listening: the microphone stays open and speech is found as it happens. The preference
+  // is saved; it starts when the microphone is on (switching the microphone on is always the user's act).
+  continuousSet: (enabled) => invoke('voice_continuous_set', { enabled }),
+  continuousState: () => invoke('voice_continuous_state'),
+  /** Whether talking over Gaia interrupts her (otherwise her speech is simply not listened to). */
+  setBargeIn: (enabled) => invoke('voice_set_barge_in', { enabled }),
+  /** `{ state: 'off'|'listening'|'hearing'|'transcribing'|'failed', code?, message? }` */
+  onContinuous: (handler) => listen('voice://continuous', (event) => handler(event.payload)),
+  /** The user started talking over Gaia. Rust has already stopped her voice; cancel the turn too. */
+  onBargeIn: (handler) => listen('voice://barge-in', () => handler()),
+
+  // The wake word, "Hey Gaia": recognised on this device only; nothing is transcribed or sent until it is
+  // heard. Enrolled by the user (a few recordings, kept in memory only; what is saved is a features file, not
+  // audio) and calibrated to their voice.
+  /** `{ enrolled, enabled, sensitivity, minSensitivity, maxSensitivity, clips, minClips, maxClips }` */
+  wakeStatus: () => invoke('voice_wake_status'),
+  /** Records one enrolment clip (about 3 s). `{ check: { ok, problem, seconds, peak }, accepted, min, max }` */
+  wakeEnrollRecord: () => invoke('voice_wake_enroll_record'),
+  /** Builds and calibrates the wake word from the accepted clips; resolves with the new status. */
+  wakeEnrollFinish: () => invoke('voice_wake_enroll_finish'),
+  wakeEnrollCancel: () => invoke('voice_wake_enroll_cancel'),
+  wakeSet: (enabled) => invoke('voice_wake_set', { enabled }),
+  wakeSetSensitivity: (value) => invoke('voice_wake_set_sensitivity', { value }),
+  /** Deletes the enrolled wake word. */
+  wakeForget: () => invoke('voice_wake_forget'),
+  /** "Hey Gaia" was heard (the chime plays). */
+  onWake: (handler) => listen('voice://wake', () => handler()),
+};
+
+/**
+ * Describes Gaia Cloud's speech recognition (`GET /speech/stt-info`): `{ configured, provider,
+ * languages, maxBytes }`. Never throws: an unreachable or older server resolves to `undefined`, and the
+ * caller assumes it might work (a real failure explains itself when it happens).
+ */
+export async function getSttInfo(request) {
+  if (typeof request !== 'function') return undefined;
+  try {
+    const response = await request({ method: 'get', path: 'speech/stt-info' });
+    return response?.body;
+  } catch (_) {
+    return undefined;
+  }
+}
+
+/**
  * Gaia's voice — synthesizes speech for an already-received Gaia reply via
  * Rust's `speech_synthesize` (gaia-api's `POST /speech`, src/speech/
  * mimoTts.js or mistralTts.js server-side, depending on the configured TTS
@@ -115,6 +198,15 @@ export const audioApi = {
  * labeled `audio/wav` as before.
  */
 export const speechApi = {
+  /**
+   * Synthesizes `text` (Gaia Cloud's `/speech`) and plays it in Rust. Resolves with
+   * `{ outcome: 'ended' | 'stopped' }`, or `{ outcome: 'failed', message }`; rejects if the
+   * synthesis request itself fails.
+   */
+  play: (text) => invoke('speech_play', { text }),
+  /** Eases the current reply out over `fadeMs` and cancels one still being synthesised. */
+  stop: (fadeMs) => invoke('speech_stop', { fadeMs }),
+  setGain: (volume, muted) => invoke('speech_set_gain', { volume, muted }),
   async synthesize(text) {
     const result = await invoke('speech_synthesize', { text });
     if (Array.isArray(result)) {

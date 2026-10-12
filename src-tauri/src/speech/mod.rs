@@ -15,10 +15,15 @@
 //! showing — this command's `text` argument is that already-received
 //! reply, not a fresh prompt.
 
+mod playback;
+pub mod stt;
+
+pub use playback::{PlayOutcome, PlaybackEngine, DEFAULT_FADE_MS};
+
 use crate::communication::{CommunicationError, ServerLink};
 use crate::error::DesktopError;
 
-fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
+pub(crate) fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     let config = link.config();
     let base = config
         .base_url
@@ -27,7 +32,7 @@ fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     Ok(base.trim_end_matches('/').to_string())
 }
 
-fn authorize(builder: reqwest::RequestBuilder, link: &ServerLink) -> reqwest::RequestBuilder {
+pub(crate) fn authorize(builder: reqwest::RequestBuilder, link: &ServerLink) -> reqwest::RequestBuilder {
     match link.config().auth_token {
         Some(token) => builder.bearer_auth(token),
         None => builder,
@@ -47,20 +52,13 @@ pub struct SpeechAudio {
     pub mime_type: String,
 }
 
-/// Synthesizes speech for `text` via Gaia Server's `POST /speech` and
-/// returns the raw audio bytes plus the server's own Content-Type, so the
-/// frontend can label the playback Blob correctly no matter which TTS
-/// provider (and encoding) the server has configured. Falls back to
-/// `audio/wav` when the server sends no Content-Type — the pre-provider
-/// default, and what older servers always served.
-#[tauri::command]
-pub async fn speech_synthesize(
-    link: tauri::State<'_, ServerLink>,
-    text: String,
-) -> Result<SpeechAudio, DesktopError> {
-    let base = base_url(&link)?;
+/// Fetches the synthesized speech for `text` from Gaia Server's `POST /speech`: raw audio bytes plus the
+/// server's own Content-Type. Falls back to `audio/wav` when the server sends no Content-Type — the
+/// pre-provider default, and what older servers always served.
+async fn fetch_speech(link: &ServerLink, text: &str) -> Result<SpeechAudio, DesktopError> {
+    let base = base_url(link)?;
     let client = reqwest::Client::new();
-    let request = authorize(client.post(format!("{base}/speech")), &link)
+    let request = authorize(client.post(format!("{base}/speech")), link)
         .json(&serde_json::json!({ "text": text }));
 
     let response = request
@@ -86,4 +84,47 @@ pub async fn speech_synthesize(
         audio: bytes.to_vec(),
         mime_type,
     })
+}
+
+/// Synthesizes speech for `text` and returns the audio bytes (kept for callers that want the bytes;
+/// the desktop itself now plays through [`speech_play`]).
+#[tauri::command]
+pub async fn speech_synthesize(
+    link: tauri::State<'_, ServerLink>,
+    text: String,
+) -> Result<SpeechAudio, DesktopError> {
+    fetch_speech(&link, &text).await
+}
+
+/// Synthesizes `text` and plays it through the speakers. Resolves when the reply ends or is stopped.
+///
+/// A newer `speech_play`, or any `speech_stop`, supersedes this one: if that happens while the audio is
+/// still being fetched, nothing is played and the call resolves as stopped.
+#[tauri::command]
+pub async fn speech_play(
+    link: tauri::State<'_, ServerLink>,
+    playback: tauri::State<'_, PlaybackEngine>,
+    text: String,
+) -> Result<PlayOutcome, DesktopError> {
+    let epoch = playback.begin();
+    // Anything still speaking is superseded by this reply.
+    playback.stop_current(DEFAULT_FADE_MS);
+    let speech = fetch_speech(&link, &text).await?;
+    if !playback.is_current(epoch) {
+        return Ok(PlayOutcome::Stopped);
+    }
+    Ok(playback.play(speech.audio).await)
+}
+
+/// Stops the current reply (easing it out over `fade_ms`, default 150) and cancels any reply still
+/// being synthesised.
+#[tauri::command]
+pub fn speech_stop(playback: tauri::State<'_, PlaybackEngine>, fade_ms: Option<u64>) {
+    playback.stop(fade_ms.unwrap_or(DEFAULT_FADE_MS));
+}
+
+/// Sets the local playback gain (volume 0..1, mute).
+#[tauri::command]
+pub fn speech_set_gain(playback: tauri::State<'_, PlaybackEngine>, volume: f32, muted: bool) {
+    playback.set_gain(volume, muted);
 }

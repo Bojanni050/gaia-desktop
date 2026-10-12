@@ -7,13 +7,45 @@
  * soft "saved" state and quietly returns — never a jump or a flash.
  */
 import React, { useEffect, useState } from 'react';
-import { settingsApi, serverApi, audioApi, captureApi, mcpApi } from '../server/api';
+import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi } from '../server/api';
 import { setSpeechGain } from '../lib/speech';
+import { useVoiceStatus } from '../state/useVoiceStatus';
+import { useWakeWord } from '../state/useWakeWord';
+import WakeEnrollment from './WakeEnrollment';
 import { L } from '../lib/lexicon';
 
-export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
+/** The one sentence (if any) explaining the microphone's current problem or notice. */
+function micMessage(voice) {
+  const error = voice.status && voice.status.error;
+  if (error) {
+    return (
+      {
+        no_frames: L.settingsMicErrNoFrames,
+        permission_denied: L.settingsMicErrDenied,
+        no_device: L.settingsMicErrNoDevice,
+        too_many_restarts: L.settingsMicErrRestarts,
+      }[error.code] || L.settingsMicErrOpen
+    );
+  }
+  const notice = voice.notice;
+  if (notice && voice.status && voice.status.state === 'listening') {
+    return (
+      {
+        device_fallback: L.settingsMicNoticeFallback,
+        device_changed: L.settingsMicNoticeChanged,
+      }[notice.code] || null
+    );
+  }
+  return null;
+}
+
+export default function SettingsPanel({ onClose, quiet, onQuietChange, listenState = 'off' }) {
   const [settings, setSettings] = useState(null);
   const [audio, setAudio] = useState(null);
+  const voice = useVoiceStatus();
+  const wake = useWakeWord();
+  const [enrolling, setEnrolling] = useState(false);
+  const [sensitivity, setSensitivity] = useState(null); // while the slider is being dragged
   const [captureSources, setCaptureSources] = useState([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -40,6 +72,100 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
   }
 
   const patch = (part) => setSettings((prev) => ({ ...prev, ...part }));
+
+  /** The "Hey Gaia" block: toggle, sensitivity, and enrolment. */
+  function renderWake() {
+    const w = wake.status;
+    return (
+      <div className="wake-block">
+        <h4 className="wake-title">{L.wakeSection}</h4>
+        <p className="capability-line">{L.wakeHint}</p>
+        <p className="capability-line">{w && w.enrolled ? L.wakeEnrolled : L.wakeNotEnrolled}</p>
+        <label className="field field-toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(w && w.enabled)}
+            disabled={!w || !w.enrolled}
+            onChange={async (e) => {
+              const on = e.target.checked;
+              patch({ voice: { ...settings.voice, wakeWordEnabled: on } });
+              if (await wake.setEnabled(on) && on && !(voice.status && voice.status.micEnabled)) {
+                await voice.setEnabled(true);
+              }
+            }}
+          />
+          <span>{L.wakeToggle}</span>
+        </label>
+        {w && w.enrolled && (
+          <label className="field">
+            <span>{L.wakeSensitivity}</span>
+            <div className="volume-row">
+              <span className="capability-line">{L.wakeMoreSensitive}</span>
+              <input
+                type="range"
+                min={w.minSensitivity}
+                max={w.maxSensitivity}
+                step="0.01"
+                value={sensitivity ?? w.sensitivity}
+                onChange={(e) => setSensitivity(Number(e.target.value))}
+                onMouseUp={() => sensitivity !== null && wake.setSensitivity(sensitivity).then(() => setSensitivity(null))}
+                onKeyUp={() => sensitivity !== null && wake.setSensitivity(sensitivity).then(() => setSensitivity(null))}
+                onBlur={() => sensitivity !== null && wake.setSensitivity(sensitivity).then(() => setSensitivity(null))}
+              />
+              <span className="capability-line">{L.wakeStricter}</span>
+            </div>
+          </label>
+        )}
+        {w && w.enrolled && <p className="capability-line">{L.wakeSensitivityHint}</p>}
+        {listenState === 'waiting' && <p className="capability-line mic-note">{L.wakeWaiting}</p>}
+        {enrolling ? (
+          <WakeEnrollment
+            onClose={() => setEnrolling(false)}
+            onDone={(status) => {
+              wake.enrolled(status);
+              patch({ voice: { ...settings.voice, wakeEnrolled: true, wakeSensitivity: status.sensitivity } });
+            }}
+          />
+        ) : (
+          <div className="field-row">
+            <button type="button" onClick={() => setEnrolling(true)}>
+              {w && w.enrolled ? L.wakeReEnrol : L.wakeEnrol}
+            </button>
+            {w && w.enrolled && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (await wake.forget()) patch({ voice: { ...settings.voice, wakeEnrolled: false, wakeWordEnabled: false } });
+                }}
+              >
+                {L.wakeForget}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Hands-free: the preference is saved at once; switching it on also switches the microphone on, which
+  // the user just asked for. (The microphone switch itself is never remembered across launches.)
+  const setContinuous = async (checked) => {
+    patch({ voice: { ...settings.voice, continuousEnabled: checked } });
+    try {
+      await voiceApi.continuousSet(checked);
+    } catch (_) {
+      /* the shell is unreachable: the checkbox simply does not take effect */
+    }
+    if (checked && !(voice.status && voice.status.micEnabled)) await voice.setEnabled(true);
+  };
+  const setBargeIn = async (checked) => {
+    patch({ voice: { ...settings.voice, bargeInEnabled: checked } });
+    try {
+      await voiceApi.setBargeIn(checked);
+    } catch (_) {
+      /* ignored: the next successful change wins */
+    }
+  };
 
   const mcpServers = () => settings.mcp?.servers || [];
   const setMcpServers = (servers) => patch({ mcp: { ...settings.mcp, servers } });
@@ -178,9 +304,79 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange }) {
             </section>
 
             <section>
+              <h3>{L.settingsMicrophone}</h3>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={voice.status ? voice.status.micEnabled : false}
+                  disabled={!voice.status}
+                  onChange={(e) => voice.setEnabled(e.target.checked)}
+                />
+                <span>{L.settingsMicToggle}</span>
+              </label>
+              <label className="field">
+                <span>{L.settingsMicDevice}</span>
+                <select
+                  value={settings.voice?.inputDevice || ''}
+                  onFocus={voice.refreshDevices}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    patch({ voice: { ...settings.voice, inputDevice: id } });
+                    voice.selectDevice(id);
+                  }}
+                >
+                  <option value="">{L.settingsMicDefault}</option>
+                  {voice.devices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.voice?.continuousEnabled ?? false}
+                  onChange={(e) => setContinuous(e.target.checked)}
+                />
+                <span>{L.settingsContinuous}</span>
+              </label>
+              <p className="capability-line">{L.settingsContinuousHint}</p>
+              {listenState !== 'off' && listenState !== 'waiting' && (
+                <p className="capability-line mic-note">
+                  {listenState === 'hearing' ? L.settingsContinuousHearing : L.settingsContinuousOn}
+                </p>
+              )}
+              {renderWake()}
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.voice?.bargeInEnabled ?? true}
+                  onChange={(e) => setBargeIn(e.target.checked)}
+                />
+                <span>{L.settingsBargeIn}</span>
+              </label>
+              <p className="capability-line">{L.settingsBargeInHint}</p>
+              {voice.status && voice.status.state === 'listening' && (
+                <>
+                  <p className="capability-line">
+                    {L.settingsMicListening} {voice.status.device ? voice.status.device.name : ''}
+                  </p>
+                  <div className="mic-level" aria-hidden="true">
+                    <div className="mic-level-fill" style={{ width: `${Math.min(100, Math.round(voice.level * 140))}%` }} />
+                  </div>
+                </>
+              )}
+              {voice.status && voice.status.state === 'off' && (
+                <p className="capability-line">{L.settingsMicOffState}</p>
+              )}
+              {micMessage(voice) && <p className="capability-line mic-note">{micMessage(voice)}</p>}
+            </section>
+
+            <section>
               <h3>{L.settingsCapabilities}</h3>
               <p className="capability-line">
-                {L.settingsMicrophone}: {audio ? audio.permission : '—'}
+                {L.settingsMicrophone}: {voice.status ? voice.status.permission : audio ? audio.permission : '—'}
               </p>
               <p className="capability-line">
                 {L.settingsCaptureSources}:{' '}
