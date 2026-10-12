@@ -19,6 +19,61 @@ const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const step = (fields) => ({ id: 'step-1', total: 2, ...fields });
 
+describe('what Gaia keeps in the shared memory while answering', () => {
+  const kept = { bank: 'bojan', kind: 'preference', text: 'Bo drinkt graag thee' };
+
+  it('marks the reply when the memory frame comes after the first words', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ content: 'Dat onthoud ik.' });
+        onDelta({ memory: kept });
+        return 'Dat onthoud ik.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('onthoud dat ik graag thee drink');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    const reply = result.current.active.messages.at(-1);
+    expect(reply.content).toBe('Dat onthoud ik.');
+    expect(reply.kept).toEqual([kept]);
+  });
+
+  it('still marks the reply when the memory frame comes before any words', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ memory: kept });
+        onDelta({ content: 'Goed, genoteerd.' });
+        return 'Goed, genoteerd.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('onthoud dat ik graag thee drink');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    const reply = result.current.active.messages.at(-1);
+    expect(reply.content).toBe('Goed, genoteerd.');
+    expect(reply.kept).toEqual([kept]);
+  });
+
+  it('does not mark an ordinary reply, and the memory frame never becomes text', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ content: 'Hallo.' });
+        return 'Hallo.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('hoi');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.messages.at(-1).kept).toBeUndefined();
+  });
+});
+
 describe('plan progress during a streamed turn', () => {
   it('shows which step is running, then clears it as soon as the answer streams', async () => {
     const server = {

@@ -117,6 +117,20 @@ export function useConversation(server) {
       // the user sees is still phrases.js's own calm wording.
       let serverFailure = null;
 
+      // What Gaia kept in the shared memory while answering (`memory` frames). A light next to the reply
+      // says so; the frame can arrive before the first word, so it is held here and attached to the reply
+      // as soon as there is one (and again at the end).
+      const kept = [];
+      const attachKept = () => {
+        if (kept.length === 0) return;
+        setThreads((prev) =>
+          prev.map((t) => {
+            if (t.id !== threadId) return t;
+            return { ...t, messages: t.messages.map((m) => (m.id === assistantId ? { ...m, kept: [...kept] } : m)) };
+          })
+        );
+      };
+
       let fullReasoning = '';
       const appendToAssistant = (text) => {
         if (!text) return;
@@ -128,7 +142,7 @@ export function useConversation(server) {
             if (t.id !== threadId) return t;
             const exists = t.messages.some((m) => m.id === assistantId);
             if (!exists) {
-              return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: text, createdAt: assistantCreatedAt }] };
+              return { ...t, messages: [...t.messages, { id: assistantId, role: 'assistant', content: text, createdAt: assistantCreatedAt, ...(kept.length ? { kept: [...kept] } : {}) }] };
             }
             return {
               ...t,
@@ -155,6 +169,11 @@ export function useConversation(server) {
             setProgress(delta.step.status === 'start' ? delta.step : null);
             return;
           }
+          if (delta.memory) {
+            kept.push(delta.memory);
+            attachKept();
+            return;
+          }
           if (delta.error) serverFailure = delta.error;
           // Content has begun: the growing message now says more than any
           // "Step 2 of 3" line could.
@@ -172,6 +191,7 @@ export function useConversation(server) {
         if (!receivedAny || !fullReply) {
           throw new Error(serverFailure || 'Gaia Server returned no reply');
         }
+        attachKept();
         if (fullReasoning) {
           setThreads((prev) =>
             prev.map((t) => {

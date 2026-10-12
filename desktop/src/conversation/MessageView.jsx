@@ -53,7 +53,19 @@ export default function MessageView({ message, streaming, onRetry, onDelete }) {
   return (
     <div className={`message ${isUser ? 'user' : 'assistant'}${message.failed ? ' failed' : ''}`}>
       <div className="msg-inner">
-        {!isUser && <div className="msg-author">Gaia</div>}
+        {!isUser && (
+          <div className="msg-author">
+            Gaia
+            {message.kept?.length > 0 && (
+              <span
+                className="memory-dot"
+                role="img"
+                aria-label={L.memoryKept}
+                title={`${L.memoryKept}: ${message.kept.map((k) => k.text).filter(Boolean).join(' · ')}`}
+              />
+            )}
+          </div>
+        )}
         <div className="msg-body">
           {isUser ? (
             <p className="user-text">{message.content}</p>

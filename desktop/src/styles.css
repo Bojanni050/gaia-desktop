@@ -329,6 +329,13 @@ body {
 
 /* ---------------------------------------------------------------- main / conversation */
 .gaia-main { height: 100vh; overflow: hidden; }
+.memory-dot {
+  display: inline-block; width: 7px; height: 7px; margin-left: 8px; border-radius: 50%;
+  background: #E3B866; box-shadow: 0 0 6px 1px rgba(227, 184, 102, 0.75), 0 0 14px 3px rgba(227, 184, 102, 0.35);
+  vertical-align: middle; animation: memory-dot-in 0.9s ease-out both;
+}
+@keyframes memory-dot-in { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .memory-dot { animation: none; } }
 .voice-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-bottom: 3px; }
 .voice-control { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border, rgba(127,127,127,0.25)); background: transparent; color: var(--text-faint); cursor: pointer; transition: color 0.15s ease, background-color 0.15s ease; }
 .voice-control:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }

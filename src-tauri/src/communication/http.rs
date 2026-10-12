@@ -325,7 +325,11 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         Some("error") => value.get("error").and_then(|v| v.as_str()).map(String::from),
         _ => None,
     };
-    if content.is_none() && reasoning_content.is_none() && step.is_none() && error.is_none() {
+    let memory = match frame_type {
+        Some("memory") => value.get("memory").cloned(),
+        _ => None,
+    };
+    if content.is_none() && reasoning_content.is_none() && step.is_none() && error.is_none() && memory.is_none() {
         return None;
     }
     Some(Ok(Some(TurnDelta {
@@ -333,6 +337,7 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         reasoning_content,
         step,
         error,
+        memory,
     })))
 }
 
@@ -385,6 +390,17 @@ mod tests {
             Some(Ok(delta)) => delta,
             other => panic!("expected a relayable frame, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn a_memory_frame_relays_what_was_kept_and_nothing_else() {
+        let frame = "data: {\"choices\":[{\"delta\":{}}],\"type\":\"memory\",\"memory\":\
+                     {\"bank\":\"bojan\",\"kind\":\"preference\",\"text\":\"Bo drinkt graag thee\"}}";
+        let delta = relayed(frame).expect("a memory frame must relay, not be dropped");
+        let memory = delta.memory.expect("memory payload");
+        assert_eq!(memory["bank"], "bojan");
+        assert_eq!(memory["text"], "Bo drinkt graag thee");
+        assert!(delta.content.is_none() && delta.step.is_none() && delta.error.is_none());
     }
 
     #[test]
