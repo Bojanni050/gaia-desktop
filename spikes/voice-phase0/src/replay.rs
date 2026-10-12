@@ -105,6 +105,10 @@ struct Row {
     false_rate: f32,
     hit: f32,
     talk_rms: f32,
+    /// seconds after 12.0 s until 3 consecutive 20 ms frames exceed the threshold (None = never)
+    onset: Option<f32>,
+    /// number of such 3-frame detections between 5 s and 12 s (user silent: every one is a false barge-in)
+    false_events: usize,
 }
 
 fn score(name: &str, out: &[f32], mic: &[f32]) -> Row {
@@ -113,7 +117,20 @@ fn score(name: &str, out: &[f32], mic: &[f32]) -> Row {
         let f = frames(seg(out, a, b));
         f.iter().filter(|r| **r > thr).count() as f32 / f.len().max(1) as f32
     };
+    let fr: Vec<bool> = frames(out).iter().map(|r| *r > thr).collect();
+    let frame_s = FRAME20 as f32 / SR as f32;
+    let run3 = |i: usize| i + 2 < fr.len() && fr[i] && fr[i + 1] && fr[i + 2];
+    let a = (12.0 / frame_s) as usize;
+    let onset = (a..fr.len()).find(|i| run3(*i)).map(|i| i as f32 * frame_s - 12.0);
+    let (b0, b1) = ((5.0 / frame_s) as usize, a);
+    let mut false_events = 0;
+    let mut i = b0;
+    while i < b1 {
+        if run3(i) { false_events += 1; i += 3; } else { i += 1; }
+    }
     Row {
+        onset,
+        false_events,
         name: name.into(),
         erle: 20.0 * (rms(seg(mic, 5.0, 10.0)).max(1e-9) / rms(seg(out, 5.0, 10.0)).max(1e-9)).log10(),
         false_rate: rate(8.0, 10.0),
@@ -145,9 +162,10 @@ fn replay_one(dir: &Path) {
         score("aec3 gentle x4 (cold)", &aec3_run(r, m, Some(gentle(2))), m),
         score("aec3 gentle x4 (converged)", &second(aec3_run(&rr, &mm, Some(gentle(2)))), m),
     ];
-    println!("{:<30} {:>8} {:>8} {:>8} {:>10}", "variant", "ERLE dB", "false %", "hit %", "talk rms");
+    println!("{:<30} {:>8} {:>8} {:>8} {:>10} {:>10} {:>9}", "variant", "ERLE dB", "false %", "hit %", "talk rms", "onset s", "false ev");
     for r in rows.drain(..) {
-        println!("{:<30} {:>8.1} {:>8.0} {:>8.0} {:>10.4}", r.name, r.erle, r.false_rate * 100.0, r.hit * 100.0, r.talk_rms);
+        let onset = r.onset.map(|o| format!("{o:.2}")).unwrap_or_else(|| "never".into());
+        println!("{:<30} {:>8.1} {:>8.0} {:>8.0} {:>10.4} {:>10} {:>9}", r.name, r.erle, r.false_rate * 100.0, r.hit * 100.0, r.talk_rms, onset, r.false_events);
     }
 }
 

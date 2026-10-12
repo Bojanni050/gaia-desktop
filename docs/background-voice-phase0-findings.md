@@ -128,3 +128,20 @@ The synthetic self-test recovers the true 590 ms lag exactly and gives ERLE 34 d
 - **Relaxing suppression trades a few dB of echo removal for 15 to 16 points of hit rate**, with false triggers still 0% on the 8-10 s test window (a small window; low statistical power).
 - Run 1 (18.5 dB, 25% false triggers) was not saved, so its cause is unknown.
 - Next evidence needed: more runs with `--save` under varied conditions, and speech-to-text on raw vs echo-cancelled audio.
+
+### Echo runs, all five (offline replay with the onset metric)
+
+Best aec3 variant per run (relaxed 4x, cold unless noted); onset = seconds after the NOW prompt until 3 consecutive 20 ms frames exceed the threshold (includes reaction time); false events = such detections while the user was silent (5-12 s):
+
+| Run | Condition | ERLE dB | Hit rate % | Onset s | False events |
+|---|---|---|---|---|---|
+| 2 (unlabeled) | normal | 43 | 79 | 1.00 | 0 |
+| 3 | normal | 37 | 63 | 0.82 | 0 |
+| baseline | repeat of normal | 24 | 43 | 1.58 | 0 |
+| loud | speakers louder | 32 | 58 | 0.92 | 0 |
+| far | farther from mic | 18 cold / 30 converged | 20 cold / 49 converged | 0.98 | 0 |
+
+- **Onset detection works in every run** (0.8 to 1.6 s including human reaction) with **zero false events** in 35 s of silent-user echo, even where the frame-level hit rate is low and ERLE is only 18 to 24 dB.
+- Run-to-run variation is large: the baseline repeat removed about 27 dB less echo than run 2, with similar user level. The cause is unknown (speaker/volume change, seat, the user's voice level, room).
+- The far run shows a cold start problem: 17 to 20 dB until the filter converged, then 30 to 35 dB on a second pass, so the first reply in a session is the riskiest.
+- Caveats: 5 runs from one room and one setup; false events measured over only 7 s per run; no ground truth for when the user began to speak; **speech-to-text quality on the attenuated speech is still unmeasured**.
