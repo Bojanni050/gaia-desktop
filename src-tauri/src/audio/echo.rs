@@ -8,6 +8,8 @@
 //! muting the user's own speech while they talked over Gaia, and the relaxed setting trading a few dB of
 //! echo removal for noticeably more of the user's voice getting through.
 
+use std::collections::VecDeque;
+
 use aec3::api::config::{DominantNearendDetection, EchoCanceller3Config, MaskingThresholds, Tuning};
 use aec3::nodes::audio::AudioFormat;
 use aec3::pipelines::linear::{self, LinearPipeline};
@@ -43,10 +45,14 @@ pub struct EchoCanceller {
 
 impl EchoCanceller {
     pub fn new() -> Result<Self, String> {
+        Self::with_config(relaxed_config(4.0))
+    }
+
+    pub fn with_config(config: EchoCanceller3Config) -> Result<Self, String> {
         let format = AudioFormat::ten_ms(16_000, 1);
         let pipeline = linear::builder(format, format)
             .initial_delay_ms(INITIAL_DELAY_MS)
-            .aec3_config(relaxed_config(4.0))
+            .aec3_config(config)
             // AEC only: the speech recognizer does its own robustness work, and these would colour the audio
             .enable_noise_suppression(false)
             .enable_gain_controller2(false)
@@ -65,6 +71,75 @@ impl EchoCanceller {
         let produced = fed && self.pipeline.process_capture_frame(capture, out).unwrap_or(false);
         if !produced {
             out.copy_from_slice(capture);
+        }
+    }
+}
+
+/// A level gate for what is left after echo cancellation while Gaia is speaking.
+///
+/// A linear canceller never removes all of a room's echo (speaker distortion, device clocks that drift
+/// apart, driver "enhancements" all leave some), and what is left is loud enough for the speech detector to
+/// take for the user. This learns how much is left in *this* room, as a fraction of how loudly she is
+/// playing, and quiets everything below a margin above that, so only speech clearly louder than her own
+/// leftover echo reaches the detector. The user talking over her is well above it; her echo is not. It
+/// adapts: in a room that leaks more the gate rises, so she does not answer herself there either.
+pub struct EchoGate {
+    ratio: f32,
+    recent_ref: VecDeque<f32>,
+    ratios: VecDeque<f32>,
+}
+
+/// Where the learned fraction starts: about 10 dB of echo removal, what a typical desktop room manages.
+const GATE_START_RATIO: f32 = 0.35;
+/// How far above her leftover echo speech must be to pass (about 4 dB).
+const GATE_MARGIN: f32 = 1.6;
+/// Reference quieter than this is silence: nothing is gated and nothing is learned.
+const GATE_MIN_REF_RMS: f32 = 0.003;
+/// Frames of reference remembered, because her echo reaches the microphone some tens of milliseconds late.
+const GATE_REF_FRAMES: usize = 8;
+/// Frames of leftover-to-reference ratios the estimate is taken from (about 2 s).
+const GATE_WINDOW: usize = 100;
+
+fn rms_of(x: &[f32]) -> f32 {
+    (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
+}
+
+impl EchoGate {
+    pub fn new() -> Self {
+        Self { ratio: GATE_START_RATIO, recent_ref: VecDeque::new(), ratios: VecDeque::new() }
+    }
+
+    /// The learned leftover-echo fraction (for diagnostics and tests).
+    pub fn ratio(&self) -> f32 {
+        self.ratio
+    }
+
+    /// One 20 ms frame of cleaned microphone audio and what was being played over the same 20 ms. Quiets the
+    /// frame if it is no louder than her own leftover echo.
+    pub fn apply(&mut self, frame: &mut [f32], played: &[f32]) {
+        let (frame_rms, ref_rms) = (rms_of(frame), rms_of(played));
+        self.recent_ref.push_back(ref_rms);
+        if self.recent_ref.len() > GATE_REF_FRAMES {
+            self.recent_ref.pop_front();
+        }
+        let ref_recent = self.recent_ref.iter().copied().fold(0.0f32, f32::max);
+        if ref_recent < GATE_MIN_REF_RMS {
+            return; // she is not playing: speech is left alone
+        }
+        if ref_rms >= GATE_MIN_REF_RMS {
+            self.ratios.push_back(frame_rms / ref_recent);
+            if self.ratios.len() > GATE_WINDOW {
+                self.ratios.pop_front();
+            }
+            if self.ratios.len() >= 25 {
+                let mut sorted: Vec<f32> = self.ratios.iter().copied().collect();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let p80 = sorted[(sorted.len() * 4 / 5).min(sorted.len() - 1)];
+                self.ratio = 0.9 * self.ratio + 0.1 * p80.clamp(0.05, 2.0);
+            }
+        }
+        if frame_rms < GATE_MARGIN * self.ratio * ref_recent {
+            frame.fill(0.0);
         }
     }
 }
@@ -120,7 +195,10 @@ mod tests {
     }
 
     fn run(render: &[f32], mic: &[f32]) -> Vec<f32> {
-        let mut aec = EchoCanceller::new().expect("canceller");
+        run_with(EchoCanceller::new().expect("canceller"), render, mic)
+    }
+
+    fn run_with(mut aec: EchoCanceller, render: &[f32], mic: &[f32]) -> Vec<f32> {
         let mut out = vec![0.0f32; mic.len()];
         for b in 0..mic.len() / BLOCK {
             let r = &render[b * BLOCK..(b + 1) * BLOCK];
@@ -165,6 +243,48 @@ mod tests {
         assert!(o > 0.7 * i, "input {i:.4} -> output {o:.4}: speech must pass through when nothing is playing");
     }
 
+    fn frame_of(level: f32) -> Vec<f32> {
+        (0..320).map(|i| level * (i as f32 * 0.3).sin()).collect()
+    }
+
+    #[test]
+    fn the_gate_quiets_leftover_echo_but_lets_louder_speech_through() {
+        let mut gate = EchoGate::new();
+        let played = frame_of(0.2);
+        // what is left of her voice: about a third of what she plays
+        for _ in 0..60 {
+            let mut left = frame_of(0.07);
+            gate.apply(&mut left, &played);
+            assert!(left.iter().all(|v| *v == 0.0), "leftover echo is quieted");
+        }
+        let mut user = frame_of(0.2); // clearly louder than her echo
+        gate.apply(&mut user, &played);
+        assert!(user.iter().any(|v| *v != 0.0), "the user talking over her passes");
+    }
+
+    #[test]
+    fn the_gate_learns_a_room_that_leaks_more() {
+        let mut gate = EchoGate::new();
+        let played = frame_of(0.2);
+        let start = gate.ratio();
+        for _ in 0..150 {
+            let mut left = frame_of(0.12); // 60% of what she plays comes back
+            gate.apply(&mut left, &played);
+        }
+        assert!(gate.ratio() > start * 1.3, "ratio {:.2} -> {:.2}", start, gate.ratio());
+        let mut left = frame_of(0.12);
+        gate.apply(&mut left, &played);
+        assert!(left.iter().all(|v| *v == 0.0), "in this room that level is her echo");
+    }
+
+    #[test]
+    fn the_gate_leaves_speech_alone_when_she_is_not_playing() {
+        let mut gate = EchoGate::new();
+        let mut user = frame_of(0.01);
+        gate.apply(&mut user, &[0.0; 320]);
+        assert!(user.iter().any(|v| *v != 0.0));
+    }
+
     #[test]
     fn a_fresh_canceller_never_panics_on_odd_input() {
         let mut aec = EchoCanceller::new().unwrap();
@@ -173,4 +293,68 @@ mod tests {
         aec.process(&[1.0; BLOCK], &[-1.0; BLOCK], &mut out);
         assert!(out.iter().all(|v| v.is_finite()));
     }
+    /// Exploratory: how well the end of a reply is cancelled when the speakers add delay (an external
+    /// speaker or a monitor over HDMI adds 100 to 400 ms on top of the room).
+    #[test]
+    #[ignore = "exploratory measurement; prints, asserts nothing"]
+    fn probe_the_end_of_a_reply_with_a_slow_output_device() {
+        for delay_ms in [60usize, 150, 250, 400] {
+            let reply = speechlike(1, 6, 130.0);
+            let mut render = reply.clone();
+            render.extend(vec![0.0f32; SR * 3]); // the reference ends with the reply
+            let taps: [(usize, f32); 4] = [(0, 1.0), (SR / 200, 0.5), (SR / 90, 0.3), (SR / 40, 0.15)];
+            let delay = delay_ms * SR / 1000;
+            let mic: Vec<f32> = (0..render.len())
+                .map(|i| taps.iter().filter(|(t, _)| i >= delay + t).map(|(t, g)| 0.5 * g * render[i - delay - t]).sum())
+                .collect();
+            let out = run(&render, &mic);
+            let w = |a: f32, b: f32| (rms(seg(&mic, a, b)), rms(seg(&out, a, b)));
+            // windows: steady speech, the last second of the reply (reference), the tail after the reference ends
+            let (m1, o1) = w(3.0, 5.0);
+            let (m2, o2) = w(5.0, 6.0);
+            let (m3, o3) = w(6.0, 6.0 + delay_ms as f32 / 1000.0 + 0.05);
+            let (m4, o4) = w(7.0, 8.0);
+            println!(
+                "delay {delay_ms:>3} ms | steady {:.1} dB | last second {:.1} dB | tail after reference end {:.1} dB (out rms {:.5}) | later {:.1} dB",
+                db(m1, o1), db(m2, o2), db(m3, o3), o3, db(m4, o4)
+            );
+        }
+    }
+
+    /// Exploratory: a short reply after a long one, when the output delay differs between the two (a device
+    /// that starts playing late, or a different output).
+    #[test]
+    #[ignore = "exploratory measurement; prints, asserts nothing"]
+    fn probe_a_short_reply_with_a_different_delay() {
+        for (nf, second_delay_ms) in [5usize, 12, 24].iter().flat_map(|nf| [100usize, 300, 600, 900].map(|d| (*nf, d))) {
+            let warm = speechlike(1, 6, 130.0);
+            let short = speechlike(5, 2, 150.0);
+            let mut render = warm.clone();
+            render.extend(vec![0.0f32; SR * 3]);
+            let short_start = render.len();
+            render.extend(short.iter().copied());
+            render.extend(vec![0.0f32; SR * 3]);
+            let taps: [(usize, f32); 4] = [(0, 1.0), (SR / 200, 0.5), (SR / 90, 0.3), (SR / 40, 0.15)];
+            let echo_at = |i: usize| -> f32 {
+                let d = if i < short_start { 100 } else { second_delay_ms } * SR / 1000;
+                taps.iter().filter(|(t, _)| i >= d + t).map(|(t, g)| 0.5 * g * render[i - d - t]).sum()
+            };
+            let mic: Vec<f32> = (0..render.len()).map(echo_at).collect();
+            let mut cfg = relaxed_config(4.0);
+            cfg.delay.num_filters = nf;
+            let out = run_with(EchoCanceller::with_config(cfg).expect("canceller"), &render, &mic);
+            let f = |a: f32, b: f32| (a * SR as f32) as usize..(b * SR as f32) as usize;
+            let t0 = short_start as f32 / SR as f32;
+            let first_half = f(t0, t0 + 1.0);
+            let second_half = f(t0 + 1.0, t0 + 2.0);
+            let tail = f(t0 + 2.0, t0 + 2.0 + second_delay_ms as f32 / 1000.0 + 0.2);
+            let d = |r: std::ops::Range<usize>| db(rms(&mic[r.clone()]), rms(&out[r]));
+            let peak_tail = out[tail.clone()].iter().fold(0f32, |m, v| m.max(v.abs()));
+            println!(
+                "num_filters {nf:>2} | second reply delay {second_delay_ms:>3} ms | first second {:.1} dB | second second {:.1} dB | tail {:.1} dB (peak out {:.4})",
+                d(first_half), d(second_half), d(tail), peak_tail
+            );
+        }
+    }
+
 }
