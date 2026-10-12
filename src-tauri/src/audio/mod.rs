@@ -373,7 +373,7 @@ impl Inner {
                         &mut sh,
                         VoiceError::new(
                             "no_frames",
-                            "the microphone is not delivering audio; switched off",
+                            "the microphone is not delivering audio (security software such as Norton can block it); switched off",
                         ),
                         &mut events,
                     );
@@ -764,8 +764,27 @@ mod tests {
         c.set_enabled(false, None);
     }
 
-    /// Opt-in hardware test: `cargo test --lib real_microphone -- --ignored --nocapture`.
-    /// Run it from a normal terminal (a sandboxed one can open the stream but receive no audio).
+    /// Windows records microphone use per program; `LastUsedTimeStop` is 0 while the program holds the
+    /// microphone open and is set when it releases it. The system microphone indicator follows this, so it
+    /// is an objective check that "off" really released the device.
+    fn consent_last_stop() -> Option<u64> {
+        let exe = std::env::current_exe().ok()?.to_string_lossy().replace('\\', "#");
+        let exe = exe.trim_start_matches("?#").to_string();
+        let key = format!(
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged\{exe}"
+        );
+        let out = std::process::Command::new("reg")
+            .args(["query", &key, "/v", "LastUsedTimeStop"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let hex = text.split_whitespace().last()?.trim_start_matches("0x").to_string();
+        u64::from_str_radix(&hex, 16).ok()
+    }
+
+    /// Opt-in hardware test: `cargo test --lib real_microphone_delivers -- --ignored --nocapture`.
+    /// Run it from a normal terminal (a sandboxed one can open the stream but receive no audio). Security
+    /// software such as Norton may block a freshly built test binary until you allow it.
     #[test]
     #[ignore = "needs a real microphone"]
     fn real_microphone_delivers_frames_and_releases_on_off() {
@@ -785,10 +804,54 @@ mod tests {
         println!("events: {:?}", log.lock().unwrap().iter().filter(|e| !matches!(e, VoiceEvent::Level(_))).collect::<Vec<_>>());
         println!("levels: {:?}", log.lock().unwrap().iter().filter_map(|e| if let VoiceEvent::Level(l) = e { Some(*l) } else { None }).take(6).collect::<Vec<_>>());
         wait_until("frames from the real mic", || c.status().permission == AudioPermission::Granted);
+        let in_use = consent_last_stop();
+        println!("Windows consent record while on (LastUsedTimeStop, 0 = in use): {in_use:?}");
         let off = c.set_enabled(false, None);
         assert_eq!(off.state, MicState::Off);
+        std::thread::sleep(Duration::from_millis(500));
+        let released = consent_last_stop();
+        println!("Windows consent record after off: {released:?}");
+        if let (Some(during), Some(after)) = (in_use, released) {
+            assert_eq!(during, 0, "the microphone must show as in use while on");
+            assert!(after > 0, "off must release the microphone (system indicator off)");
+        } else {
+            println!("(no consent record found for this test binary; indicator check skipped)");
+        }
         let glitches = log.lock().unwrap().iter().filter(|e| matches!(e, VoiceEvent::Error(_))).count();
         println!("error/notice events: {glitches}");
+    }
+
+    /// Measures how long the real microphone takes to deliver its first frame after open, repeatedly.
+    /// `cargo test --lib real_microphone_first -- --ignored --nocapture` (run from a normal terminal).
+    #[test]
+    #[ignore = "needs a real microphone"]
+    fn real_microphone_first_frame_latency() {
+        let backend = CpalBackend;
+        let mut times = Vec::new();
+        for round in 0..6 {
+            let sink = CaptureSink::new();
+            let t0 = Instant::now();
+            let opened = backend.open(None, sink.clone());
+            let open_ms = t0.elapsed().as_millis();
+            let Ok((stream, _)) = opened else {
+                println!("round {round}: open failed after {open_ms} ms");
+                continue;
+            };
+            let mut first = None;
+            while t0.elapsed() < Duration::from_secs(8) {
+                if sink.frames() > 0 {
+                    first = Some(t0.elapsed().as_millis());
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            println!("round {round}: open {open_ms} ms, first frame {first:?} ms, failed={}", sink.has_failed());
+            times.push(first);
+            drop(stream);
+            std::thread::sleep(Duration::from_millis(1000));
+        }
+        let slow = times.iter().filter(|t| t.map(|v| v > 2000).unwrap_or(true)).count();
+        println!("{} of {} rounds took longer than 2 s or never delivered", slow, times.len());
     }
 
     #[test]
