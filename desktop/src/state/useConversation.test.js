@@ -7,9 +7,8 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => ({})) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
-// Playback itself is a thin wrapper over the webview's Audio element —
-// asserted through, never with: these tests verify *whether* Gaia speaks
-// and with which bytes/mime, not that jsdom can play sound.
+// Playback itself happens in Rust: asserted through, never with. These tests
+// verify *whether* Gaia speaks and with which text, not that sound plays.
 vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}), stopSpeech: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
@@ -151,7 +150,6 @@ describe("Gaia's voice gate", () => {
     invoke.mockClear();
     playSpeech.mockClear();
     stopSpeech.mockClear();
-    invoke.mockResolvedValue({ audio: [1, 2, 3], mime_type: 'audio/mpeg' });
   });
 
   it('speaks a Dutch reply when the voice pronounces Dutch', async () => {
@@ -161,10 +159,7 @@ describe("Gaia's voice gate", () => {
       await result.current.send('kun je dit uitspreken?');
     });
 
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: dutchReply }));
-    await waitFor(() =>
-      expect(playSpeech).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]), 'audio/mpeg')
-    );
+    await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(dutchReply));
     await waitFor(() => expect(result.current.busy).toBe(false));
     expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
   });
@@ -177,7 +172,6 @@ describe("Gaia's voice gate", () => {
     });
 
     await waitFor(() => expect(result.current.busy).toBe(false));
-    expect(invoke).not.toHaveBeenCalledWith('speech_synthesize', expect.anything());
     expect(playSpeech).not.toHaveBeenCalled();
     expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
   });
@@ -190,7 +184,6 @@ describe("Gaia's voice gate", () => {
     });
 
     await waitFor(() => expect(result.current.busy).toBe(false));
-    expect(invoke).not.toHaveBeenCalledWith('speech_synthesize', expect.anything());
     expect(playSpeech).not.toHaveBeenCalled();
   });
 
@@ -201,7 +194,7 @@ describe("Gaia's voice gate", () => {
       await result.current.send('can you say this?');
     });
 
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: englishReply }));
+    await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(englishReply));
   });
 
   it('cuts the previous reply off the moment a new turn begins', async () => {
