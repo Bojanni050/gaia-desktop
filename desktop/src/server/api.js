@@ -119,7 +119,34 @@ export const voiceApi = {
   onError: (handler) => listen('voice://error', (event) => handler(event.payload)),
   /** Peak input level 0..1, a few times a second while listening. */
   onLevel: (handler) => listen('voice://level', (event) => handler(event.payload)),
+
+  // Push-to-talk: Rust records one utterance (in memory only), trims it to the speech, has Gaia Cloud
+  // transcribe it, and reports through events. Silence is never uploaded. `pttStart` rejects with
+  // `{ code, message }` (`mic_off`: switch the microphone on first; `busy`).
+  pttStart: () => invoke('voice_ptt_start'),
+  pttStop: () => invoke('voice_ptt_stop'),
+  pttCancel: () => invoke('voice_ptt_cancel'),
+  pttState: () => invoke('voice_ptt_state'),
+  /** `{ state: 'idle'|'recording'|'transcribing'|'noSpeech'|'failed', code?, message? }` */
+  onPtt: (handler) => listen('voice://ptt', (event) => handler(event.payload)),
+  /** `{ text, language }`: what was said, as Gaia Cloud heard it. Send it as an ordinary turn. */
+  onTranscript: (handler) => listen('voice://transcript', (event) => handler(event.payload)),
 };
+
+/**
+ * Describes Gaia Cloud's speech recognition (`GET /speech/stt-info`): `{ configured, provider,
+ * languages, maxBytes }`. Never throws: an unreachable or older server resolves to `undefined`, and the
+ * caller assumes it might work (a real failure explains itself when it happens).
+ */
+export async function getSttInfo(request) {
+  if (typeof request !== 'function') return undefined;
+  try {
+    const response = await request({ method: 'get', path: 'speech/stt-info' });
+    return response?.body;
+  } catch (_) {
+    return undefined;
+  }
+}
 
 /**
  * Gaia's voice — synthesizes speech for an already-received Gaia reply via

@@ -558,6 +558,23 @@ body {
 }
 .composer-attach:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
 .composer-attach:disabled { opacity: 0.4; cursor: default; }
+.composer-mic {
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+  background: none; color: var(--text-faint); border: none; border-radius: 12px; cursor: pointer;
+  flex-shrink: 0; transition: color 0.2s ease, background-color 0.2s ease;
+}
+.composer-mic:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+.composer-mic:disabled { opacity: 0.6; cursor: default; }
+.composer-mic.is-off { opacity: 0.55; }
+.composer-mic.is-recording { color: var(--bg, #14120f); background: var(--accent); animation: composer-mic-pulse 1.4s ease-in-out infinite; }
+@keyframes composer-mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(203, 163, 106, 0.45); } 50% { box-shadow: 0 0 0 7px rgba(203, 163, 106, 0); } }
+.composer-mic .spin { animation: composer-mic-spin 0.9s linear infinite; }
+@keyframes composer-mic-spin { to { transform: rotate(360deg); } }
+.composer-mic-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--text-faint); font-family: var(--sans); }
+@media (prefers-reduced-motion: reduce) {
+  .composer-mic.is-recording { animation: none; }
+  .composer-mic .spin { animation-duration: 3s; }
+}
 .composer-input {
   flex: 1; background: none; border: none; outline: none; resize: none;
   color: var(--text); font-family: var(--sans); font-size: 1rem; line-height: 1.6;

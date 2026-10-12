@@ -65,7 +65,27 @@ pub fn run() {
                 }),
                 audio::Timing::default(),
             );
-            app.manage(mic);
+            app.manage(mic.clone());
+
+            // Push-to-talk: record one utterance, have Gaia Cloud transcribe it, emit the text. The
+            // desktop never interprets it; the UI sends it as an ordinary turn.
+            let ptt_handle = app.handle().clone();
+            let ptt = audio::ptt::PttController::new(
+                mic,
+                std::sync::Arc::new(speech::stt::CloudTranscriber::new(app.handle().clone())),
+                std::sync::Arc::new(move |event| {
+                    use tauri::Emitter;
+                    let _ = match &event {
+                        audio::ptt::PttEvent::State(s) => ptt_handle.emit(audio::ptt::PTT_EVENT, s),
+                        audio::ptt::PttEvent::Transcript(t) => ptt_handle.emit(audio::ptt::TRANSCRIPT_EVENT, t),
+                    };
+                }),
+                std::sync::Arc::new(|future| {
+                    tauri::async_runtime::spawn(future);
+                }),
+                std::time::Duration::from_secs(audio::utterance::MAX_RECORDING_SECS),
+            );
+            app.manage(ptt);
             app.manage(presence::PresenceController::new());
 
             // Gaia's voice: playback lives in Rust (spec: AEC needs the playback signal), with the
@@ -108,6 +128,10 @@ pub fn run() {
             audio::voice_list_devices,
             audio::voice_set_mic_enabled,
             audio::voice_select_device,
+            audio::ptt::voice_ptt_start,
+            audio::ptt::voice_ptt_stop,
+            audio::ptt::voice_ptt_cancel,
+            audio::ptt::voice_ptt_state,
             // history
             history::history_export_conversation,
             // library

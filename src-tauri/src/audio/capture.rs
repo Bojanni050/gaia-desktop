@@ -9,7 +9,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -26,7 +26,9 @@ pub struct AudioDeviceInfo {
     pub is_default: bool,
 }
 
-/// What the audio callback writes to. Everything here is lock-free.
+/// What the audio callback writes to. The counters are lock-free; the optional *tap* is only touched
+/// with `try_lock`, so the callback never waits: a recording that is being started or stopped at that
+/// very instant simply misses one 10 ms chunk.
 #[derive(Default)]
 pub struct CaptureSink {
     frames: AtomicU64,
@@ -34,6 +36,13 @@ pub struct CaptureSink {
     peak_micro: AtomicU32,
     glitches: AtomicU32,
     stream_failed: AtomicBool,
+    /// Input sample rate in Hz, set when the stream opens (0 until then).
+    sample_rate: AtomicU32,
+    /// True while a tap is attached: the callback only builds a mono chunk when someone is listening.
+    tapping: AtomicBool,
+    /// Receives mono f32 chunks at `sample_rate` while a recording is in progress. Audio exists only in
+    /// memory, only for the length of a recording, and only because the user asked for one.
+    tap: Mutex<Option<mpsc::Sender<Vec<f32>>>>,
 }
 
 impl CaptureSink {
@@ -60,6 +69,43 @@ impl CaptureSink {
 
     pub fn frames(&self) -> u64 {
         self.frames.load(Ordering::Relaxed)
+    }
+
+    pub fn set_sample_rate(&self, hz: u32) {
+        self.sample_rate.store(hz, Ordering::Relaxed);
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate.load(Ordering::Relaxed)
+    }
+
+    /// True while a recording is attached.
+    pub fn is_tapping(&self) -> bool {
+        self.tapping.load(Ordering::SeqCst)
+    }
+
+    /// Starts forwarding mono chunks to `tx` (a recording). Replaces any earlier tap.
+    pub fn attach_tap(&self, tx: mpsc::Sender<Vec<f32>>) {
+        *self.tap.lock().expect("tap poisoned") = Some(tx);
+        self.tapping.store(true, Ordering::SeqCst);
+    }
+
+    /// Stops forwarding. Safe to call when nothing is attached.
+    pub fn detach_tap(&self) {
+        self.tapping.store(false, Ordering::SeqCst);
+        *self.tap.lock().expect("tap poisoned") = None;
+    }
+
+    /// Called from the audio callback with one mono chunk; a no-op unless a recording is attached.
+    pub fn offer_mono(&self, mono: &[f32]) {
+        if !self.tapping.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Ok(guard) = self.tap.try_lock() {
+            if let Some(tx) = guard.as_ref() {
+                let _ = tx.send(mono.to_vec());
+            }
+        }
     }
 
     pub fn glitches(&self) -> u32 {
@@ -151,13 +197,22 @@ fn classify_open_error(message: &str) -> CaptureOpenError {
     }
 }
 
-/// Peak and frame count of an interleaved chunk, converted to f32 on the fly (no allocation).
+/// Peak and frame count of an interleaved chunk, converted to f32 on the fly (no allocation unless a
+/// recording is attached, in which case one small mono chunk is built).
 fn feed<T: Copy>(sink: &CaptureSink, data: &[T], channels: usize, to_f32: impl Fn(T) -> f32) {
     let mut peak = 0f32;
     for s in data {
         peak = peak.max(to_f32(*s).abs());
     }
-    sink.push((data.len() / channels.max(1)) as u64, peak);
+    let channels = channels.max(1);
+    sink.push((data.len() / channels) as u64, peak);
+    if sink.tapping.load(Ordering::Relaxed) {
+        let mono: Vec<f32> = data
+            .chunks_exact(channels)
+            .map(|frame| frame.iter().map(|s| to_f32(*s)).sum::<f32>() / channels as f32)
+            .collect();
+        sink.offer_mono(&mono);
+    }
 }
 
 fn build_stream(
@@ -185,6 +240,7 @@ fn build_stream(
         .default_input_config()
         .map_err(|e| classify_open_error(&e.to_string()))?;
     let channels = config.channels() as usize;
+    sink.set_sample_rate(config.sample_rate());
 
     let err_sink = sink.clone();
     let err_fn = move |e: cpal::Error| match e.kind() {
