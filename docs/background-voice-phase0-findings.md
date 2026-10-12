@@ -111,3 +111,20 @@ The synthetic self-test recovers the true 590 ms lag exactly and gives ERLE 34 d
 - **Runs differ a lot** (cause unknown: volume, seat position, or run-to-run convergence), so two runs are not a verdict; at least three more are needed.
 - Run 2 per-second levels show the AEC output sitting near digital silence (rms about 0.0001) from the first second, which means AEC3's **suppressor is gating the output** rather than only subtracting the echo. During double talk the output keeps 0.01-0.025 rms (raw mic 0.02-0.08): the user's speech passes but attenuated. Whether that speech is still good enough for **speech-to-text** is untested and is the real question: transcribe `aec_out.wav` vs the raw mic in the Dutch STT test.
 - The hit/false metric is easy to satisfy with a gating suppressor, so the harness now applies a 0.005 (-46 dBFS) floor to the threshold, as a real VAD would have.
+
+### Offline replay of saved echo runs (`echo-replay`)
+
+`echo-replay` reprocesses saved `echo-test --save` recordings through several variants. Both saved runs, speech hit rate at 0% false triggers in every case (floor 0.005):
+
+| Variant | Run 2 hit % / ERLE dB | Run 3 hit % / ERLE dB |
+|---|---|---|
+| sonora default | 66 / 53 | 47 / 46 |
+| sonora default, converged (second pass) | 67 / 58 | 44 / 46 |
+| aec3 default | 71 / 48 | 54 / 43 |
+| aec3 suppression relaxed 2x | 76 / 46 | 60 / 41 |
+| aec3 suppression relaxed 4x | 79 / 43 | 63 / 37 |
+
+- **Convergence is not the issue:** the second pass changes little, so the weak hit rate comes from the suppressor attenuating the user's speech, not from a cold filter.
+- **Relaxing suppression trades a few dB of echo removal for 15 to 16 points of hit rate**, with false triggers still 0% on the 8-10 s test window (a small window; low statistical power).
+- Run 1 (18.5 dB, 25% false triggers) was not saved, so its cause is unknown.
+- Next evidence needed: more runs with `--save` under varied conditions, and speech-to-text on raw vs echo-cancelled audio.

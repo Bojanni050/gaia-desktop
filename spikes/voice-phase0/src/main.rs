@@ -3,6 +3,7 @@
 //!   voice-phase0 meter [secs] [id]    capture, print level only — nothing is written to disk
 mod aec_sim;
 mod echo;
+mod replay;
 mod harness;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{ErrorKind, SampleFormat};
@@ -18,6 +19,7 @@ fn main() {
             args.get(3).cloned(),
         ),
         Some("echo-selftest") => echo::selftest(),
+        Some("echo-replay") => replay::run(args[2..].to_vec()),
         Some("echo-test") => {
             let save = args.iter().any(|a| a == "--save");
             let path = args.get(2).filter(|a| !a.starts_with("--")).cloned();

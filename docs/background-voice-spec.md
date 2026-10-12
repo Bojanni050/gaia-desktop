@@ -53,7 +53,7 @@ Other facts: `tokio` features are only `sync, time, rt, fs`; `reqwest` has no we
 Settled (see `background-voice-phase0-findings.md` for evidence):
 
 - **Capture:** `cpal` 0.18.2 (Apache-2.0) on WASAPI works on the owner's machine. Devices have **stable ids**, and the stream error callback reports `DeviceChanged`. A stream can open with no error and deliver **zero frames**, so the engine needs a no-frames watchdog. Large buffers in the audio callback cause overruns: the callback must only forward small chunks.
-- **AEC:** `sonora` 0.2.0 (BSD-3-Clause, pure Rust WebRTC AEC3) builds with no C/C++ toolchain. `aec-rs` (needs libclang) and `webrtc-audio-processing` (C++ build) are rejected. Synthetic echo tests are strong (ERLE about 59 dB once settled) but double-talk preservation is only moderate (correlation about 0.5), so **real-room validation on the owner's speakers is still required** before Phase 3 depends on it.
+- **AEC:** pure-Rust AEC3 ports build with no C/C++ toolchain; `aec-rs` (needs libclang) and `webrtc-audio-processing` (C++ build) are rejected. **Real-room results on the owner's speakers (three runs, two saved and replayed offline):** echo removal is strong (about 37 to 53 dB once running; the first run only reached 18.5 dB, cause unknown), false barge-in triggers 0%, but the **suppressor attenuates the user's speech while talking over Gaia**, giving a speech-detection hit rate of only 47 to 66% with `sonora` defaults. The `aec3` crate (MIT OR BSD-3-Clause) exposes suppressor tuning (`sonora` does not); with suppression relaxed 4x it reaches 62 to 79% hit rate at 0% false triggers and 37 to 52 dB echo removal. **Decision: use `aec3` with the relaxed suppressor tuning** (to be re-validated), keep `sonora` as the alternative. The AEC output gates to near silence while only Gaia speaks, so downstream VAD needs an absolute noise floor (-46 dBFS used in the spike). Whether the attenuated speech is good enough for **speech-to-text** is untested and is part of the Dutch STT test.
 - **Cloud abort (C2):** confirmed missing, but smaller than expected: Hermes and generator streams already accept a `signal`; the route and `performStreamingTurn` just never create or pass one.
 - **Wake word, decision: Rustpotter DTW references (Apache-2.0), not the trained-model mode.** Measured on the owner's voice (23 usable "hey" clips, 20 near-miss negatives, 10 minutes of ambient audio):
 
@@ -73,7 +73,7 @@ Consequences carried into this spec:
 - Default threshold about 0.55 (user-adjustable via `wakeSensitivity`), plus a confirmation tone so false accepts are cheap.
 - Rustpotter pulls a stale `candle-core 0.2.2` that only compiles with `half` pinned to 2.4.1: commit the pin in `Cargo.lock` and treat Rustpotter as a maintenance risk (fallback: openWakeWord via `ort`).
 
-Still open after Phase 0: real-room AEC on speakers, Dutch STT quality with Mistral Voxtral transcription, and Cloud's behaviour when a streaming turn is aborted.
+Still open after Phase 0: more real-room echo runs (louder volume, greater distance, a different seat; one run was 18.5 dB for unknown reasons), Dutch STT quality with Mistral Voxtral transcription on the echo-cancelled audio, and Cloud's behaviour when a streaming turn is aborted.
 
 ## 5. Architecture
 
@@ -142,7 +142,7 @@ Naming rule: `audio.muted` / `audio.volume` remain **playback-only**. Never reus
 ### 5.5 Echo prevention and interruption (speakers)
 
 1. Rust playback writes samples to the output device and, in the same callback, to a delay-aligned reference buffer for the AEC.
-2. The AEC (`sonora`, chosen in Phase 0; real-room validation pending) subtracts the reference from the capture before VAD and wake word.
+2. The AEC (`aec3` with relaxed suppression, chosen in Phase 0; more real-room runs pending) subtracts the reference from the capture before VAD and wake word.
 3. **Barge-in** fires when VAD detects speech on the *post-AEC* signal for ≥ 250 ms while Gaia is speaking **or** the wake word fires. On barge-in: `speech_stop(150)` (fade, as today), `server_cancel_turn` if a turn is still streaming, then the speech is captured as the next utterance.
 4. Safety net if AEC underperforms on a given room: the user setting `bargeInEnabled=false` falls back to half-duplex (capture muted for upload while speaking; interrupt by wake word or hotkey only), and a cooldown of 400 ms follows playback end.
 
@@ -179,7 +179,7 @@ Off means the cpal `Stream` is **dropped**, not paused: Windows releases the dev
 | Capture + output | `cpal` 0.18 (Apache-2.0) | WASAPI. Persist the stable `DeviceId` string; fall back to default if gone. Stream errors include `DeviceChanged`. Add a no-frames watchdog and keep the audio callback allocation-light. |
 | Playback | `rodio` (on `cpal`) | Decode WAV/MP3 from `/speech`. |
 | Resample | `rubato` | |
-| AEC | `sonora` 0.2 (BSD-3-Clause, pure Rust) | Chosen in Phase 0. `aec3` 0.4 (MIT OR BSD-3-Clause) is the alternative. Rejected: `aec-rs` (needs libclang), `webrtc-audio-processing` (C++ toolchain). |
+| AEC | `aec3` 0.4 (MIT OR BSD-3-Clause, pure Rust AEC3 port) with relaxed suppressor tuning | Chosen in Phase 0 because it exposes `EchoCanceller3Config`; `sonora` 0.2 (BSD-3-Clause) is the alternative but has no suppression tuning API. Both are young crates (aec3's README calls its API a work in progress). Rejected: `aec-rs` (needs libclang), `webrtc-audio-processing` (C++ toolchain). |
 | VAD | Silero via `ort`, or a lightweight VAD crate | |
 | Wake word | **Rustpotter** 3.0.2 (Apache-2.0), DTW reference mode | Needs `half` pinned to 2.4.1 (stale `candle-core`). Trained-model mode rejected (see 4.1). openWakeWord fallback only if the speech-heavy ambient test fails. Porcupine rejected (AccessKey validated at init; custom keywords non-commercial; free tier reportedly ended 2026-06-30). |
 | Cancellation | `tokio-util` | |
@@ -204,7 +204,7 @@ Cloud: `services/gaia-api/src/server.js`, new `src/speech/*Stt.js`, `adminRoutes
 
 ### Phase 0 — Spikes and decisions (throwaway code, no product merge)
 
-**Status (2026-10-12): mostly done.** Done: capture, AEC options (synthetic), Cloud abort audit, wake-word comparison (DTW vs trained), speech-heavy ambient test. Remaining: real-room AEC on speakers, Dutch STT test. Spike code: branch `spike/voice-phase0`, `spikes/voice-phase0/`.
+**Status (2026-10-12): mostly done.** Done: capture, AEC options (synthetic and real room, three runs plus offline replay), Cloud abort audit, wake-word comparison (DTW vs trained), speech-heavy ambient test. Remaining: more real-room echo runs under varied conditions, Dutch STT test (including on echo-cancelled audio). Spike code: branch `spike/voice-phase0`, `spikes/voice-phase0/`.
 - Rustpotter vs openWakeWord on the owner's voice, Dutch and English "Hey Gaia".
 - AEC spike: Rust playback → reference → AEC, on the owner's actual speakers.
 - Mistral transcription API: Dutch accuracy, latency, terms.
@@ -271,7 +271,7 @@ Sentence-level TTS streaming for latency, Dutch tuning, level meter polish, opti
 
 ## 12. Open items
 
-- Remaining Phase 0 tests: real-room AEC on speakers, Dutch STT with Mistral Voxtral transcription. Wake word: re-test in other rooms and at other times before Phase 4 targets are fixed.
+- Remaining Phase 0 tests: more real-room echo runs (volume, distance, seat), Dutch STT with Mistral Voxtral transcription on raw vs echo-cancelled audio. Wake word: re-test in other rooms and at other times before Phase 4 targets are fixed.
 - VAD crate choice (Silero via `ort` vs a lightweight crate) — not yet spiked.
 - Cloud interruption semantics (C2) and whether Cloud tolerates `modality` (C3).
 - Whether the continuous-mode "any speech is uploaded" posture is acceptable or a local-STT option is wanted.
