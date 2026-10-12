@@ -12,7 +12,11 @@
 //! every launch starts with the microphone off.
 
 mod capture;
+pub mod continuous;
+pub mod echo;
 pub mod ptt;
+pub mod stream;
+pub mod vad;
 #[cfg(test)]
 mod testing;
 pub mod utterance;

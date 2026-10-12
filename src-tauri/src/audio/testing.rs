@@ -12,6 +12,9 @@ pub(crate) enum Mode {
     Frames,
     /// Frames flow but carry silence.
     Quiet,
+    /// A pause (1.5 s), then a second of loud tone, repeating: utterances that actually end, after a
+    /// quiet lead-in the speech detector can calibrate on.
+    Bursts,
     /// The stream opens and delivers nothing.
     NoFrames,
     Permission,
@@ -108,11 +111,18 @@ impl CaptureBackend for Fake {
                 .map(|i| 0.3 * (i as f32 * 220.0 * std::f32::consts::TAU / FAKE_RATE as f32).sin())
                 .collect();
             let quiet = vec![0.0f32; 480];
+            let mut n: u64 = 0;
             while !s2.load(Ordering::SeqCst) {
-                if !stall.load(Ordering::SeqCst) && (mode == Mode::Frames || mode == Mode::Quiet) {
-                    let chunk = if mode == Mode::Frames { &loud } else { &quiet };
-                    sink.push(480, if mode == Mode::Frames { 0.3 } else { 0.0 });
+                if !stall.load(Ordering::SeqCst) && mode != Mode::NoFrames {
+                    let is_loud = match mode {
+                        Mode::Frames => true,
+                        Mode::Bursts => n % 250 >= 150, // 1.5 s of pause, then 1 s of speech (10 ms chunks)
+                        _ => false,
+                    };
+                    let chunk = if is_loud { &loud } else { &quiet };
+                    sink.push(480, if is_loud { 0.3 } else { 0.0 });
                     sink.offer_mono(chunk);
+                    n += 1;
                 }
                 std::thread::sleep(Duration::from_millis(2));
             }

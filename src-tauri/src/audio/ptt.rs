@@ -12,7 +12,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -32,6 +32,22 @@ pub const TRANSCRIPT_EVENT: &str = "voice://transcript";
 pub struct Transcript {
     pub text: String,
     pub language: Option<String>,
+}
+
+/// What the UI receives on `voice://transcript`: the text, and where it came from, so the push-to-talk
+/// button and hands-free mode never both act on the same transcript.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TranscriptEvent {
+    pub text: String,
+    pub language: Option<String>,
+    /// `"ptt"` or `"continuous"`.
+    pub source: &'static str,
+}
+
+impl TranscriptEvent {
+    pub fn new(t: Transcript, source: &'static str) -> Self {
+        Self { text: t.text, language: t.language, source }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +110,8 @@ struct Inner {
     emit: Emitter,
     spawn: Spawner,
     max_duration: Duration,
+    /// Shared with hands-free listening: only one of the two may hold the microphone tap.
+    exclusive: Arc<AtomicBool>,
     phase: Mutex<Phase>,
     next_id: AtomicU64,
 }
@@ -110,6 +128,7 @@ impl PttController {
         emit: Emitter,
         spawn: Spawner,
         max_duration: Duration,
+        exclusive: Arc<AtomicBool>,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -118,6 +137,7 @@ impl PttController {
                 emit,
                 spawn,
                 max_duration,
+                exclusive,
                 phase: Mutex::new(Phase::Idle),
                 next_id: AtomicU64::new(1),
             }),
@@ -152,6 +172,12 @@ impl PttController {
                 return Err(VoiceError {
                     code: "mic_off".into(),
                     message: "the microphone is not ready yet".into(),
+                });
+            }
+            if self.inner.exclusive.swap(true, Ordering::SeqCst) {
+                return Err(VoiceError {
+                    code: "busy".into(),
+                    message: "hands-free listening is on".into(),
                 });
             }
             let (tx, rx) = mpsc::channel();
@@ -194,6 +220,7 @@ impl PttController {
             }
         };
         recording.sink.detach_tap();
+        self.inner.exclusive.store(false, Ordering::SeqCst);
 
         // The microphone must be the same one we started on: switched off, failed or restarted
         // (a new sink) means the audio has a hole in it and is thrown away.
@@ -239,6 +266,7 @@ impl PttController {
         };
         if let Some(r) = recording {
             r.sink.detach_tap();
+            self.inner.exclusive.store(false, Ordering::SeqCst);
             drop(r);
             self.inner.emit_state(PttState::Idle);
         }
@@ -379,6 +407,7 @@ mod tests {
                 handle.spawn(f);
             }),
             max,
+            Arc::new(AtomicBool::new(false)),
         );
         Rig { fake, mic, ptt, log, transcriber }
     }

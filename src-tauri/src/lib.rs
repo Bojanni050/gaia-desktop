@@ -70,6 +70,8 @@ pub fn run() {
             // Push-to-talk: record one utterance, have Gaia Cloud transcribe it, emit the text. The
             // desktop never interprets it; the UI sends it as an ordinary turn.
             let ptt_handle = app.handle().clone();
+            // One microphone tap at a time: push-to-talk and hands-free listening share this claim.
+            let mic_claim = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let ptt = audio::ptt::PttController::new(
                 mic,
                 std::sync::Arc::new(speech::stt::CloudTranscriber::new(app.handle().clone())),
@@ -77,13 +79,17 @@ pub fn run() {
                     use tauri::Emitter;
                     let _ = match &event {
                         audio::ptt::PttEvent::State(s) => ptt_handle.emit(audio::ptt::PTT_EVENT, s),
-                        audio::ptt::PttEvent::Transcript(t) => ptt_handle.emit(audio::ptt::TRANSCRIPT_EVENT, t),
+                        audio::ptt::PttEvent::Transcript(t) => ptt_handle.emit(
+                            audio::ptt::TRANSCRIPT_EVENT,
+                            audio::ptt::TranscriptEvent::new(t.clone(), "ptt"),
+                        ),
                     };
                 }),
                 std::sync::Arc::new(|future| {
                     tauri::async_runtime::spawn(future);
                 }),
                 std::time::Duration::from_secs(audio::utterance::MAX_RECORDING_SECS),
+                mic_claim.clone(),
             );
             app.manage(ptt);
             app.manage(presence::PresenceController::new());
