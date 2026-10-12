@@ -335,7 +335,11 @@ pub fn run(ref_path: Option<String>, save: bool) {
     let glitches = xr.load(Ordering::Relaxed);
     let mic: Vec<f32> = crate::harness::to_16k_mono_pub(&captured, irate, ich).iter().map(|s| *s as f32 / 32768.0).collect();
     println!("captured {:.1} s, {glitches} audio glitch(es); capture started {issue_offset_ms} ms before playback was issued", mic.len() as f32 / SR as f32);
-    let report = analyze(&mic, &reference, if save { Some(Path::new(&format!("recordings/echo/{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)))) } else { None });
+    let save_dir = std::path::PathBuf::from(format!(
+        "recordings/echo/{}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    ));
+    let report = analyze(&mic, &reference, if save { Some(save_dir.as_path()) } else { None });
     println!("(system latency estimate: lag minus issue offset = {:.0} ms, +/- ~30 ms)", report.lag_ms - issue_offset_ms as f32);
     print_report(&report);
     if save { println!("saved mic_aligned.wav, aec_out.wav, reference.wav in recordings/echo/<timestamp>/ (gitignored: it is your voice)"); }
