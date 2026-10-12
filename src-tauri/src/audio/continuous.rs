@@ -622,14 +622,13 @@ pub fn voice_continuous_set(
     enabled: bool,
 ) -> Result<bool, VoiceError> {
     settings.update(|s| s.voice.continuous_enabled = enabled).map_err(settings_error)?;
-    if enabled {
-        match listener.start() {
-            Ok(()) => {}
-            Err(e) if e.code == "mic_off" => {} // saved; starts when the microphone is switched on
-            Err(e) => return Err(e),
-        }
-    } else {
-        listener.stop();
+    let voice = settings.get().voice;
+    // "Hey Gaia" keeps listening for the phrase when continuous conversation is switched off.
+    let wake = voice.wake_word_enabled && voice.wake_enrolled;
+    match listener.apply(enabled, wake) {
+        Ok(()) => {}
+        Err(e) if e.code == "mic_off" => {} // saved; starts when the microphone is switched on
+        Err(e) => return Err(e),
     }
     Ok(listener.is_active())
 }

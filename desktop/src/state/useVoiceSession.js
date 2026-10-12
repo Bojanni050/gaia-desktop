@@ -15,7 +15,8 @@ import { voiceApi } from '../server/api';
 import { stopSpeech } from '../lib/speech';
 
 export function useVoiceSession({ conversation, api = voiceApi }) {
-  const [state, setState] = useState('off'); // off | listening | hearing | transcribing | failed
+  // off | waiting (for "Hey Gaia") | listening | hearing | transcribing | failed
+  const [state, setState] = useState('off');
   const [error, setError] = useState(null);
   // Always the latest conversation (its callbacks change with every turn) without resubscribing.
   const convo = useRef(conversation);

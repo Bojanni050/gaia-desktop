@@ -153,7 +153,32 @@ pub fn run() {
                 loaded.voice.barge_in_enabled,
             );
             app.state::<speech::PlaybackEngine>().set_render_sink(continuous.render_sink());
+
+            // The enrolled wake word: its reference (features, never audio) is loaded from the config
+            // directory. A settings flag without a file, or the other way round, is put right.
+            let wake_store = audio::wake::WakeStore::new(app.path().app_config_dir().ok());
+            if loaded.voice.wake_enrolled {
+                match wake_store.load() {
+                    Some(reference) => {
+                        continuous.set_sensitivity(loaded.voice.wake_sensitivity);
+                        continuous.set_wake_reference(Some(reference));
+                    }
+                    None => {
+                        let _ = app.state::<settings::SettingsState>().update(|s| {
+                            s.voice.wake_enrolled = false;
+                            s.voice.wake_word_enabled = false;
+                        });
+                    }
+                }
+            } else if wake_store.exists() {
+                let _ = wake_store.delete();
+            }
             app.manage(continuous);
+            app.manage(audio::enroll::WakeEnroller::new(
+                app.state::<audio::MicController>().inner().clone(),
+                mic_claim.clone(),
+            ));
+            app.manage(wake_store);
 
             // The tray keeps Gaia reachable while she listens with the window closed.
             tray::install(app)?;
@@ -199,6 +224,13 @@ pub fn run() {
             audio::continuous::voice_continuous_set,
             audio::continuous::voice_set_barge_in,
             audio::continuous::voice_continuous_state,
+            audio::enroll::voice_wake_status,
+            audio::enroll::voice_wake_enroll_record,
+            audio::enroll::voice_wake_enroll_finish,
+            audio::enroll::voice_wake_enroll_cancel,
+            audio::enroll::voice_wake_set,
+            audio::enroll::voice_wake_set_sensitivity,
+            audio::enroll::voice_wake_forget,
             // history
             history::history_export_conversation,
             // library

@@ -14,6 +14,7 @@
 mod capture;
 pub mod continuous;
 pub mod echo;
+pub mod enroll;
 pub mod ptt;
 pub mod stream;
 pub mod vad;
@@ -454,9 +455,13 @@ pub fn voice_set_mic_enabled(
     }
     let current = settings.get();
     let status = mic.set_enabled(enabled, current.voice.input_device);
-    // The user switching the microphone on is what authorises hands-free listening (if they chose it).
-    if enabled && current.voice.continuous_enabled && status.mic_enabled {
-        let _ = listener.start();
+    // The user switching the microphone on is what authorises listening, if they chose it: continuous
+    // conversation, and/or waiting for "Hey Gaia" (only once a wake word is enrolled).
+    if enabled && status.mic_enabled {
+        let wake = current.voice.wake_word_enabled && current.voice.wake_enrolled;
+        if current.voice.continuous_enabled || wake {
+            let _ = listener.apply(current.voice.continuous_enabled, wake);
+        }
     }
     status
 }
