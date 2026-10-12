@@ -320,7 +320,11 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                     max="1"
                     step="0.05"
                     value={settings.audio?.volume ?? 1}
-                    onChange={(e) => patch({ audio: { ...settings.audio, volume: Number(e.target.value) } })}
+                    onChange={(e) => {
+                      const volume = Number(e.target.value);
+                      patch({ audio: { ...settings.audio, volume } });
+                      setSpeechGain({ volume }); // audible at once, even mid-reply; Save keeps it
+                    }}
                   />
                   <span className="volume-value">
                     {Math.round((settings.audio?.volume ?? 1) * 100)}%
@@ -331,7 +335,10 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <input
                   type="checkbox"
                   checked={settings.audio?.muted ?? false}
-                  onChange={(e) => patch({ audio: { ...settings.audio, muted: e.target.checked } })}
+                  onChange={(e) => {
+                    patch({ audio: { ...settings.audio, muted: e.target.checked } });
+                    setSpeechGain({ muted: e.target.checked });
+                  }}
                 />
                 <span>{L.settingsMuted}</span>
               </label>
