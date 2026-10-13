@@ -41,13 +41,14 @@ describe('episode seam', () => {
       id: 'kei_1',
       start_time: '2026-10-03T10:15:00Z',
       end_time: '2026-10-03T10:42:00Z',
+      title: 'Offerte beantwoorden',
       summary: 'Bojan bekeek de inbox.',
       primary_app: 'Outlook',
       involved_apps: ['Outlook', 'Excel'],
       epistemic_status: 'interpretation',
       sources: ['chronicle:ingest:o1'],
     });
-    expect(adapted.title).toBe('Outlook');
+    expect(adapted.title).toBe('Offerte beantwoorden');
     expect(adapted.interpretation).toBe('Bojan bekeek de inbox.');
     expect(adapted.epistemicStatus).toBe('interpretation');
     expect(adapted.context).toEqual([
@@ -55,6 +56,21 @@ describe('episode seam', () => {
       { application: 'Excel', type: 'application' },
     ]);
     expect(adapted.observations).toEqual([]);
+  });
+
+  it('falls back to the app name when an episode carries no title', () => {
+    const base = {
+      id: 'kei_2',
+      start_time: '2026-10-03T10:15:00Z',
+      end_time: '2026-10-03T10:16:00Z',
+      summary: 'Bojan bekeek de inbox.',
+      primary_app: 'Outlook',
+      involved_apps: ['Outlook'],
+    };
+    // Older episode: no title field at all.
+    expect(adaptKairosEpisode(base).title).toBe('Outlook');
+    // Newer episode where the model omitted a title: '' is not a heading either.
+    expect(adaptKairosEpisode({ ...base, title: '   ' }).title).toBe('Outlook');
   });
 
   it('treats a malformed envelope as "none yet" rather than throwing', () => {

@@ -230,6 +230,7 @@ impl ServerLink {
                         reasoning_content: delta.reasoning_content,
                         step: delta.step,
                         error: delta.error,
+                        memory: delta.memory,
                     },
                 );
             }
@@ -343,6 +344,10 @@ pub struct TurnDeltaPayload {
     /// frame - see `TurnDelta::error`.
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// What Gaia kept in the shared memory, relayed verbatim from a
+    /// `{ type: 'memory' }` frame - see `TurnDelta::memory`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory: Option<Value>,
 }
 
 #[tauri::command]

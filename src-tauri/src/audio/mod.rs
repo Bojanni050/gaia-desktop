@@ -11,7 +11,7 @@
 //! Windows releases the device and its microphone indicator disappears. The switch is runtime-only:
 //! every launch starts with the microphone off.
 
-mod capture;
+pub(crate) mod capture;
 pub mod continuous;
 pub mod echo;
 pub mod enroll;

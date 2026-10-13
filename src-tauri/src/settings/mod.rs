@@ -53,14 +53,23 @@ pub struct AudioSettings {
     /// Whether Gaia's voice is muted on this device (playback silenced
     /// without discarding the transcript).
     pub muted: bool,
+    /// Whether Gaia speaks her replies at all. Off means no speech is ever requested from Gaia Cloud
+    /// (so nothing is synthesised and no text-to-speech provider is called), unlike `muted`, which
+    /// still fetches the audio and only silences it.
+    pub speak_replies: bool,
+    /// Output device id (`DeviceId` string) Gaia's voice plays through; `None` = system default.
+    /// An id that no longer exists falls back to the default device.
+    pub output_device: Option<String>,
 }
 
 impl Default for AudioSettings {
     fn default() -> Self {
         Self {
             preferred_input: None,
+            output_device: None,
             volume: 1.0,
             muted: false,
+            speak_replies: true,
         }
     }
 }
@@ -228,6 +237,16 @@ mod tests {
         let audio = AudioSettings::default();
         assert_eq!(audio.volume, 1.0);
         assert!(!audio.muted);
+        assert!(audio.speak_replies, "she speaks unless switched off");
+    }
+
+    #[test]
+    fn settings_saved_before_the_speak_switch_existed_still_let_her_speak() {
+        let old: AudioSettings = serde_json::from_str(r#"{"volume":0.5,"muted":true}"#).unwrap();
+        assert!(old.speak_replies);
+        assert!(old.muted);
+        let off: AudioSettings = serde_json::from_str(r#"{"speakReplies":false}"#).unwrap();
+        assert!(!off.speak_replies);
     }
 
     #[test]

@@ -91,8 +91,12 @@ async fn fetch_speech(link: &ServerLink, text: &str) -> Result<SpeechAudio, Desk
 #[tauri::command]
 pub async fn speech_synthesize(
     link: tauri::State<'_, ServerLink>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
     text: String,
 ) -> Result<SpeechAudio, DesktopError> {
+    if !settings.get().audio.speak_replies {
+        return Err(DesktopError::Message("speaking replies is switched off".into()));
+    }
     fetch_speech(&link, &text).await
 }
 
@@ -104,8 +108,13 @@ pub async fn speech_synthesize(
 pub async fn speech_play(
     link: tauri::State<'_, ServerLink>,
     playback: tauri::State<'_, PlaybackEngine>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
     text: String,
 ) -> Result<PlayOutcome, DesktopError> {
+    // Switched off: nothing is requested from Gaia Cloud, so no provider is called.
+    if !settings.get().audio.speak_replies {
+        return Ok(PlayOutcome::Stopped);
+    }
     let epoch = playback.begin();
     // Anything still speaking is superseded by this reply.
     playback.stop_current(DEFAULT_FADE_MS);
@@ -121,6 +130,26 @@ pub async fn speech_play(
 #[tauri::command]
 pub fn speech_stop(playback: tauri::State<'_, PlaybackEngine>, fade_ms: Option<u64>) {
     playback.stop(fade_ms.unwrap_or(DEFAULT_FADE_MS));
+}
+
+/// The output devices Gaia's voice can be played through.
+#[tauri::command]
+pub fn speech_list_output_devices() -> Vec<crate::audio::capture::AudioDeviceInfo> {
+    playback::list_output_devices()
+}
+
+/// Chooses the output device (`None` = system default), saves the choice and switches playback to it.
+#[tauri::command]
+pub fn speech_select_output_device(
+    playback: tauri::State<'_, PlaybackEngine>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    id: Option<String>,
+) -> Result<(), DesktopError> {
+    settings
+        .update(|s| s.audio.output_device = id.clone())
+        .map_err(DesktopError::Settings)?;
+    playback.set_device(id);
+    Ok(())
 }
 
 /// Sets the local playback gain (volume 0..1, mute).

@@ -106,10 +106,9 @@ pub fn run() {
 
             // Gaia's voice: playback lives in Rust (spec: AEC needs the playback signal), with the
             // saved volume/mute applied from the first reply.
-            app.manage(speech::PlaybackEngine::new(
-                loaded.audio.volume,
-                loaded.audio.muted,
-            ));
+            let playback = speech::PlaybackEngine::new(loaded.audio.volume, loaded.audio.muted);
+            playback.set_device(loaded.audio.output_device.clone());
+            app.manage(playback);
 
             // Hands-free listening. Gaia's own voice is the echo canceller's reference, so playback
             // reports what it plays to the listener. A barge-in stops her voice here, in Rust, at once;
@@ -249,6 +248,8 @@ pub fn run() {
             speech::speech_play,
             speech::speech_stop,
             speech::speech_set_gain,
+            speech::speech_list_output_devices,
+            speech::speech_select_output_device,
             // notifications
             notifications::notify,
             // settings

@@ -104,6 +104,11 @@ pub struct TurnDelta {
     /// our own added to it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Gaia kept something in the shared memory while answering:
+    /// `{ type: 'memory', memory: { bank, kind, text } }`. A fact about the
+    /// turn, never content; the frontend shows a light next to the reply.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Value>,
 }
 
 /// Receiver for a streamed turn's incremental deltas. Closes when the

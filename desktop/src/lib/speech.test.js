@@ -10,7 +10,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { playSpeech, stopSpeech, setSpeechGain, speechSilenced, SPEECH_FADE_MS } from './speech';
+import { playSpeech, stopSpeech, setSpeechGain, speechSilenced, speaksReplies, SPEECH_FADE_MS } from './speech';
 
 beforeEach(() => {
   invoke.mockReset();
@@ -50,6 +50,20 @@ describe('stopSpeech', () => {
   it('never throws, even when the shell is unreachable', () => {
     invoke.mockRejectedValue(new Error('no shell'));
     expect(() => stopSpeech()).not.toThrow();
+  });
+});
+
+describe('speaksReplies', () => {
+  it('is on until switched off, and switching it off does not touch the volume', () => {
+    setSpeechGain({ speakReplies: true });
+    expect(speaksReplies()).toBe(true);
+    setSpeechGain({ speakReplies: false, volume: 0.4 });
+    expect(speaksReplies()).toBe(false);
+    expect(speechSilenced()).toBe(false);
+    setSpeechGain({ volume: 0.6 }); // a gain change alone leaves the switch as it was
+    expect(speaksReplies()).toBe(false);
+    setSpeechGain({ speakReplies: true });
+    expect(speaksReplies()).toBe(true);
   });
 });
 

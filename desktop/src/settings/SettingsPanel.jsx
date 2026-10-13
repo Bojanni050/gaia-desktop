@@ -7,7 +7,7 @@
  * soft "saved" state and quietly returns — never a jump or a flash.
  */
 import React, { useEffect, useState } from 'react';
-import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi } from '../server/api';
+import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi, speechApi } from '../server/api';
 import { setSpeechGain } from '../lib/speech';
 import { useVoiceStatus } from '../state/useVoiceStatus';
 import { useWakeWord } from '../state/useWakeWord';
@@ -43,6 +43,12 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const [settings, setSettings] = useState(null);
   const [audio, setAudio] = useState(null);
   const voice = useVoiceStatus();
+  const [outputDevices, setOutputDevices] = useState([]);
+  const refreshOutputs = () =>
+    speechApi.listOutputDevices().then((d) => setOutputDevices(d || [])).catch(() => {});
+  useEffect(() => {
+    refreshOutputs();
+  }, []);
   const wake = useWakeWord();
   const [enrolling, setEnrolling] = useState(false);
   const [sensitivity, setSensitivity] = useState(null); // while the slider is being dragged
@@ -277,6 +283,34 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <input type="checkbox" checked={quiet} onChange={(e) => onQuietChange(e.target.checked)} />
                 <span>{L.settingsQuiet}</span>
               </label>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.audio?.speakReplies ?? true}
+                  onChange={(e) => patch({ audio: { ...settings.audio, speakReplies: e.target.checked } })}
+                />
+                <span>{L.settingsSpeakReplies}</span>
+              </label>
+              <p className="capability-line">{L.settingsSpeakRepliesHint}</p>
+              <label className="field">
+                <span>{L.settingsOutputDevice}</span>
+                <select
+                  value={settings.audio?.outputDevice || ''}
+                  onFocus={refreshOutputs}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    patch({ audio: { ...settings.audio, outputDevice: id } });
+                    speechApi.selectOutputDevice(id).catch(() => {});
+                  }}
+                >
+                  <option value="">{L.settingsMicDefault}</option>
+                  {outputDevices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="field">
                 <span>{L.settingsVolume}</span>
                 <div className="volume-row">
@@ -286,7 +320,11 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                     max="1"
                     step="0.05"
                     value={settings.audio?.volume ?? 1}
-                    onChange={(e) => patch({ audio: { ...settings.audio, volume: Number(e.target.value) } })}
+                    onChange={(e) => {
+                      const volume = Number(e.target.value);
+                      patch({ audio: { ...settings.audio, volume } });
+                      setSpeechGain({ volume }); // audible at once, even mid-reply; Save keeps it
+                    }}
                   />
                   <span className="volume-value">
                     {Math.round((settings.audio?.volume ?? 1) * 100)}%
@@ -297,7 +335,10 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <input
                   type="checkbox"
                   checked={settings.audio?.muted ?? false}
-                  onChange={(e) => patch({ audio: { ...settings.audio, muted: e.target.checked } })}
+                  onChange={(e) => {
+                    patch({ audio: { ...settings.audio, muted: e.target.checked } });
+                    setSpeechGain({ muted: e.target.checked });
+                  }}
                 />
                 <span>{L.settingsMuted}</span>
               </label>

@@ -8,7 +8,9 @@ import AboutPanel from './settings/AboutPanel';
 import UpdatePanel from './settings/UpdatePanel';
 import EpisodeTimeline from './logos/EpisodeTimeline';
 import UnderstandingRail from './cognition/UnderstandingRail';
-import { serverApi, presenceApi, settingsApi } from './server/api';import { useConversation } from './state/useConversation';
+import { serverApi, presenceApi, settingsApi, historyApi } from './server/api';
+import { useConversation } from './state/useConversation';
+import { useResearchJobs } from './state/useResearchJobs';
 import { useServerStatus } from './state/useServerStatus';
 import { useVoiceSession } from './state/useVoiceSession';
 import { setSpeechGain } from './lib/speech';
@@ -31,6 +33,47 @@ export default function App() {
   const conversation = useConversation(serverApi);
   // Hands-free: turns what Rust hears into conversation (and interruptions into cancelled turns).
   const voiceSession = useVoiceSession({ conversation });
+
+  // Background research: the findings are written into the conversation by the
+  // server, so delivery here is "re-read the thread", then mark the job seen.
+  // A job for another conversation is left for the person to open — this must
+  // never pull them out of the thread they are reading.
+  //
+  // The ack goes through a ref because the two are mutually dependent: the
+  // callback needs the hook's ack, and the hook needs the callback.
+  const researchAckRef = useRef(null);
+  const handleResearchFinished = useCallback(
+    async (job) => {
+      if (job.conversationId && job.conversationId === conversation.activeId) {
+        try {
+          const { messages } = await historyApi.get(job.conversationId);
+          conversation.hydrateThread(job.conversationId, messages);
+        } catch (_) {
+          return; // unread: the job stays unseen and is retried on the next poll
+        }
+      }
+      if (researchAckRef.current) await researchAckRef.current(job.id);
+    },
+    [conversation.activeId, conversation.hydrateThread]
+  );
+
+  const research = useResearchJobs(serverApi, { onFinished: handleResearchFinished });
+  researchAckRef.current = research.ack;
+
+  // Opening a finished job from another thread: read that conversation, put it
+  // on screen, then mark the job seen.
+  const handleOpenResearchConversation = useCallback(
+    async (job) => {
+      try {
+        const { messages } = await historyApi.get(job.conversationId);
+        conversation.hydrateThread(job.conversationId, messages);
+        await research.ack(job.id);
+      } catch (_) {
+        // Unreadable: leave it in the list rather than pretend it was opened.
+      }
+    },
+    [conversation.hydrateThread, research.ack]
+  );
 
   useEffect(() => {
     presenceApi.get().catch(() => {});
@@ -128,6 +171,8 @@ export default function App() {
           whisper={whisper}
           onSend={conversation.send}
           onRetry={conversation.retry}
+          research={research}
+          onOpenResearchConversation={handleOpenResearchConversation}
         />
       </main>
 

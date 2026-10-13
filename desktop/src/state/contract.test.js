@@ -8,6 +8,12 @@ import {
   buildHistoryDeleteRequest,
   parseHistoryList,
   parseHistoryConversation,
+  buildResearchJobsRequest,
+  parseResearchJobs,
+  buildResearchAckRequest,
+  buildResearchApprovalRequest,
+  parseResearchApproval,
+  parseTurnResearch,
   buildCognitionListRequest,
   buildCognitionTestRequest,
   buildCognitionRejectRequest,
@@ -187,5 +193,50 @@ describe('cognition contract', () => {
     expect(parseCognitionList({ body: { hypotheses: [{ id: 'h1' }] } })).toEqual([{ id: 'h1' }]);
     expect(parseCognitionList({ body: {} })).toEqual([]);
     expect(parseCognitionList({})).toEqual([]);
+  });
+});
+
+// --- research jobs ---------------------------------------------------------
+
+describe('research job seam', () => {
+  it('asks for the queue over the generic server_request seam', () => {
+    expect(buildResearchJobsRequest()).toEqual({ method: 'get', path: 'research/jobs' });
+  });
+
+  it('keeps the three lists apart, and tolerates a malformed body', () => {
+    const parsed = parseResearchJobs({
+      body: { running: [{ id: 'rj_1' }], awaiting: [{ id: 'rj_2' }], finished: [{ id: 'rj_3' }] },
+    });
+    expect(parsed.running).toHaveLength(1);
+    expect(parsed.awaiting).toHaveLength(1);
+    expect(parsed.finished).toHaveLength(1);
+
+    const empty = parseResearchJobs(undefined);
+    expect(empty).toEqual({ running: [], awaiting: [], finished: [] });
+  });
+
+  it('acknowledges and answers one job, encoding the id', () => {
+    expect(buildResearchAckRequest('rj 1')).toEqual({ method: 'post', path: 'research/jobs/rj%201/ack' });
+    expect(buildResearchApprovalRequest('rj_1', 'deny')).toEqual({
+      method: 'post',
+      path: 'research/jobs/rj_1/approval',
+      body: { choice: 'deny' },
+    });
+  });
+
+  it('reads the question out of a job, and finds none where there is none', () => {
+    expect(
+      parseResearchApproval({ approval: { command: 'python3 x.py', description: 'schrijft weg', choices: ['once', 'deny'] } })
+    ).toEqual({ command: 'python3 x.py', description: 'schrijft weg', choices: ['once', 'deny'] });
+
+    expect(parseResearchApproval({ status: 'running' })).toBeNull();
+    expect(parseResearchApproval({ approval: { description: 'geen commando' } })).toBeNull();
+    // A job that offers no choices still has the safe pair.
+    expect(parseResearchApproval({ approval: { command: 'ls' } }).choices).toEqual(['once', 'deny']);
+  });
+
+  it('reads the research job a turn started, and nothing when there is none', () => {
+    expect(parseTurnResearch({ body: { research: { id: 'rj_1', status: 'running' } } }).id).toBe('rj_1');
+    expect(parseTurnResearch({ body: { reply: 'hoi' } })).toBeNull();
   });
 });

@@ -174,7 +174,7 @@ impl Drop for CpalStream {
     }
 }
 
-fn info_for(device: &cpal::Device, default_id: Option<&str>) -> Option<AudioDeviceInfo> {
+pub(crate) fn info_for(device: &cpal::Device, default_id: Option<&str>) -> Option<AudioDeviceInfo> {
     let id = device.id().ok()?.to_string();
     let name = device
         .description()

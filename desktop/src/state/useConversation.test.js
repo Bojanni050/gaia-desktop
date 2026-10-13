@@ -9,15 +9,70 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 // Playback itself happens in Rust: asserted through, never with. These tests
 // verify *whether* Gaia speaks and with which text, not that sound plays.
-vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}), stopSpeech: vi.fn() }));
+vi.mock('../lib/speech', () => ({ playSpeech: vi.fn(async () => {}), stopSpeech: vi.fn(), speaksReplies: vi.fn(() => true) }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { playSpeech, stopSpeech } from '../lib/speech';
+import { playSpeech, speaksReplies, stopSpeech } from '../lib/speech';
 import { useConversation } from './useConversation';
 
 const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const step = (fields) => ({ id: 'step-1', total: 2, ...fields });
+
+describe('what Gaia keeps in the shared memory while answering', () => {
+  const kept = { bank: 'bojan', kind: 'preference', text: 'Bo drinkt graag thee' };
+
+  it('marks the reply when the memory frame comes after the first words', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ content: 'Dat onthoud ik.' });
+        onDelta({ memory: kept });
+        return 'Dat onthoud ik.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('onthoud dat ik graag thee drink');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    const reply = result.current.active.messages.at(-1);
+    expect(reply.content).toBe('Dat onthoud ik.');
+    expect(reply.kept).toEqual([kept]);
+  });
+
+  it('still marks the reply when the memory frame comes before any words', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ memory: kept });
+        onDelta({ content: 'Goed, genoteerd.' });
+        return 'Goed, genoteerd.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('onthoud dat ik graag thee drink');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    const reply = result.current.active.messages.at(-1);
+    expect(reply.content).toBe('Goed, genoteerd.');
+    expect(reply.kept).toEqual([kept]);
+  });
+
+  it('does not mark an ordinary reply, and the memory frame never becomes text', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ content: 'Hallo.' });
+        return 'Hallo.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('hoi');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.messages.at(-1).kept).toBeUndefined();
+  });
+});
 
 describe('plan progress during a streamed turn', () => {
   it('shows which step is running, then clears it as soon as the answer streams', async () => {
@@ -161,6 +216,20 @@ describe("Gaia's voice gate", () => {
 
     await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(dutchReply));
     await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
+  });
+
+  it('makes no speech request at all when speaking replies is switched off', async () => {
+    speaksReplies.mockReturnValueOnce(false);
+    const server = serverWithReply(dutchReply, { configured: true, provider: 'mistral', languages: ['en', 'nl'] });
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('kun je dit uitspreken?');
+    });
+
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(playSpeech).not.toHaveBeenCalled();
+    expect(server.request).not.toHaveBeenCalled(); // not even the voice info
     expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
   });
 

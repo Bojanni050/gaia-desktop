@@ -21,9 +21,15 @@ export const SPEECH_FADE_MS = 150;
 // sync with settings.audio by App (on load) and SettingsPanel (on save); defaults to full volume so a
 // reply is never silenced by accident.
 let gain = { volume: 1, muted: false };
+// Whether she speaks her replies at all. Off means no speech is requested (nothing reaches the
+// text-to-speech provider); `muted` only silences audio that was still fetched.
+let speakReplies = true;
 
 /** Sets the playback gain. `volume` is clamped to 0..1; unknown fields keep their current value. */
 export function setSpeechGain(next = {}) {
+  if (next.speakReplies !== undefined) {
+    speakReplies = !!next.speakReplies;
+  }
   if (next.volume !== undefined) {
     gain.volume = Math.min(1, Math.max(0, Number(next.volume)));
   }
@@ -33,6 +39,11 @@ export function setSpeechGain(next = {}) {
   speechApi.setGain(gain.volume, gain.muted).catch(() => {
     /* the shell is not reachable (tests, browser preview): the next reply will use its saved gain */
   });
+}
+
+/** Whether she speaks her replies at all (the switch in Settings). */
+export function speaksReplies() {
+  return speakReplies;
 }
 
 /** Whether playback would be silent right now (muted or zero volume). */
