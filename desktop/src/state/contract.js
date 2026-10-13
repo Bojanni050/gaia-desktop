@@ -181,16 +181,21 @@ export function buildEpisodeEvidenceRequest(id) {
  * Only fields we actually have are populated: no confidence score, no session —
  * an honest absence beats a fabricated number. The evidence is left empty here
  * and loaded on demand by the card, so the list stays one cheap call.
+ *
+ * `title` is the synthesizer's own one-line statement of what happened. Older
+ * episodes (or a model that omitted it) carry '' — then the app name is the
+ * only honest heading we have, so it falls back to primary_app.
  */
 export function adaptKairosEpisode(episode) {
   if (!episode || typeof episode !== 'object') return null;
   const apps = Array.isArray(episode.involved_apps) ? episode.involved_apps : [];
   const primary = episode.primary_app || apps[0] || '';
+  const title = typeof episode.title === 'string' ? episode.title.trim() : '';
   return {
     id: episode.id,
     startTime: episode.start_time,
     endTime: episode.end_time,
-    title: primary || null,
+    title: title || primary || null,
     interpretation: episode.summary || '',
     epistemicStatus: episode.epistemic_status || 'interpretation',
     context: apps.map((application) => ({ application, type: 'application' })),
