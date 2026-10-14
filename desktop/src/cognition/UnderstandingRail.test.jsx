@@ -59,6 +59,30 @@ describe('UnderstandingRail', () => {
     expect(JSON.parse(localStorage.getItem('gaia.understanding.seen'))).toEqual(['h1', 'h2']);
   });
 
+  it('slides the drawer and the rail button as one movement, in and out', async () => {
+    invoke.mockResolvedValue(list([]));
+    const { container } = render(<UnderstandingRail pollMs={0} />);
+    const drawer = () => container.querySelector('.understanding-drawer');
+    const moved = () => Boolean(railOf(container).style.right);
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+
+    fireEvent.click(railOf(container));
+    // Mounted at its hidden position first; the button has not moved yet either...
+    expect(drawer()).toBeTruthy();
+    expect(drawer().className).not.toContain(' in');
+    expect(moved()).toBe(false);
+    // ...and then both start sliding on the same flip.
+    await waitFor(() => expect(drawer().className).toContain(' in'));
+    expect(moved()).toBe(true);
+
+    fireEvent.click(railOf(container));
+    // Closing: both head back at once, and the drawer is kept until its slide has finished.
+    expect(drawer()).toBeTruthy();
+    expect(drawer().className).not.toContain(' in');
+    expect(moved()).toBe(false);
+    await waitFor(() => expect(drawer()).toBeNull(), { timeout: 2000 });
+  });
+
   it('renders the review cards inside the drawer', async () => {
     invoke.mockResolvedValue(list(['h1']));
     const { container } = render(<UnderstandingRail pollMs={0} />);

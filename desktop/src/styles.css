@@ -159,13 +159,18 @@ body {
 .sidebar-section-error { font-family: var(--sans); font-size: 0.78rem; color: #C98B7A; padding: 4px 12px; }
 
 /* ---------------------------------------------------------------- understanding (right rail + drawer) */
+/* The drawer and the rail button are ONE movement: same duration, same curve, started by the same
+   state flip. Keep --understanding-slide equal to SLIDE_MS in UnderstandingRail.jsx. */
+:root { --understanding-slide: 0.45s; --understanding-ease: cubic-bezier(0.22, 0.61, 0.36, 1); }
 .understanding-rail {
   position: fixed; top: 0; right: 0; height: 100vh; width: 16px; z-index: 40;
   display: flex; align-items: center; justify-content: center;
   padding: 0; background: var(--surface); border: none; border-left: 1px solid var(--border);
   cursor: pointer;
-  transition: background-color 0.25s ease, right 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: background-color 0.25s ease, right var(--understanding-slide) var(--understanding-ease);
 }
+/* While the edge is dragged the button follows the pointer, it does not glide after it. */
+.understanding-rail.is-resizing { transition: background-color 0.25s ease; }
 .understanding-rail:hover { background: var(--surface-2); }
 .understanding-dot {
   width: 16px; height: 16px; border-radius: 50%;
@@ -184,9 +189,13 @@ body {
   position: fixed; top: 0; right: 16px; height: 100vh; z-index: 30;
   width: 380px; min-width: 0; max-width: 33vw; display: flex; flex-direction: column;
   background: var(--surface); border-left: 1px solid var(--border-strong);
-  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.38);
-  animation: understanding-slide-in 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* Hidden: pushed out past the rail, and without its shadow (which would otherwise bleed in). */
+  transform: translateX(calc(100% + 16px)); box-shadow: none;
+  transition: transform var(--understanding-slide) var(--understanding-ease),
+              box-shadow var(--understanding-slide) var(--understanding-ease);
 }
+.understanding-drawer.in { transform: none; box-shadow: -24px 0 60px rgba(0, 0, 0, 0.38); }
+.understanding-drawer.is-resizing { transition: none; }
 .understanding-resize {
   position: absolute; left: 0; top: 0; bottom: 0; width: 7px; z-index: 2;
   cursor: col-resize; touch-action: none;
@@ -196,10 +205,6 @@ body {
   background: transparent; transition: background-color 0.2s ease;
 }
 .understanding-resize:hover::after { background: var(--accent-line); }
-@keyframes understanding-slide-in {
-  from { transform: translateX(26px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
 .understanding-drawer-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 22px 20px 16px; border-bottom: 1px solid var(--border);
@@ -215,7 +220,7 @@ body {
 .understanding-drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px 26px; }
 @media (prefers-reduced-motion: reduce) {
   .understanding-rail.has-new .understanding-dot { animation: none; opacity: 1; }
-  .understanding-drawer { animation: none; }
+  .understanding-drawer, .understanding-rail { transition: none; }
 }
 
 /* cognition review — the human Absolute Override in the sidebar */

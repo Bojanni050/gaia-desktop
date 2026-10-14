@@ -23,6 +23,8 @@ import EpistemicReviewCard from './EpistemicReviewCard';
 const SEEN_KEY = 'gaia.understanding.seen';
 const WIDTH_KEY = 'gaia.understanding.width';
 const RAIL_WIDTH = 16;
+// How long the drawer and the rail button take to slide; matches `--understanding-slide` in styles.css.
+const SLIDE_MS = 450;
 
 /** The drawer never narrows below this (unless the window itself is smaller). */
 export const MIN_WIDTH = 300;
@@ -85,6 +87,12 @@ function writeWidth(value) {
  */
 export default function UnderstandingRail({ pollMs = 45000 } = {}) {
   const [open, setOpen] = useState(false);
+  // The drawer and the rail button slide as ONE movement: `shown` flips both at the same moment, and
+  // the drawer stays mounted until its slide out has finished. `resizing` switches the slide off while
+  // the edge is being dragged, so the button follows the pointer instead of trailing 0.45 s behind.
+  const [mounted, setMounted] = useState(false);
+  const [shown, setShown] = useState(false);
+  const [resizing, setResizing] = useState(false);
   const [items, setItems] = useState(null); // null = not loaded yet
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -124,6 +132,24 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     writeSeen(next);
     setSeen(next);
   }, [open, items]);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      // Two frames at the hidden position first, so the slide has a start to move from.
+      let second = 0;
+      const first = requestAnimationFrame(() => {
+        second = requestAnimationFrame(() => setShown(true));
+      });
+      return () => {
+        cancelAnimationFrame(first);
+        cancelAnimationFrame(second);
+      };
+    }
+    setShown(false);
+    const timer = setTimeout(() => setMounted(false), SLIDE_MS);
+    return () => clearTimeout(timer);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -191,10 +217,12 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     e.preventDefault();
     const previousSelect = document.body.style.userSelect;
     document.body.style.userSelect = 'none';
+    setResizing(true);
     const onMove = (ev) => {
       setWidth(clampWidth(window.innerWidth - RAIL_WIDTH - ev.clientX, window.innerWidth));
     };
     const onUp = () => {
+      setResizing(false);
       document.body.style.userSelect = previousSelect;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
@@ -208,8 +236,8 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     <>
       <button
         type="button"
-        className={`understanding-rail${hasNew ? ' has-new' : ''}`}
-        style={open ? { right: RAIL_WIDTH + effectiveWidth } : undefined}
+        className={`understanding-rail${hasNew ? ' has-new' : ''}${resizing ? ' is-resizing' : ''}`}
+        style={shown ? { right: RAIL_WIDTH + effectiveWidth } : undefined}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={hasNew ? L.cognitionRailNew : L.cognitionRailOpen}
@@ -217,9 +245,9 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
         <span className="understanding-dot" aria-hidden="true" />
       </button>
 
-      {open && (
+      {mounted && (
         <aside
-          className="understanding-drawer"
+          className={`understanding-drawer${shown ? ' in' : ''}${resizing ? ' is-resizing' : ''}`}
           style={{ width: `${effectiveWidth}px` }}
           aria-label={L.cognitionTitle}
         >
