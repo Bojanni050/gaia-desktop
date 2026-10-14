@@ -227,3 +227,9 @@
 - Findings: de titel stond op 1,4 rem en de rest van de popup was daar klein bij; gevraagd werd de titel op 1,5 rem en de rest "naar verhouding".
 - Conclusions: één factor voor alles, 1,5 / 1,4 ≈ 1,07, afgerond op twee decimalen, zodat de verhoudingen tussen titel, tabs, kopjes, velden, uitleg en knoppen gelijk blijven: titel 1,4 → 1,5; tabs 0,92 → 0,99; kopjes 0,74 → 0,79; velden/tekstvakken/dropdowns 0,85 → 0,91; uitleg- en statusregels 0,84 → 0,90; knoppen 0,88 → 0,94; MCP-servertabs 0,84 → 0,90; volumewaarde 0,78 → 0,84; token-knop 0,76 → 0,81; testresultaat 0,80 → 0,86; Hey Gaia-titel 0,90 → 0,96. De tekstinvoervelden hadden geen eigen grootte (ze gebruikten de browserstandaard, ≈ 0,83 rem) en kregen nu expliciet 0,91 zodat ze meeschalen. Bewust niet aangepast: andere panelen (bibliotheek, verbindingsmelding, About), omdat het alleen over de Settings-popup ging. De regels zijn op selector gevonden, niet op regelnummer: een eerste poging op regelnummers faalde door mijn eigen eerdere toevoeging en schreef daardoor niets weg.
 - Actions: `desktop/src/styles.css` (14 regels); validated visueel in de dev-app, beide tabs.
+
+## 2026-10-14 (`.field select`: marge 15px boven en onder)
+
+- Findings: op verzoek een marge op de dropdowns (`.field select`). De twee selects (uitvoer- en invoerapparaat) zitten elk in een `.field`-label met de labeltekst erboven (kolom, `gap: 5px`).
+- Conclusions: 15px boven en onder, gelijk aan de knoppen. Bijwerking, in de app bekeken: de marge zit op de select zelf, dus het label komt 15px + de 5px gap (20px) boven zijn dropdown te staan en hoort visueel minder bij elkaar; onder de select komt 15px bovenop de 15px van het veld. Dat is wat letterlijk gevraagd is; als alleen de ruimte tussen velden bedoeld was, is `margin-bottom` alleen, of de ruimte op het label, de nettere keuze.
+- Actions: `desktop/src/styles.css` (`.field select`); visueel bekeken in de dev-app (tab Algemeen).

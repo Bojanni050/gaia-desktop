@@ -684,6 +684,7 @@ body {
   background-repeat: no-repeat; background-position: right 13px center;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
+.field select { margin-top: 15px; margin-bottom: 15px; }
 .field select:hover { border-color: var(--accent-line); }
 .field select option { background: var(--surface-2); color: var(--text); }
 .field input:focus,
