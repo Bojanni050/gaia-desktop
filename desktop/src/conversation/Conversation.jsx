@@ -83,7 +83,7 @@ export default function Conversation({ thread, busy, streaming, progress, presen
                 // is a separate frame from the answer, so this row disappears the moment the
                 // reply itself starts streaming in.
                 <div className="thinking-row">
-                  <Presence state="thinking" size={26} label={progress ? stepProgressLabel(progress) : undefined} />
+                  <Presence state="thinking" size={36} label={progress ? stepProgressLabel(progress) : undefined} />
                 </div>
               )}
             </>
@@ -121,7 +121,7 @@ export default function Conversation({ thread, busy, streaming, progress, presen
       <div className="composer-dock">
         <div className="conversation-column">
           <div className="dock-presence">
-            <PresenceOrb state={busy ? 'thinking' : hasDraft ? 'listening' : presenceState} size={22} />
+            <PresenceOrb state={busy ? 'thinking' : hasDraft ? 'listening' : presenceState} size={30} />
           </div>
           <Composer onSend={onSend} busy={busy} onDraftChange={setHasDraft} listenState={listenState} />
         </div>

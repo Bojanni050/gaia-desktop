@@ -263,3 +263,9 @@
 - Findings: met "alleen een pulserend bolletje" was ook de regel "Stap x van y …" verdwenen, die concreet vertelt wat Gaia bij een meerstaps plan doet.
 - Conclusions: de regel komt terug, maar alleen als er echt voortgang is (`progress`); zonder plan blijft het één bolletje zonder tekst. De sequenced "ik denk na"-woorden blijven weg.
 - Actions: `desktop/src/conversation/Conversation.jsx` (`label` alleen bij `progress`, import terug); validated: vitest 243/243. Niet visueel gezien: een meerstaps plan is niet op verzoek te starten; het is dezelfde aanroep als vóór de wijziging van vandaag.
+
+## 2026-10-14 (bolletjes iets groter)
+
+- Findings: de stip van de orb is 42% van de opgegeven grootte (`.presence-orb`), dus bij `size={26}` (nadenken) was de stip maar ±11px en bij `size={22}` (naast het invoerveld) ±9px.
+- Conclusions: de twee kleine orbs ongeveer een derde groter: nadenken 26 → 36 (stip ±15px), invoerveld 22 → 30 (stip ±13px). Bewust niet aangeraakt: de grote orb bij de begroeting (72) en de kleine in de statusmelding (18); die zijn geen "bolletje bij het nadenken" en zijn al eerder bewust gekozen. De halo's en het ademritme schalen mee met de grootte.
+- Actions: `desktop/src/conversation/Conversation.jsx` (twee `size`-waarden); visueel bekeken in de dev-app.
