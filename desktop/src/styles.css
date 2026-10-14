@@ -652,6 +652,15 @@ body {
   .settings-columns { flex-direction: column; gap: 0; }
 }
 .settings-panel h2 { font-family: var(--serif); font-weight: 500; font-size: 1.4rem; margin: 0 0 4px; }
+/* Settings tabs: calm underline style, matching the panel's field look. */
+.settings-tabs { display: flex; gap: 22px; margin: 0 0 22px; border-bottom: 1px solid var(--border); }
+.settings-panel .settings-tab {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: 6px 2px 9px; margin-bottom: -1px; cursor: pointer;
+  font-family: var(--sans); font-size: 0.92rem; color: var(--text-faint);
+}
+.settings-panel .settings-tab:hover { color: var(--text); }
+.settings-panel .settings-tab.active { color: var(--text); border-bottom-color: var(--accent, #C9A266); }
 .settings-panel h3 {
   font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.09em;
   color: var(--text-faint); margin: 22px 0 10px; font-family: var(--sans); font-weight: 600;

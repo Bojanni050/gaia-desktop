@@ -59,6 +59,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const [showToken, setShowToken] = useState(false);
   const [toolsState, setToolsState] = useState({ loading: null, result: null, error: null });
   const [testState, setTestState] = useState({ loading: null, serverId: null, result: null, error: false });
+  const [tab, setTab] = useState('general'); // general | tools
 
   useEffect(() => {
     let active = true;
@@ -252,6 +253,21 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
         <h2>{L.settingsTitle}</h2>
 
+        <div className="settings-tabs" role="tablist">
+          {['general', 'tools'].map((id) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={tab === id}
+              className={`settings-tab${tab === id ? ' active' : ''}`}
+              onClick={() => setTab(id)}
+            >
+              {id === 'general' ? L.settingsTabGeneral : L.settingsTabTools}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'general' && (
         <div className="settings-columns">
           <div className="settings-col">
             <section>
@@ -364,7 +380,9 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <span>{L.settingsMuted}</span>
               </label>
             </section>
+          </div>
 
+          <div className="settings-col">
             <section>
               <h3>{L.settingsMicrophone}</h3>
               <label className="field field-toggle">
@@ -448,7 +466,11 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
               </p>
             </section>
           </div>
+        </div>
+        )}
 
+        {tab === 'tools' && (
+        <div className="settings-columns">
           <div className="settings-col">
             <section>
               <h3>{L.settingsDesktop}</h3>
@@ -487,7 +509,9 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 />
               </label>
             </section>
+          </div>
 
+          <div className="settings-col">
             <section>
               <h3>{L.settingsMcp}</h3>
               <p className="capability-line">{L.settingsMcpHint}</p>
@@ -571,6 +595,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
             </section>
           </div>
         </div>
+        )}
 
         <div className="settings-actions">
           <button

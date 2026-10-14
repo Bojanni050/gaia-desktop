@@ -154,3 +154,9 @@
 - Findings: met de naam-/testvelden en de uitgebreide Desktop-sectie was de popup (980px) te krap: de lange toolslijst en de teststatus stonden in één niet-wrappende flex-rij en liepen buiten de MCP-kaart.
 - Conclusions: breedte naar 1280px (blijft begrensd door `max-width: 94vw`, dus smallere vensters en de bestaande 1-kolom-breakpoint onder 820px blijven werken). In de MCP-rij blijven de knoppen op één regel en komen test-/toolsmeldingen eronder op volle breedte met `overflow-wrap: anywhere`, omdat de toolslijst één lange reeks namen zonder spaties is.
 - Actions: `desktop/src/styles.css` (`.settings-panel` width, `.mcp-server .field-row` wrap + `.capability-line` order/basis); validated in de draaiende dev-app (screenshot).
+
+## 2026-10-14 (Settings: aparte tab voor tools/MCP)
+
+- Findings: de settings-popup raakte vol: cloud, gedrag, microfoon, desktop-rechten én de MCP-serverlijst (met naam, test en toolslijst per server) stonden in één scherm.
+- Conclusions: twee tabs, "Algemeen" (cloud + gedrag | microfoon + capabilities) en "Tools" (Werken op deze computer | MCP-toolservers). De desktop-rechten horen bij Tools, omdat ze zonder de MCP-server (Desktop Commander) niets doen. Beide tabs delen één formulierstate en dezelfde Opslaan-knop; wisselen van tab verliest dus geen ongeopslagen wijzigingen. Tab-keuze is alleen sessiestate (opent altijd op Algemeen).
+- Actions: `desktop/src/settings/SettingsPanel.jsx` (tabstate, tabbalk, twee conditionele kolomblokken), `desktop/src/styles.css` (`.settings-tabs`, `.settings-tab`), `desktop/src/lib/lexicon.js` (`settingsTabGeneral/Tools` nl+en); validated: vitest 229/229 en visueel in de dev-app (beide tabs).
