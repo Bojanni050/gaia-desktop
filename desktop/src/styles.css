@@ -668,11 +668,13 @@ body {
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted); }
 .field input[type='url'],
 .field input[type='password'],
-.field input[type='text'] {
+.field input[type='text'],
+.field textarea {
   font-family: var(--sans); color: var(--text); background: var(--surface-2);
   border: 1px solid var(--border-strong); border-radius: 11px;
   padding: 9px 12px; outline: none; transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
+.field textarea { font-size: 0.85rem; line-height: 1.45; color-scheme: dark; }
 .field select {
   font-family: var(--sans); font-size: 0.85rem; color: var(--text); background-color: var(--surface-2);
   border: 1px solid var(--border-strong); border-radius: 11px;
@@ -685,6 +687,7 @@ body {
 .field select:hover { border-color: var(--accent-line); }
 .field select option { background: var(--surface-2); color: var(--text); }
 .field input:focus,
+.field textarea:focus,
 .field select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px rgba(203, 163, 106, 0.07); }
 .field-toggle { flex-direction: row; align-items: center; gap: 9px; }
 .field-toggle input { accent-color: var(--accent); }
@@ -1140,4 +1143,4 @@ body {
 
 /* Desktop actions: the prompt reuses the research question's look; long file content scrolls. */
 .desktop-content { max-height: 220px; overflow: auto; }
-.mcp-server textarea, .settings-col textarea { width: 100%; resize: vertical; font: inherit; }
+.mcp-server textarea, .settings-col textarea { width: 100%; resize: vertical; }
