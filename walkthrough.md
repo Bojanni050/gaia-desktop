@@ -142,3 +142,9 @@
 - Findings: de testknop faalde in de echte app op de bestaande Desktop Commander-config (`npx -y @wonderwhy-er/desktop-commander@latest`). Oorzaak gereproduceerd in Rust: `Command::new("npx")` geeft "program not found" op Windows, want `npx` bestaat daar alleen als `npx.cmd`-shim; `npx.cmd` start wel. Dit was al zo vóór de testknop, dus "Tools tonen" en `mcp_call_tool` faalden voor `npx`-servers op dezelfde manier (en `npx` is de placeholder in het formulier).
 - Conclusions: de fix hoort in `StdioClient::connect`, niet in de UI, zodat elk pad (test, tools, aanroepen) profiteert. Alleen bij NotFound, zonder extensie, op Windows, wordt één keer `<command>.cmd` geprobeerd; de oorspronkelijke fout blijft de gemelde fout. Geen shell (`cmd /c`) gebruikt, om geen argument-injectie te introduceren.
 - Actions: `src-tauri/src/mcp/client.rs` (`spawn_with`, `spawn_server`, windows-only test `bare_cmd_shim_name_still_launches_on_windows`); validated: cargo test mcp 6/6, en in de draaiende dev-app: Testen op Desktop Commander geeft "Connected: desktop-commander (25 tools)" en vult het naamveld.
+
+## 2026-10-14 (EN-vertalingen voor "Werken op deze computer")
+
+- Findings: de EN-lexicon miste 10 sleutels die bij de desktop-capability alleen in NL waren toegevoegd (`settingsDesktop*`, `desktopAsk/Allow/Deny/NoticeClose`). De `L`-proxy valt terug op de sleutelnaam zelf, dus de EN-gebruiker zag ruwe sleutels in Settings, en de bevestigingsprompt voor schrijf-/commando-acties had dezelfde gaten.
+- Conclusions: sleutels aangevuld met een vertaling van de NL-tekst (zelfde betekenis, inclusief de waarschuwing dat de blokkadelijst geen sandbox is). Daarnaast een pariteitstest, omdat dit anders ongemerkt opnieuw gebeurt bij de volgende NL-only toevoeging.
+- Actions: `desktop/src/lib/lexicon.js` (10 EN-sleutels), nieuw `desktop/src/lib/lexicon.test.js` (NL en EN hebben dezelfde sleutels); validated.
