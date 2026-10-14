@@ -4,7 +4,7 @@ import { L } from '../lib/lexicon';
 import { formatTurnTime } from '../lib/timestamp';
 import Markdown from './Markdown';
 
-function AssistantBody({ content, reasoning, streaming }) {
+function AssistantBody({ content, reasoning }) {
   let cleanContent = content;
   let displayReasoning = reasoning;
 
@@ -23,7 +23,12 @@ function AssistantBody({ content, reasoning, streaming }) {
   return (
     <>
       {displayReasoning && (
-        <details className="thought-process" open={streaming}>
+        // Closed from the first token: the thought process is something to
+        // look into, not a panel that unfolds above the answer while the
+        // answer is still being written. An open panel pushes the reply down
+        // under the person's eyes mid-sentence and takes the scroll position
+        // with it. It opens by hand, whenever they want it.
+        <details className="thought-process">
           <summary className="thought-process-title">{L.thoughtProcess}</summary>
           <div className="thought-process-body">
             <Markdown>{displayReasoning}</Markdown>
@@ -39,7 +44,7 @@ function AssistantBody({ content, reasoning, streaming }) {
  * MessageView — the web's message anatomy, ported: user bubbles right in
  * accent-soft, assistant replies in Gaia's serif voice under her name.
  */
-export default function MessageView({ message, streaming, onRetry, onDelete }) {
+export default function MessageView({ message, onRetry, onDelete }) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
   const time = formatTurnTime(message.createdAt);
@@ -70,7 +75,7 @@ export default function MessageView({ message, streaming, onRetry, onDelete }) {
           {isUser ? (
             <p className="user-text">{message.content}</p>
           ) : (
-            <AssistantBody content={message.content} reasoning={message.reasoning} streaming={streaming} />
+            <AssistantBody content={message.content} reasoning={message.reasoning} />
           )}
         </div>
 

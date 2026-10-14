@@ -27,3 +27,27 @@ describe('MessageView: the light for what Gaia kept', () => {
     expect(screen.queryByRole('img', { name: L.memoryKept })).toBeNull();
   });
 });
+
+describe('MessageView: the thought process', () => {
+  const withReasoning = reply({ content: 'De vps staat nog op het oude adres.', reasoning: 'Eerst kijken waar hij op luistert.' });
+
+  it('starts closed, so the answer is never pushed around while it is being written', () => {
+    render(<MessageView message={withReasoning} />);
+    const panel = screen.getByText(L.thoughtProcess).closest('details');
+    expect(panel.hasAttribute('open')).toBe(false);
+  });
+
+  it('keeps the thought process readable and the answer outside it', () => {
+    render(<MessageView message={withReasoning} />);
+    const body = screen.getByText(L.thoughtProcess).closest('details').querySelector('.thought-process-body');
+    expect(body.textContent).toContain('Eerst kijken waar hij op luistert.');
+    // Closing it hides the thinking, never the reply.
+    expect(body.textContent).not.toContain('De vps staat nog op het oude adres.');
+    expect(screen.getByText('De vps staat nog op het oude adres.')).toBeTruthy();
+  });
+
+  it('shows no panel at all when Gaia did not think out loud', () => {
+    render(<MessageView message={reply()} />);
+    expect(screen.queryByText(L.thoughtProcess)).toBeNull();
+  });
+});

@@ -113,12 +113,9 @@ export default function Conversation({ thread, busy, streaming, progress, presen
             </div>
           ) : (
             <>
-              {messages.map((m, i) => {
-                const isLastAssistant = m.role === 'assistant' && i === messages.length - 1;
-                return (
-                  <MessageView key={m.id} message={m} streaming={streaming && isLastAssistant} onRetry={onRetry} />
-                );
-              })}
+              {messages.map((m) => (
+                <MessageView key={m.id} message={m} onRetry={onRetry} />
+              ))}
               {busy && !streaming && (
                 // The pulsing orb while Gaia works on her reply, with no sequenced thinking
                 // words. Only a multi-step plan adds its step line ("Step 2 of 3 - ..."): that
