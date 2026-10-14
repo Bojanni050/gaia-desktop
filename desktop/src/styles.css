@@ -665,7 +665,7 @@ body {
   font-size: 0.79rem; text-transform: uppercase; letter-spacing: 0.09em;
   color: var(--text-faint); margin: 22px 0 10px; font-family: var(--sans); font-weight: 600;
 }
-.field { display: flex; flex-direction: column; gap: 5px; margin-top: 15px; margin-bottom: 15px; font-size: 0.91rem; color: var(--text-muted); }
+.field { display: flex; flex-direction: column; gap: 5px; margin-top: 15px; margin-bottom: 0; font-size: 0.91rem; color: var(--text-muted); }
 .field input[type='url'],
 .field input[type='password'],
 .field input[type='text'],
@@ -688,9 +688,9 @@ body {
    Checkboxes are left out: they sit in a row beside their text, which already has the field's margin. */
 .field input:not([type='checkbox']):not([type='radio']),
 .field select,
-.field textarea { margin-top: 15px; margin-bottom: 15px; }
+.field textarea { margin-top: 0; margin-bottom: 15px; }
 /* The token row stretches its button to the input's height, so its room sits on the row instead. */
-.token-row { margin-top: 15px; margin-bottom: 15px; }
+.token-row { margin-top: 0; margin-bottom: 15px; }
 .field .token-row input:not([type='checkbox']):not([type='radio']) { margin-top: 0; margin-bottom: 0; }
 .field select:hover { border-color: var(--accent-line); }
 .field select option { background: var(--surface-2); color: var(--text); }
@@ -702,7 +702,8 @@ body {
 .field-row { display: flex; align-items: center; gap: 10px; }
 .token-row { display: flex; gap: 8px; }
 .token-row input { flex: 1; }
-.volume-row { display: flex; align-items: center; gap: 10px; }
+.volume-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+.field .volume-row input:not([type='checkbox']):not([type='radio']) { margin-top: 0; margin-bottom: 0; }
 .volume-row input[type='range'] { flex: 1; accent-color: var(--accent); }
 .volume-value { flex: none; min-width: 2.8em; text-align: right; font-size: 0.84rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .token-toggle {
