@@ -221,3 +221,9 @@
 - Findings: de knoppen in de popup (Verbinding testen, Opnieuw instellen, Test, Tools tonen, Bewaren, Sluiten) hadden geen eigen verticale ruimte en plakten tegen de velden en regels erboven en eronder.
 - Conclusions: `margin-top` en `margin-bottom` van 15px op de gedeelde knopregel (`.settings-actions button`, `.settings-panel .field-row button`). Bewust niet op alle knoppen in het paneel: de tabs (Algemeen/Tools) en de MCP-servertabs zijn ook knoppen, maar horen als tabbalk tegen elkaar te staan. Gevolg: de actieknoppenrij onderaan wordt 30px hoger (de 15px komt bovenop de bestaande 24px marge van de rij); de rijen met knoppen en tekst ernaast blijven verticaal gecentreerd.
 - Actions: `desktop/src/styles.css` (knopregel); visueel bekeken in de dev-app.
+
+## 2026-10-14 (Settings: titel 1,5 rem, de rest naar verhouding)
+
+- Findings: de titel stond op 1,4 rem en de rest van de popup was daar klein bij; gevraagd werd de titel op 1,5 rem en de rest "naar verhouding".
+- Conclusions: één factor voor alles, 1,5 / 1,4 ≈ 1,07, afgerond op twee decimalen, zodat de verhoudingen tussen titel, tabs, kopjes, velden, uitleg en knoppen gelijk blijven: titel 1,4 → 1,5; tabs 0,92 → 0,99; kopjes 0,74 → 0,79; velden/tekstvakken/dropdowns 0,85 → 0,91; uitleg- en statusregels 0,84 → 0,90; knoppen 0,88 → 0,94; MCP-servertabs 0,84 → 0,90; volumewaarde 0,78 → 0,84; token-knop 0,76 → 0,81; testresultaat 0,80 → 0,86; Hey Gaia-titel 0,90 → 0,96. De tekstinvoervelden hadden geen eigen grootte (ze gebruikten de browserstandaard, ≈ 0,83 rem) en kregen nu expliciet 0,91 zodat ze meeschalen. Bewust niet aangepast: andere panelen (bibliotheek, verbindingsmelding, About), omdat het alleen over de Settings-popup ging. De regels zijn op selector gevonden, niet op regelnummer: een eerste poging op regelnummers faalde door mijn eigen eerdere toevoeging en schreef daardoor niets weg.
+- Actions: `desktop/src/styles.css` (14 regels); validated visueel in de dev-app, beide tabs.
