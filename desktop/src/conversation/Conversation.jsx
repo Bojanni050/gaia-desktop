@@ -7,7 +7,6 @@ import DesktopPrompt from './DesktopPrompt';
 import Presence from '../presence/Presence';
 import { PresenceOrb } from '../presence/PresenceOrb';
 import { getGreeting } from '../lib/greeting';
-import { stepProgressLabel } from '../state/stepProgress';
 
 /**
  * Conversation — the web's structure, ported: centered column, the welcome
@@ -77,19 +76,11 @@ export default function Conversation({ thread, busy, streaming, progress, presen
                 );
               })}
               {busy && !streaming && (
+                // Only the pulsing orb while Gaia works on her reply: no sequenced thinking
+                // words and no "Step 2 of 3" line. The row disappears the moment the reply
+                // itself starts streaming in.
                 <div className="thinking-row">
-                  {progress ? (
-                    // A multi-step plan is running: its step line replaces
-                    // the sequenced thinking message, because "Step 2 of 3
-                    // - searching..." is the more specific — and still
-                    // entirely honest — statement of what Gaia is doing
-                    // right now. Progress is a separate frame from the
-                    // answer, so this row disappears the moment the reply
-                    // itself starts streaming in.
-                    <Presence state="thinking" size={26} label={stepProgressLabel(progress)} />
-                  ) : (
-                    <Presence isThinking={true} type="general" state="thinking" size={26} />
-                  )}
+                  <Presence state="thinking" size={26} />
                 </div>
               )}
             </>

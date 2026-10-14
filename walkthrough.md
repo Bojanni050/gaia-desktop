@@ -251,3 +251,9 @@
 - Findings: het label stond op 5px van zijn veld; op verzoek ruimer.
 - Conclusions: `gap: 8px` op `.field`. Raakt ook de checkbox-rijen niet: `.field-toggle` heeft een eigen horizontale gap.
 - Actions: `desktop/src/styles.css` (`.field`); geen test nodig.
+
+## 2026-10-14 (nadenken: alleen een pulserend bolletje, geen tekst)
+
+- Findings: terwijl Gaia aan haar antwoord werkte stond naast de orb een reeks "ik ben aan het denken"-woorden (gesequenced door `usePresenceAnimator`) of, bij een meerstaps plan, een regel als "Stap 2 van 3 …" (`stepProgressLabel`).
+- Conclusions: op verzoek alleen de orb in zijn `thinking`-stand (die zelf al zacht pulseert: schaal en kerngloed ademen mee), zonder tekst. De regel "Stap x van y" is dus ook weg, terwijl die concrete informatie gaf: dat is een gevolg van "alleen een bolletje". De code van `Presence` (`isThinking`, `label`), `usePresenceAnimator` en `stepProgress.js` met zijn tests blijft staan maar wordt door dit scherm niet meer aangeroepen; het weghalen is een aparte, bewuste opschoonactie en niet gedaan om terugdraaien makkelijk te houden. De rij verdwijnt zoals voorheen zodra het antwoord begint te streamen.
+- Actions: `desktop/src/conversation/Conversation.jsx` (denkrij = `<Presence state="thinking" size={26} />`, ongebruikte import weg); validated: vitest 243/243 en visueel in de dev-app (na een verstuurd bericht: alleen het bolletje).
