@@ -245,3 +245,9 @@
 - Findings: met 15px boven én onder elk control stond het label 20px van zijn veld af en hoorde het visueel bij de tekst erboven.
 - Conclusions: de `.field` (het label) kreeg `margin-bottom: 0` (de bovenmarge van 15px blijft), en invoer, dropdown, tekstvak, slider en tokenrij hebben alleen nog `margin-bottom: 15px` en geen bovenmarge; het label zit daardoor op de gap van 5px van zijn veld. De ruimte tussen twee velden is nu 15px (onder het veld) plus 15px (boven het volgende label); dat is bewust ruimer dan voorheen, omdat de marge binnen het flex-label niet samenvalt met de marge van het volgende veld. Sliders staan in een rij met hun tekst ("Gevoeliger/Strenger", het percentage); een marge op de slider zelf zou hem ten opzichte van die tekst omhoog duwen, daarom zit hun ruimte op de rij (`.volume-row`) en niet op de slider.
 - Actions: `desktop/src/styles.css` (`.field`, controlregel, `.token-row`, `.volume-row`); visueel bekeken in de dev-app (tab Algemeen).
+
+## 2026-10-14 (`.field` gap 8px)
+
+- Findings: het label stond op 5px van zijn veld; op verzoek ruimer.
+- Conclusions: `gap: 8px` op `.field`. Raakt ook de checkbox-rijen niet: `.field-toggle` heeft een eigen horizontale gap.
+- Actions: `desktop/src/styles.css` (`.field`); geen test nodig.

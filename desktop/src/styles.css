@@ -665,7 +665,7 @@ body {
   font-size: 0.79rem; text-transform: uppercase; letter-spacing: 0.09em;
   color: var(--text-faint); margin: 22px 0 10px; font-family: var(--sans); font-weight: 600;
 }
-.field { display: flex; flex-direction: column; gap: 5px; margin-top: 15px; margin-bottom: 0; font-size: 0.91rem; color: var(--text-muted); }
+.field { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; margin-bottom: 0; font-size: 0.91rem; color: var(--text-muted); }
 .field input[type='url'],
 .field input[type='password'],
 .field input[type='text'],
