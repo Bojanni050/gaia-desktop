@@ -99,6 +99,9 @@ export const settingsApi = {
 export const desktopApi = {
   // The person's Desktop / Documents / Downloads, where Windows really keeps them.
   knownPlaces: () => invoke('desktop_known_places'),
+  // Everything (es.exe): instant name search over every drive, folders included.
+  everythingAvailable: () => invoke('everything_available'),
+  everythingSearch: (query, kind, path, max) => invoke('everything_search', { query, kind, path, max }),
 };
 
 export const mcpApi = {

@@ -16,6 +16,7 @@ pub mod audio;
 pub mod capture;
 pub mod communication;
 pub mod error;
+pub mod everything;
 pub mod history;
 pub mod library;
 pub mod mcp;
@@ -262,6 +263,9 @@ pub fn run() {
             mcp::mcp_call_tool,
             // well-known folders, told to Gaia so she knows where to start looking
             places::desktop_known_places,
+            // instant name search through Everything (es.exe), when installed
+            everything::everything_available,
+            everything::everything_search,
             // presence
             presence::presence_get,
             presence::presence_set_quiet,

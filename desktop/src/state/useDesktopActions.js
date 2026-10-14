@@ -17,6 +17,8 @@ export function useDesktopActions() {
         listTools: mcpApi.listTools,
         getSettings: settingsApi.get,
         getPlaces: desktopApi.knownPlaces,
+        searchIndex: desktopApi.everythingSearch,
+        indexAvailable: desktopApi.everythingAvailable,
       }),
     []
   );

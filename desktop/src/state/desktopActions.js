@@ -135,6 +135,22 @@ export function checkLimits(skill, input, desktopSettings) {
 
 const FOLDER_SEARCH_DEPTH = 3;
 const MAX_FOLDER_HITS = 50;
+const INDEX_FETCH = 200; // how many raw hits to ask for, before the allowed folders cut them down
+const MAX_INDEX_HITS = 50;
+const INDEX_TIMEOUT_MS = 15 * 1000;
+const INDEX_UNAVAILABLE =
+  'De zoekindex (Everything) is niet beschikbaar. Zoek met where "folders" voor mappen of where "names" voor bestanden.';
+
+/**
+ * What the index found, cut down to what Gaia may see: only paths inside the allowed folders (and
+ * inside the folder she asked about), whatever else the index knows about this computer.
+ */
+export function indexResultText(paths, allowedDirs, within) {
+  const kept = (Array.isArray(paths) ? paths : [])
+    .filter((p) => typeof p === 'string' && isWithinAllowed(p, allowedDirs) && (!within || isWithinAllowed(p, [within])))
+    .slice(0, MAX_INDEX_HITS);
+  return kept.length > 0 ? kept.join('\n') : 'Niets gevonden in de zoekindex binnen de toegestane mappen.';
+}
 
 /**
  * The `[DIR]` lines of a `list_directory` result whose own name contains `query`, turned into full
@@ -175,6 +191,11 @@ export function toolCallsFor(skill, input) {
       const where = String(i.where ?? 'names').toLowerCase();
       // Desktop Commander's name search only matches files, never folders, so finding a folder
       // means listing a few levels down and keeping the folders whose name matches.
+      // Everything's index answers by name for files and folders alike, instantly, but is only
+      // there when it is installed and running (see `indexAvailable`).
+      if (where === 'index') {
+        return [{ native: 'index', args: { query, kind: i.kind, path: i.path } }];
+      }
       if (where === 'folders') {
         return [
           {
@@ -222,7 +243,18 @@ export function truncateOutput(text, max = MAX_OUTPUT_CHARS) {
  * `listTools`– mcpApi.listTools(serverId), used only to see whether it runs
  * `getSettings` – settingsApi.get
  */
-export function createDesktopActions({ request, callTool, listTools, getSettings, getPlaces = async () => ({}), now = Date.now }) {
+export function createDesktopActions({
+  request,
+  callTool,
+  listTools,
+  getSettings,
+  getPlaces = async () => ({}),
+  searchIndex = async () => {
+    throw new Error('no index');
+  },
+  indexAvailable = async () => false,
+  now = Date.now,
+}) {
   // id → 'prompted' | 'decided' | 'running' | 'done'. A frame for an id that is
   // past its prompt is ignored; 'done' is kept so a late repeat can't re-run it.
   const phase = new Map();
@@ -298,8 +330,19 @@ export function createDesktopActions({ request, callTool, listTools, getSettings
 
     try {
       const outputs = [];
-      for (const { tool, args, transform } of calls) {
+      for (const { tool, args, transform, native } of calls) {
         if (run.aborted) return finish(false, 'Afgebroken.');
+        if (native === 'index') {
+          // Not Desktop Commander: no probe reset or "not reachable" notice if this one fails.
+          let paths;
+          try {
+            paths = await withTimeout(searchIndex(args.query, args.kind, args.path, INDEX_FETCH), INDEX_TIMEOUT_MS);
+          } catch (_) {
+            return finish(false, INDEX_UNAVAILABLE);
+          }
+          outputs.push(indexResultText(paths, settings.allowedDirs, args.path));
+          continue;
+        }
         const result = await withTimeout(callTool(settings.serverId, tool, args), CALL_TIMEOUT_MS);
         const { text, isError } = readToolResult(result);
         if (isError) return finish(false, text || 'De actie mislukte.');
@@ -420,6 +463,21 @@ export function createDesktopActions({ request, callTool, listTools, getSettings
     return ok;
   }
 
+  let indexProbe = null; // { ok, at }
+
+  /** Whether Everything can be asked right now; cached briefly so a turn does not spawn es.exe each time. */
+  async function isIndexAvailable() {
+    if (indexProbe && now() - indexProbe.at < (indexProbe.ok ? PROBE_OK_MS : PROBE_FAIL_MS)) return indexProbe.ok;
+    let ok = false;
+    try {
+      ok = (await indexAvailable()) === true;
+    } catch (_) {
+      ok = false;
+    }
+    indexProbe = { ok, at: now() };
+    return ok;
+  }
+
   /**
    * The allowed folders, as full paths, for telling Gaia where she may look. Same list the limits
    * are checked against; entries that are not usable paths are left out.
@@ -459,6 +517,7 @@ export function createDesktopActions({ request, callTool, listTools, getSettings
     isAvailable,
     allowedRoots,
     knownPlaces,
+    isIndexAvailable,
     dismissNotice: () => setNotice(null),
     subscribe: (fn) => {
       listeners.add(fn);

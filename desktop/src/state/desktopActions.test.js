@@ -7,6 +7,7 @@ import {
   checkLimits,
   toolCallsFor,
   foldersMatching,
+  indexResultText,
   readToolResult,
   truncateOutput,
   createDesktopActions,
@@ -32,7 +33,7 @@ const frame = (fields) => ({
   ...fields,
 });
 
-function setup({ settings = DESKTOP, callTool, listTools, getPlaces } = {}) {
+function setup({ settings = DESKTOP, callTool, listTools, getPlaces, searchIndex, indexAvailable } = {}) {
   const request = vi.fn(async () => ({ status: 204 }));
   const tool = callTool || vi.fn(async () => ({ content: [{ type: 'text', text: 'ok-output' }] }));
   const controller = createDesktopActions({
@@ -41,6 +42,8 @@ function setup({ settings = DESKTOP, callTool, listTools, getPlaces } = {}) {
     listTools: listTools || vi.fn(async () => []),
     getSettings: async () => ({ desktop: settings }),
     ...(getPlaces ? { getPlaces } : {}),
+    ...(searchIndex ? { searchIndex } : {}),
+    ...(indexAvailable ? { indexAvailable } : {}),
   });
   const posts = () => request.mock.calls.map(([r]) => [r.path, r.body]);
   return { controller, request, tool, posts };
@@ -131,6 +134,23 @@ describe('mapping skills onto Desktop Commander', () => {
     expect(call.tool).toBe('list_directory');
     expect(call.args).toEqual({ path: 'D:\\Desk', depth: 3 });
     expect(call.transform(listing)).toContain('[DIR] D:\\Desk\\txtjes');
+  });
+
+  it('asks the index for an index search, and shows only what lies inside the allowed folders', () => {
+    const [call] = toolCallsFor('file-search', { path: 'D:/', query: 'txtjes', where: 'index', kind: 'folders' });
+    expect(call).toEqual({ native: 'index', args: { query: 'txtjes', kind: 'folders', path: 'D:/' } });
+
+    const hits = ['D:/OneDrive/Bureaublad/txtjes', 'C:/Users/bojan/OneDrive/Bureaublad/txtjes', 'N:/txtjes', 7];
+    // N: is known to the index but not allowed: it never reaches Gaia
+    expect(indexResultText(hits, ['D:/', 'C:/'], undefined)).toBe(
+      ['D:/OneDrive/Bureaublad/txtjes', 'C:/Users/bojan/OneDrive/Bureaublad/txtjes'].join('\n'),
+    );
+    // asked about D: only
+    expect(indexResultText(hits, ['D:/', 'C:/'], 'D:/')).toBe('D:/OneDrive/Bureaublad/txtjes');
+    expect(indexResultText(['N:/txtjes'], ['D:/'], undefined)).toMatch(/Niets gevonden/);
+    expect(indexResultText(undefined, ['D:/'], undefined)).toMatch(/Niets gevonden/);
+    const many = Array.from({ length: 80 }, (_, n) => `D:/f${n}`);
+    expect(indexResultText(many, ['D:/'], undefined).split('\n')).toHaveLength(50);
   });
 
   it('searches names by default, and contents only when asked', () => {
@@ -359,6 +379,42 @@ describe('whether a turn may offer desktop', () => {
     expect(await controller.isAvailable()).toBe(true);
     expect(await controller.isAvailable()).toBe(true);
     expect(listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs an index search through the index, not Desktop Commander, and says plainly when it is down', async () => {
+    const input = { path: 'D:/', query: 'txtjes', where: 'index', kind: 'folders' };
+    const searchIndex = vi.fn(async () => ['D:/OneDrive/Bureaublad/txtjes', 'N:/txtjes']);
+    const callTool = vi.fn();
+    const ok = setup({ settings: { ...DESKTOP, allowedDirs: ['D:/'] }, callTool, searchIndex });
+    await ok.controller.handleFrame(frame({ id: 'i1', skill: 'file-search', policy: 'auto', status: 'approved', input }));
+    expect(searchIndex).toHaveBeenCalledWith('txtjes', 'folders', 'D:/', 200);
+    expect(callTool).not.toHaveBeenCalled();
+    // N: is in the index but outside the allowed folders: Gaia only gets the D: hit
+    expect(ok.posts()).toEqual([['desktop/actions/i1/result', { ok: true, output: 'D:/OneDrive/Bureaublad/txtjes' }]]);
+
+    const down = setup({
+      settings: { ...DESKTOP, allowedDirs: ['D:/'] },
+      callTool,
+      searchIndex: async () => {
+        throw new Error('Everything is not running');
+      },
+    });
+    await down.controller.handleFrame(frame({ id: 'i2', skill: 'file-search', policy: 'auto', status: 'approved', input }));
+    const [[, body]] = down.posts();
+    expect(body.ok).toBe(false);
+    expect(body.output).toMatch(/zoekindex/);
+    expect(down.controller.getSnapshot().notice).toBeNull(); // not a Desktop Commander outage
+  });
+
+  it('knows whether the index is available, and remembers the answer briefly', async () => {
+    const indexAvailable = vi.fn(async () => true);
+    const { controller } = setup({ indexAvailable });
+    expect(await controller.isIndexAvailable()).toBe(true);
+    expect(await controller.isIndexAvailable()).toBe(true);
+    expect(indexAvailable).toHaveBeenCalledTimes(1);
+    const down = setup({ indexAvailable: async () => { throw new Error('no'); } });
+    expect(await down.controller.isIndexAvailable()).toBe(false);
+    expect(await setup().controller.isIndexAvailable()).toBe(false);
   });
 
   it('reports Desktop, Documents and Downloads only when they are inside the allowed folders', async () => {

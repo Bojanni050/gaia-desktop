@@ -52,7 +52,7 @@ export function buildTurnRequest(messages, conversationId) {
  * into the prompt the way the non-streaming path does (gaia-api/src/
  * server.js); a pre-existing gap shared with Web, not introduced here.
  */
-export function buildStreamTurnBody(messages, conversationId, { desktop = false, desktopRoots = [], desktopPlaces = {} } = {}) {
+export function buildStreamTurnBody(messages, conversationId, { desktop = false, desktopRoots = [], desktopPlaces = {}, desktopIndex = false } = {}) {
   const body = buildTurnBody(messages, conversationId);
   // Declares that this client can carry out actions on this computer (Desktop Commander is
   // running and allowed). Left off entirely otherwise: the server then never offers the tool.
@@ -62,6 +62,9 @@ export function buildStreamTurnBody(messages, conversationId, { desktop = false,
     if (Array.isArray(desktopRoots) && desktopRoots.length > 0) body.desktopRoots = desktopRoots;
     // Where the person's Desktop, Documents and Downloads really are, so she starts in the right place.
     if (desktopPlaces && Object.keys(desktopPlaces).length > 0) body.desktopPlaces = desktopPlaces;
+    // The computer's search index (Everything) is installed and running: she may search by name
+    // across drives, folders included.
+    if (desktopIndex === true) body.desktopIndex = true;
   }
   return body;
 }

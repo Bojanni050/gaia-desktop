@@ -119,6 +119,13 @@ describe('buildStreamTurnBody desktopRoots', () => {
     expect(buildStreamTurnBody(messages, 't', { desktop: true })).not.toHaveProperty('desktopRoots');
   });
 
+  it('says the search index is there only when it is, and only together with desktop: true', () => {
+    expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopIndex: true }).desktopIndex).toBe(true);
+    expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopIndex: false })).not.toHaveProperty('desktopIndex');
+    expect(buildStreamTurnBody(messages, 't', { desktop: true })).not.toHaveProperty('desktopIndex');
+    expect(buildStreamTurnBody(messages, 't', { desktop: false, desktopIndex: true })).not.toHaveProperty('desktopIndex');
+  });
+
   it('sends the known places only together with desktop: true', () => {
     const places = { desktop: 'D:/OneDrive/Bureaublad' };
     expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopPlaces: places }).desktopPlaces).toEqual(places);
