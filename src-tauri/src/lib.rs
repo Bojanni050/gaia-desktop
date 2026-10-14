@@ -257,6 +257,7 @@ pub fn run() {
             settings::settings_save,
             // mcp — local tool servers, technical capability only
             mcp::mcp_list_tools,
+            mcp::mcp_test_server,
             mcp::mcp_call_tool,
             // presence
             presence::presence_get,

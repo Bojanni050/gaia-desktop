@@ -18,6 +18,9 @@ pub struct McpSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct McpServerConfig {
     pub id: String,
+    /// Display name; filled from the server's own `serverInfo.name` after a
+    /// successful test. Purely cosmetic — lookups always use `id`.
+    pub name: String,
     pub enabled: bool,
     pub command: String,
     pub args: Vec<String>,
@@ -42,6 +45,7 @@ mod tests {
             enabled: true,
             command: "npx".to_string(),
             args: vec!["-y".to_string()],
+            ..Default::default()
         };
         assert!(base().is_runnable());
         assert!(!{ let mut s = base(); s.enabled = false; s }.is_runnable());

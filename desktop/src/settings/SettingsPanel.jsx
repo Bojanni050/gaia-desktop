@@ -58,6 +58,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [showToken, setShowToken] = useState(false);
   const [toolsState, setToolsState] = useState({ loading: null, result: null, error: null });
+  const [testState, setTestState] = useState({ loading: null, serverId: null, result: null, error: false });
 
   useEffect(() => {
     let active = true;
@@ -199,6 +200,20 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
       setToolsState({ loading: null, result, error: null });
     } catch (_) {
       setToolsState({ loading: null, result: null, error: serverId });
+    }
+  };
+
+  // Tests the form as typed (unsaved). On success the server's own name fills an empty name
+  // field; a name the user typed themselves is never overwritten.
+  const testServer = async (index) => {
+    const server = mcpServers()[index];
+    setTestState({ loading: server.id, serverId: server.id, result: null, error: false });
+    try {
+      const result = await mcpApi.testServer(server.command || '', server.args || []);
+      if (result.name && !(server.name || '').trim()) patchMcpServer(index, { name: result.name });
+      setTestState({ loading: null, serverId: server.id, result, error: false });
+    } catch (_) {
+      setTestState({ loading: null, serverId: server.id, result: null, error: true });
     }
   };
 
@@ -487,7 +502,16 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                       checked={server.enabled ?? true}
                       onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
                     />
-                    <span>{server.command ? `${server.id}` : L.settingsMcpCommand}</span>
+                    <span>{server.name || (server.command ? `${server.id}` : L.settingsMcpCommand)}</span>
+                  </label>
+                  <label className="field">
+                    <span>{L.settingsMcpName}</span>
+                    <input
+                      type="text"
+                      value={server.name || ''}
+                      placeholder={L.settingsMcpNamePlaceholder}
+                      onChange={(e) => patchMcpServer(index, { name: e.target.value })}
+                    />
                   </label>
                   <label className="field">
                     <span>{L.settingsMcpCommand}</span>
@@ -512,6 +536,20 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                     />
                   </label>
                   <div className="field-row">
+                    <button
+                      onClick={() => testServer(index)}
+                      disabled={!(server.command || '').trim() || testState.loading === server.id}
+                    >
+                      {testState.loading === server.id ? L.settingsMcpTesting : L.settingsMcpTest}
+                    </button>
+                    {testState.serverId === server.id && testState.result && (
+                      <span className="capability-line">
+                        {`${L.settingsMcpTestOk}${testState.result.name ? `: ${testState.result.name}` : ''} (${testState.result.toolCount} ${L.settingsMcpTestTools})`}
+                      </span>
+                    )}
+                    {testState.serverId === server.id && testState.error && (
+                      <span className="capability-line">{L.settingsMcpTestFailed}</span>
+                    )}
                     <button onClick={() => showTools(server.id)} disabled={!server.id || toolsState.loading === server.id}>
                       {toolsState.loading === server.id ? L.settingsMcpToolsLoading : L.settingsMcpTools}
                     </button>

@@ -48,6 +48,53 @@ pub struct McpToolsResult {
     pub tools: Vec<Value>,
 }
 
+/// Outcome of a successful connection test: what the server calls itself
+/// and how many tools it offers.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpTestResult {
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub tool_count: usize,
+}
+
+/// Test a server config as typed in the settings form — deliberately the
+/// unsaved draft, not the stored row — by connecting, reading `serverInfo`
+/// and `tools/list`, then terminating.
+#[tauri::command]
+pub async fn mcp_test_server(
+    command: String,
+    args: Vec<String>,
+) -> Result<McpTestResult, DesktopError> {
+    let config = McpServerConfig {
+        enabled: true,
+        command,
+        args,
+        ..Default::default()
+    };
+    if !config.is_runnable() {
+        return Err(DesktopError::Message("MCP server has no command".to_string()));
+    }
+    // Blocking spawn + stdio reads must not stall the async runtime.
+    tauri::async_runtime::spawn_blocking(move || -> Result<McpTestResult, McpError> {
+        let mut client = StdioClient::connect(&config)?;
+        let info = client.server_info();
+        let text = |key: &str| {
+            info.get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        };
+        let (name, version) = (text("name"), text("version"));
+        let tool_count = client.list_tools()?.len();
+        Ok(McpTestResult { name, version, tool_count })
+    })
+    .await
+    .map_err(|e| DesktopError::Message(e.to_string()))?
+    .map_err(DesktopError::from)
+}
+
 /// Find a runnable server config by id. Blank or disabled rows are treated
 /// the same as missing ones: not runnable, reported to the caller as such.
 fn find_runnable(
@@ -105,12 +152,14 @@ mod tests {
                 enabled: false,
                 command: "node".to_string(),
                 args: vec![],
+                ..Default::default()
             },
             McpServerConfig {
                 id: "b".to_string(),
                 enabled: true,
                 command: "node".to_string(),
                 args: vec![],
+                ..Default::default()
             },
         ];
         let runnable: Vec<&McpServerConfig> = rows

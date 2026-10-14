@@ -98,6 +98,7 @@ export const settingsApi = {
 
 export const mcpApi = {
   listTools: (serverId) => invoke('mcp_list_tools', { serverId }),
+  testServer: (command, args) => invoke('mcp_test_server', { command, args }),
   callTool: (serverId, tool, arguments_) =>
     invoke('mcp_call_tool', { serverId, tool, arguments: arguments_ }),
 };

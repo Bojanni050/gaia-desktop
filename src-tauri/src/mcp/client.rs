@@ -36,6 +36,8 @@ pub struct StdioClient {
     stdin: ChildStdin,
     reader: SharedReader,
     next_id: u64,
+    /// `serverInfo` from the `initialize` response, verbatim (or `Null`).
+    server_info: Value,
 }
 
 impl StdioClient {
@@ -62,8 +64,9 @@ impl StdioClient {
             stdin,
             reader,
             next_id: 0,
+            server_info: Value::Null,
         };
-        client.request(
+        let init = client.request(
             "initialize",
             json!({
                 "protocolVersion": "2024-11-05",
@@ -72,8 +75,14 @@ impl StdioClient {
             }),
             INIT_TIMEOUT,
         )?;
+        client.server_info = init.get("serverInfo").cloned().unwrap_or(Value::Null);
         client.notify("notifications/initialized", json!({}))?;
         Ok(client)
+    }
+
+    /// The server's self-reported `serverInfo` (name, version), verbatim.
+    pub fn server_info(&self) -> &Value {
+        &self.server_info
     }
 
     /// `tools/list` — the server's tools, verbatim.
@@ -220,12 +229,14 @@ rl.on('line', (line) => {
             enabled: true,
             command: "node".to_string(),
             args: vec!["-e".to_string(), ECHO_SCRIPT.to_string()],
+            ..Default::default()
         }
     }
 
     #[test]
     fn stdio_round_trip_lists_and_calls_tools() {
         let mut client = StdioClient::connect(&echo_config()).expect("connect must succeed");
+        assert_eq!(client.server_info()["name"], "echo");
         let tools = client.list_tools().expect("tools/list must succeed");
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0]["name"], "echo");
@@ -246,6 +257,7 @@ rl.on('line', (line) => {
             enabled: true,
             command: "definitely-not-a-real-command-xyz".to_string(),
             args: vec![],
+            ..Default::default()
         };
         assert!(matches!(
             StdioClient::connect(&config),
@@ -266,6 +278,7 @@ rl.on('line', (line) => {
                 "-e".to_string(),
                 "process.stdout.write('not-json\n'); process.exit(0)".to_string(),
             ],
+            ..Default::default()
         };
         assert!(matches!(
             StdioClient::connect(&config),
