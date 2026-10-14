@@ -202,6 +202,22 @@ describe('EpistemicReviewCard — the rest', () => {
     expect(screen.getByLabelText(L.cognitionNo).disabled).toBe(true);
   });
 
+  it('a confirmed statement is settled: the verdict stays, the answers are gone', () => {
+    const h = item({ status: 'confirmed', counter_hypothesis: 'the opposite reading' });
+    const { onConfirm, onReject } = renderCard({ item: h });
+
+    expect(screen.getByText(L.cognitionConfirmed)).toBeTruthy();
+    expect(screen.queryByLabelText(L.cognitionYes)).toBeNull();
+    expect(screen.queryByLabelText(L.cognitionNo)).toBeNull();
+    expect(screen.queryByText(L.cognitionAsk)).toBeNull();
+
+    // what was weighed can still be read, but nothing can be clicked again
+    fireEvent.click(screen.getByText(L.cognitionMore));
+    expect(screen.getByText('the opposite reading')).toBeTruthy();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onReject).not.toHaveBeenCalled();
+  });
+
   it('a rejected statement offers only a reasoned Reconsider', () => {
     const h = item({ status: 'rejected' });
     const { onReopen, onConfirm } = renderCard({ item: h });

@@ -32,6 +32,12 @@
  * A rejected statement is a hard quarantine: no answers at all, only an explicit
  * "Reconsider" that requires a stated reason — the one path back, mirrored by
  * the server.
+ *
+ * A confirmed statement is settled: the person has already judged it, so the
+ * card keeps the statement and the verdict and offers no answers at all. It
+ * stays in the list — the drawer is also where a person sees their own history —
+ * and the server answers a repeated confirmation with the record rather than a
+ * transition error, but there is nothing left to click.
  */
 import React, { useState } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
@@ -75,6 +81,7 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
   const control = questionControl(item);
   const ask = ASK_BY_KIND[item.kind] || L.cognitionAsk;
   const isRejected = item.status === 'rejected';
+  const isConfirmed = item.status === 'confirmed';
   const isMacro = item.scope !== 'micro';
   const hasCounter = Boolean(item.counter_hypothesis && item.counter_hypothesis.trim());
   const evidenceFor = Array.isArray(item.evidence_for) ? item.evidence_for : [];
@@ -114,11 +121,49 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
     handleAnswer(answer.trim());
   };
 
+  // What a person might still want to weigh — the objection the card held back,
+  // and a plain note of whether anything supports or contradicts the claim. The
+  // same block behind "Meer" on an open statement and on a settled one.
+  const moreBlock = more && (
+    <div className="cognition-more">
+      {hasCounter && (
+        <div className="cognition-counter-body">
+          <span className="cognition-counter-label">{L.cognitionCounterHypothesis}</span>
+          <p>{item.counter_hypothesis}</p>
+          <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
+        </div>
+      )}
+      {evidenceFor.length > 0 && (
+        <p className="cognition-evidence-note">{L.cognitionEvidenceForNote}</p>
+      )}
+      {evidenceAgainst.length > 0 && (
+        <p className="cognition-evidence-note">{L.cognitionEvidenceAgainstNote}</p>
+      )}
+    </div>
+  );
+
   return (
     <div className="cognition-item epistemic-card">
       <div className="cognition-statement">{item.statement}</div>
 
-      {isRejected ? (
+      {isConfirmed ? (
+        <>
+          <div className="cognition-settled">
+            <p className="cognition-ask">{L.cognitionConfirmed}</p>
+            {canReveal && (
+              <button
+                type="button"
+                className="cognition-more-toggle"
+                onClick={() => setMore((v) => !v)}
+                aria-expanded={more}
+              >
+                {more ? L.cognitionLess : L.cognitionMore}
+              </button>
+            )}
+          </div>
+          {moreBlock}
+        </>
+      ) : isRejected ? (
         <div className="cognition-reopen">
           <span className="cognition-reopen-hint">{L.cognitionReopenHint}</span>
           <textarea
@@ -257,23 +302,7 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
             )}
           </div>
 
-          {more && (
-            <div className="cognition-more">
-              {hasCounter && (
-                <div className="cognition-counter-body">
-                  <span className="cognition-counter-label">{L.cognitionCounterHypothesis}</span>
-                  <p>{item.counter_hypothesis}</p>
-                  <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
-                </div>
-              )}
-              {evidenceFor.length > 0 && (
-                <p className="cognition-evidence-note">{L.cognitionEvidenceForNote}</p>
-              )}
-              {evidenceAgainst.length > 0 && (
-                <p className="cognition-evidence-note">{L.cognitionEvidenceAgainstNote}</p>
-              )}
-            </div>
-          )}
+          {moreBlock}
         </>
       )}
     </div>

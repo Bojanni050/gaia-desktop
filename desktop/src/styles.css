@@ -298,6 +298,10 @@ body {
   font-family: var(--sans); font-size: 0.74rem; cursor: pointer; padding: 4px 2px;
 }
 .cognition-more-toggle:hover { color: var(--text-muted); }
+
+/* a settled statement: the verdict stays, the answers are gone */
+.cognition-settled { display: flex; align-items: center; gap: 8px; }
+.cognition-settled .cognition-ask { color: var(--accent); opacity: 0.85; }
 .cognition-more { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--surface-3); }
 .cognition-sure { margin: 2px 0; font-family: var(--sans); font-size: 0.78rem; color: var(--text-muted); }
 .cognition-confirm-step { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
