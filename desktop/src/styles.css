@@ -777,6 +777,7 @@ body {
 }
 .mcp-server .field-toggle { margin-bottom: 8px; }
 /* One tab per MCP server inside the Tools tab; "+" adds a server. */
+.settings-col-narrow { max-width: 620px; }
 .mcp-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
 .settings-panel .mcp-tab {
   font-family: var(--sans); font-size: 0.84rem; padding: 6px 12px; cursor: pointer;

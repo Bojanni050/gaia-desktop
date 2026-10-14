@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { settingsApi, serverApi, audioApi, captureApi, mcpApi, voiceApi, speechApi } from '../server/api';
+import { DESKTOP_COMMANDER_ID, withDesktopCommander } from './desktopCommander';
 import { setSpeechGain } from '../lib/speech';
 import { useVoiceStatus } from '../state/useVoiceStatus';
 import { useWakeWord } from '../state/useWakeWord';
@@ -64,7 +65,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
 
   useEffect(() => {
     let active = true;
-    settingsApi.get().then((s) => active && setSettings(s)).catch(() => active && setSettings({}));
+    settingsApi.get().then((s) => active && setSettings(withDesktopCommander(s))).catch(() => active && setSettings(withDesktopCommander({})));
     audioApi.getStatus().then((a) => active && setAudio(a)).catch(() => {});
     captureApi.listSources().then((c) => active && setCaptureSources(c || [])).catch(() => {});
     return () => {
@@ -191,8 +192,13 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
     setMcpServers(mcpServers().filter((_, i) => i !== index));
     setMcpSel(null);
   };
-  // An unknown or removed selection falls back to the first server.
-  const mcpSelectedIndex = Math.max(0, mcpServers().findIndex((s) => s.id === mcpSel));
+  // Desktop Commander always exists and is the default tab; an unknown or removed
+  // selection falls back to it.
+  const dcId = DESKTOP_COMMANDER_ID;
+  const dcIndex = mcpServers().findIndex((s) => s.id === dcId);
+  const foundSel = mcpServers().findIndex((s) => s.id === mcpSel);
+  const mcpSelectedIndex = foundSel >= 0 ? foundSel : dcIndex;
+  const isDcSelected = mcpSelectedIndex === dcIndex;
 
   const desktopSettings = () => settings.desktop || {};
   const patchDesktop = (part) => patch({ desktop: { ...desktopSettings(), ...part } });
@@ -253,6 +259,85 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
       setTesting(false);
     }
   };
+
+  /** One MCP server's form. Desktop Commander is not removable: it must always exist. */
+  function renderMcpServer(index, removable) {
+    const server = mcpServers()[index];
+    if (!server) return null;
+    return (
+      <div className="mcp-server">
+          <label className="field field-toggle">
+            <input
+              type="checkbox"
+              checked={server.enabled ?? true}
+              onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
+            />
+            <span>{L.settingsMcpEnabled}</span>
+          </label>
+          <label className="field">
+            <span>{L.settingsMcpName}</span>
+            <input
+              type="text"
+              value={server.name || ''}
+              placeholder={L.settingsMcpNamePlaceholder}
+              onChange={(e) => patchMcpServer(index, { name: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>{L.settingsMcpCommand}</span>
+            <input
+              type="text"
+              value={server.command || ''}
+              placeholder="npx"
+              onChange={(e) => patchMcpServer(index, { command: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>{L.settingsMcpArgs}</span>
+            <input
+              type="text"
+              value={(server.args || []).join(' ')}
+              placeholder="-y @modelcontextprotocol/server-filesystem ~/Documents"
+              onChange={(e) =>
+                patchMcpServer(index, {
+                  args: e.target.value.split(/\s+/).filter(Boolean),
+                })
+              }
+            />
+          </label>
+          <div className="field-row">
+            <button
+              onClick={() => testServer(index)}
+              disabled={!(server.command || '').trim() || testState.loading === server.id}
+            >
+              {testState.loading === server.id ? L.settingsMcpTesting : L.settingsMcpTest}
+            </button>
+            {testState.serverId === server.id && testState.result && (
+              <span className="capability-line">
+                {`${L.settingsMcpTestOk}${testState.result.name ? `: ${testState.result.name}` : ''} (${testState.result.toolCount} ${L.settingsMcpTestTools})`}
+              </span>
+            )}
+            {testState.serverId === server.id && testState.error && (
+              <span className="capability-line">{L.settingsMcpTestFailed}</span>
+            )}
+            <button onClick={() => showTools(server.id)} disabled={!server.id || toolsState.loading === server.id}>
+              {toolsState.loading === server.id ? L.settingsMcpToolsLoading : L.settingsMcpTools}
+            </button>
+            {toolsState.result?.serverId === server.id && (
+              <span className="capability-line">
+                {toolsState.result.tools.map((t) => t.name).join(', ') || '—'}
+              </span>
+            )}
+            {toolsState.error === server.id && (
+              <span className="capability-line">{L.settingsMcpToolsFailed}</span>
+            )}
+            {removable && (
+              <button onClick={() => removeMcpServer(index)}>{L.settingsMcpRemove}</button>
+            )}
+          </div>
+      </div>
+    );
+  }
 
   return (
     <div className="settings-overlay" onClick={onClose}>
@@ -476,9 +561,38 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
         )}
 
         {tab === 'tools' && (
-        <div className="settings-columns">
-          <div className="settings-col">
-            <section>
+          <>
+            <div className="mcp-tabs" role="tablist">
+              <button
+                role="tab"
+                aria-selected={isDcSelected}
+                className={`mcp-tab${isDcSelected ? ' active' : ''}${mcpServers()[dcIndex]?.enabled === false ? ' off' : ''}`}
+                onClick={() => setMcpSel(dcId)}
+              >
+                {L.settingsDesktopCommander}
+              </button>
+              {mcpServers().map((server, index) =>
+                index === dcIndex ? null : (
+                  <button
+                    key={server.id || index}
+                    role="tab"
+                    aria-selected={index === mcpSelectedIndex}
+                    className={`mcp-tab${index === mcpSelectedIndex ? ' active' : ''}${server.enabled === false ? ' off' : ''}`}
+                    onClick={() => setMcpSel(server.id)}
+                  >
+                    {server.name || server.command || L.settingsMcpNewServer}
+                  </button>
+                ),
+              )}
+              <button className="mcp-tab mcp-tab-add" onClick={addMcpServer} title={L.settingsMcpAdd} aria-label={L.settingsMcpAdd}>
+                +
+              </button>
+            </div>
+
+            {isDcSelected ? (
+              <div className="settings-columns">
+                <div className="settings-col">
+                  <section>
               <h3>{L.settingsDesktop}</h3>
               <p className="capability-line">{L.settingsDesktopHint}</p>
               <label className="field field-toggle">
@@ -488,14 +602,6 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                   onChange={(e) => patchDesktop({ enabled: e.target.checked })}
                 />
                 <span>{L.settingsDesktopEnabled}</span>
-              </label>
-              <label className="field">
-                <span>{L.settingsDesktopServer}</span>
-                <input
-                  type="text"
-                  value={desktopSettings().serverId || ''}
-                  onChange={(e) => patchDesktop({ serverId: e.target.value.trim() })}
-                />
               </label>
               <label className="field">
                 <span>{L.settingsDesktopDirs}</span>
@@ -515,105 +621,28 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 />
               </label>
             </section>
-          </div>
-
-          <div className="settings-col">
-            <section>
-              <h3>{L.settingsMcp}</h3>
-              <p className="capability-line">{L.settingsMcpHint}</p>
-              <div className="mcp-tabs" role="tablist">
-                {mcpServers().map((server, index) => (
-                  <button
-                    key={server.id || index}
-                    role="tab"
-                    aria-selected={index === mcpSelectedIndex}
-                    className={`mcp-tab${index === mcpSelectedIndex ? ' active' : ''}${server.enabled === false ? ' off' : ''}`}
-                    onClick={() => setMcpSel(server.id)}
-                  >
-                    {server.name || server.command || L.settingsMcpNewServer}
-                  </button>
-                ))}
-                <button className="mcp-tab mcp-tab-add" onClick={addMcpServer} title={L.settingsMcpAdd} aria-label={L.settingsMcpAdd}>
-                  +
-                </button>
-              </div>
-              {mcpServers().length === 0 && (
-                <p className="capability-line">{L.settingsMcpEmpty}</p>
-              )}
-              {mcpServers().map((server, index) => index !== mcpSelectedIndex ? null : (
-                <div className="mcp-server" key={server.id || index}>
-                  <label className="field field-toggle">
-                    <input
-                      type="checkbox"
-                      checked={server.enabled ?? true}
-                      onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
-                    />
-                    <span>{L.settingsMcpEnabled}</span>
-                  </label>
-                  <label className="field">
-                    <span>{L.settingsMcpName}</span>
-                    <input
-                      type="text"
-                      value={server.name || ''}
-                      placeholder={L.settingsMcpNamePlaceholder}
-                      onChange={(e) => patchMcpServer(index, { name: e.target.value })}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{L.settingsMcpCommand}</span>
-                    <input
-                      type="text"
-                      value={server.command || ''}
-                      placeholder="npx"
-                      onChange={(e) => patchMcpServer(index, { command: e.target.value })}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{L.settingsMcpArgs}</span>
-                    <input
-                      type="text"
-                      value={(server.args || []).join(' ')}
-                      placeholder="-y @modelcontextprotocol/server-filesystem ~/Documents"
-                      onChange={(e) =>
-                        patchMcpServer(index, {
-                          args: e.target.value.split(/\s+/).filter(Boolean),
-                        })
-                      }
-                    />
-                  </label>
-                  <div className="field-row">
-                    <button
-                      onClick={() => testServer(index)}
-                      disabled={!(server.command || '').trim() || testState.loading === server.id}
-                    >
-                      {testState.loading === server.id ? L.settingsMcpTesting : L.settingsMcpTest}
-                    </button>
-                    {testState.serverId === server.id && testState.result && (
-                      <span className="capability-line">
-                        {`${L.settingsMcpTestOk}${testState.result.name ? `: ${testState.result.name}` : ''} (${testState.result.toolCount} ${L.settingsMcpTestTools})`}
-                      </span>
-                    )}
-                    {testState.serverId === server.id && testState.error && (
-                      <span className="capability-line">{L.settingsMcpTestFailed}</span>
-                    )}
-                    <button onClick={() => showTools(server.id)} disabled={!server.id || toolsState.loading === server.id}>
-                      {toolsState.loading === server.id ? L.settingsMcpToolsLoading : L.settingsMcpTools}
-                    </button>
-                    {toolsState.result?.serverId === server.id && (
-                      <span className="capability-line">
-                        {toolsState.result.tools.map((t) => t.name).join(', ') || '—'}
-                      </span>
-                    )}
-                    {toolsState.error === server.id && (
-                      <span className="capability-line">{L.settingsMcpToolsFailed}</span>
-                    )}
-                    <button onClick={() => removeMcpServer(index)}>{L.settingsMcpRemove}</button>
-                  </div>
                 </div>
-              ))}
-            </section>
-          </div>
-        </div>
+
+                <div className="settings-col">
+                  <section>
+                    <h3>{L.settingsDesktopCommander}</h3>
+                    <p className="capability-line">{L.settingsDesktopCommanderHint}</p>
+                    {renderMcpServer(dcIndex, false)}
+                  </section>
+                </div>
+              </div>
+            ) : (
+              <div className="settings-columns">
+                <div className="settings-col settings-col-narrow">
+                  <section>
+                    <h3>{L.settingsMcp}</h3>
+                    <p className="capability-line">{L.settingsMcpHint}</p>
+                    {renderMcpServer(mcpSelectedIndex, true)}
+                  </section>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="settings-actions">
