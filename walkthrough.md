@@ -197,3 +197,9 @@
 - Findings: "Toegestane mappen" en "Geblokkeerde commando's" zijn `textarea`'s; de veldstijl in de popup (`.field input`, `.field select`) bevatte geen `textarea`, dus ze toonden de witte browserstandaard. Een latere regel (`font: inherit`) zou daarbovenop elk lettertype dat ze kregen overschreven hebben.
 - Conclusions: `textarea` deelt nu de regel van de tekstvelden (achtergrond `--surface-2`, rand, afronding, lettertype, focusrand), met `color-scheme: dark` zodat ook de schuifbalk donker is. De `font: inherit` is weggehaald; `width` en `resize` blijven.
 - Actions: `desktop/src/styles.css` (`.field textarea` bij de tekstvelden en de focusregel; `.mcp-server textarea, .settings-col textarea` zonder `font`); validated visueel in de dev-app.
+
+## 2026-10-14 (`.capability-line` regelhoogte)
+
+- Findings: de uitleg- en statusregels in de instellingen (`.capability-line`) erfden de regelhoogte van de pagina, wat de lange teksten (zoals de desktop-uitleg en de toolslijst) krap liet ogen.
+- Conclusions: expliciete `line-height: 1.4`, op verzoek.
+- Actions: `desktop/src/styles.css` (`.capability-line`); geen test nodig.
