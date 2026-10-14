@@ -61,11 +61,15 @@ export function useConversation(server, desktop) {
    * one. Replaces the thread if it's already open (e.g. re-opening after
    * it fell out of the in-session list).
    */
-  const hydrateThread = useCallback((id, messages) => {
+  const hydrateThread = useCallback((id, messages, title) => {
     const firstUser = messages.find((m) => m.role === 'user');
     const thread = {
       id,
-      title: firstUser ? firstUser.content.slice(0, 48) : null,
+      // Gaia's own name for the conversation when the caller has it (the
+      // History list row carries the title Gaia Server stores, so an
+      // AI-named thread keeps its name when reopened). Falling back to the
+      // opening line is the same honest last resort the server uses.
+      title: title || (firstUser ? firstUser.content.slice(0, 48) : null),
       messages: messages.map((m) => ({ ...m, id: localId() })),
     };
     setThreads((prev) => {
@@ -194,6 +198,13 @@ export function useConversation(server, desktop) {
           if (delta.memory) {
             kept.push(delta.memory);
             attachKept();
+            return;
+          }
+          // Gaia's own name for this conversation, arriving once on the first
+          // turn, after the reply (conversationTitle.js on Gaia Server). It
+          // replaces the opening line the thread was showing meanwhile.
+          if (delta.title?.text) {
+            setThreads((prev) => prev.map((t) => (t.id === threadId ? { ...t, title: delta.title.text } : t)));
             return;
           }
           if (delta.error) serverFailure = delta.error;

@@ -115,6 +115,14 @@ pub struct TurnDelta {
     /// decides what to ask the person and whether the action may run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub desktop: Option<Value>,
+    /// The conversation's own name, when Gaia gives it one:
+    /// `{ type: 'title', title: { text } }`. A fact about the conversation,
+    /// never content, and sent at most once - on a conversation's first turn,
+    /// after the reply (conversationTitle.js). The durable copy is the
+    /// conversation list on Gaia Server, so a client that misses this frame
+    /// has lost immediacy, not the name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<Value>,
 }
 
 /// Receiver for a streamed turn's incremental deltas. Closes when the

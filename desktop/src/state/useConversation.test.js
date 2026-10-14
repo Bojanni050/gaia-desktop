@@ -462,3 +462,44 @@ describe('desktop actions on a turn', () => {
     expect('desktop' in server.streamTurn.mock.calls[0][0]).toBe(false);
   });
 });
+
+describe("Gaia's own name for a conversation", () => {
+  it('shows the opening line first and replaces it with the name Gaia sends', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ content: 'Dan kijk ik even mee.' });
+        onDelta({ title: { text: 'VPS omzetten naar Tailscale' } });
+        return 'Dan kijk ik even mee.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('kun je kijken waarom de vps niet bereikbaar is?');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.title).toBe('VPS omzetten naar Tailscale');
+    // The name is never content, and the reply stands untouched beside it.
+    expect(result.current.active.messages.at(-1).content).toBe('Dan kijk ik even mee.');
+  });
+
+  it('keeps the opening line when no name arrives', async () => {
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => { onDelta({ content: 'Hoi.' }); return 'Hoi.'; }),
+    };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      await result.current.send('even een vraag over de vps');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(result.current.active.title).toBe('even een vraag over de vps');
+  });
+
+  it('keeps the name Gaia gave it when the conversation is reopened from History', async () => {
+    const server = { streamTurn: vi.fn() };
+    const { result } = renderHook(() => useConversation(server));
+    await act(async () => {
+      result.current.hydrateThread('conv-1', [{ role: 'user', content: 'kun je kijken waarom de vps niet bereikbaar is?' }], 'VPS omzetten naar Tailscale');
+    });
+    expect(result.current.active.title).toBe('VPS omzetten naar Tailscale');
+  });
+});

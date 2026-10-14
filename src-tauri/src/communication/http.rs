@@ -284,7 +284,9 @@ impl GaiaServerClient for HttpGaiaClient {
 
 /// Parses one SSE frame (everything up to, but not including, its
 /// trailing blank line) into a TurnDelta: content, reasoning, plan
-/// progress or a calm failure. `None` means the frame carried nothing
+/// progress, something kept in memory, a desktop action, the
+/// conversation's name, or a calm failure. `None` means the frame carried
+/// nothing
 /// this client relays (a comment, an empty keep-alive); `Some(Ok(None))`
 /// means the server's `[DONE]` sentinel  the stream is over, not an error.
 fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, CommunicationError>> {
@@ -311,7 +313,8 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         .and_then(|v| v.as_str())
         .map(String::from);
     // Extension frames (Gaia Server responseEngine.js's frame family): a
-    // plan step report and a calm failure. Both carry an EMPTY
+    // plan step report, a calm failure, a kept memory, a desktop action and
+    // the conversation's own name. All of them carry an EMPTY
     // choices[0].delta next to their `type`, so a reader that only knows
     // content frames appends nothing and keeps working - and here they
     // become relayed fields instead of being dropped as "nothing worth
@@ -333,12 +336,17 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         Some("desktop") => value.get("desktop").cloned(),
         _ => None,
     };
+    let title = match frame_type {
+        Some("title") => value.get("title").cloned(),
+        _ => None,
+    };
     if content.is_none()
         && reasoning_content.is_none()
         && step.is_none()
         && error.is_none()
         && memory.is_none()
         && desktop.is_none()
+        && title.is_none()
     {
         return None;
     }
@@ -349,6 +357,7 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         error,
         memory,
         desktop,
+        title,
     })))
 }
 
@@ -425,6 +434,17 @@ mod tests {
         assert_eq!(memory["bank"], "bojan");
         assert_eq!(memory["text"], "Bo drinkt graag thee");
         assert!(delta.content.is_none() && delta.step.is_none() && delta.error.is_none());
+    }
+
+    #[test]
+    fn a_title_frame_relays_the_conversations_name_and_nothing_else() {
+        let frame = "data: {\"choices\":[{\"delta\":{}}],\"type\":\"title\",\"title\":\
+                     {\"text\":\"VPS omzetten naar Tailscale\"}}";
+        let delta = relayed(frame).expect("a title frame must relay, not be dropped");
+        let title = delta.title.expect("title payload");
+        assert_eq!(title["text"], "VPS omzetten naar Tailscale");
+        assert!(delta.content.is_none() && delta.step.is_none() && delta.error.is_none());
+        assert!(delta.memory.is_none() && delta.desktop.is_none());
     }
 
     #[test]

@@ -62,10 +62,13 @@ export const serverApi = {
    * Streams one turn (Rust's `server_stream_turn`, over gaia-api's SSE
    * path — turn.js's performStreamingTurn). `onDelta` is called with
    * `{ content, reasoningContent }` as each piece arrives, and optionally
-   * with the server's two extension fields instead of content:
+   * with the server's extension fields instead of content:
    * `{ step }` — plan progress (`{ id, index, total, type, status }`,
-   * which step of a multi-step plan is running) and `{ error }` — the
-   * server's calm failure wording on an already-open stream. Neither
+   * which step of a multi-step plan is running), `{ memory }` — what Gaia
+   * kept in the shared memory while answering, `{ desktop }` — an action on
+   * this computer, `{ title }` — the conversation's own name
+   * (`{ text }`, sent once, on the first turn) and `{ error }` — the
+   * server's calm failure wording on an already-open stream. None of them
    * carries content; resolves with the full assistant text once the stream
    * ends, rejects the same way `request` does on any transport/server
    * failure.

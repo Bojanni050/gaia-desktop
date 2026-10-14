@@ -49,7 +49,10 @@ export default function HistorySection({ onOpenConversation, refreshToken }) {
     setError(null);
     try {
       const { messages } = await historyApi.get(conv.id);
-      onOpenConversation(conv.id, messages);
+      // `conv` is the list row Gaia Server returned, so it carries the name
+      // Gaia gave this conversation — reopened threads keep it instead of
+      // falling back to their opening line.
+      onOpenConversation(conv.id, messages, conv.title);
     } catch (_) {
       setError(L.historyOpenFailed);
     } finally {

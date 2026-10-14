@@ -232,6 +232,7 @@ impl ServerLink {
                         error: delta.error,
                         memory: delta.memory,
                         desktop: delta.desktop,
+                        title: delta.title,
                     },
                 );
             }
@@ -353,6 +354,10 @@ pub struct TurnDeltaPayload {
     /// from a `{ type: 'desktop' }` frame - see `TurnDelta::desktop`.
     #[serde(skip_serializing_if = "Option::is_none")]
     desktop: Option<Value>,
+    /// The conversation's own name, relayed verbatim from a
+    /// `{ type: 'title' }` frame - see `TurnDelta::title`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<Value>,
 }
 
 #[tauri::command]
