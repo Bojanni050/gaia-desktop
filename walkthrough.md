@@ -215,3 +215,9 @@
 - Findings: 10px boven en onder liet het formulier nog krap ogen, en door margin-collapse is de ruimte tussen twee velden gelijk aan de grootste van de twee marges, niet de som.
 - Conclusions: `margin-top` én `margin-bottom` op 15px, zodat de ruimte tussen twee velden 15px is en boven het eerste veld in een blok ook 15px. Alleen één van de twee verhogen had de tussenruimte niet vergroot en alleen de bovenkant van het eerste veld.
 - Actions: `desktop/src/styles.css` (`.field`); visueel bekeken in de dev-app.
+
+## 2026-10-14 (knoppen in Settings: 15px boven en onder)
+
+- Findings: de knoppen in de popup (Verbinding testen, Opnieuw instellen, Test, Tools tonen, Bewaren, Sluiten) hadden geen eigen verticale ruimte en plakten tegen de velden en regels erboven en eronder.
+- Conclusions: `margin-top` en `margin-bottom` van 15px op de gedeelde knopregel (`.settings-actions button`, `.settings-panel .field-row button`). Bewust niet op alle knoppen in het paneel: de tabs (Algemeen/Tools) en de MCP-servertabs zijn ook knoppen, maar horen als tabbalk tegen elkaar te staan. Gevolg: de actieknoppenrij onderaan wordt 30px hoger (de 15px komt bovenop de bestaande 24px marge van de rij); de rijen met knoppen en tekst ernaast blijven verticaal gecentreerd.
+- Actions: `desktop/src/styles.css` (knopregel); visueel bekeken in de dev-app.
