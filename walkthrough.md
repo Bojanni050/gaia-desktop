@@ -209,3 +209,9 @@
 - Findings: `.field` had alleen een onderkant (`margin-bottom: 10px`), waardoor het eerste veld direct onder een kop of uitlegregel kleefde.
 - Conclusions: `margin-top: 10px` erbij, op verzoek, voor alle velden (ook de toggles, want die zijn `.field` met `field-toggle`). Let op: tussen twee velden onder elkaar vallen de marges samen (10 + 10 wordt 10, gewone verticale margin-collapse); de ruimte nieuw is vooral boven het eerste veld van een blok en na losse regels.
 - Actions: `desktop/src/styles.css` (`.field`); visueel bekeken in de dev-app.
+
+## 2026-10-14 (`.field` marge naar 15px)
+
+- Findings: 10px boven en onder liet het formulier nog krap ogen, en door margin-collapse is de ruimte tussen twee velden gelijk aan de grootste van de twee marges, niet de som.
+- Conclusions: `margin-top` én `margin-bottom` op 15px, zodat de ruimte tussen twee velden 15px is en boven het eerste veld in een blok ook 15px. Alleen één van de twee verhogen had de tussenruimte niet vergroot en alleen de bovenkant van het eerste veld.
+- Actions: `desktop/src/styles.css` (`.field`); visueel bekeken in de dev-app.
