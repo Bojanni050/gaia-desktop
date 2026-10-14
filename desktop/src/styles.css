@@ -637,7 +637,7 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .settings-panel {
-  width: 980px; max-width: 94vw; max-height: 88vh; overflow-y: auto;
+  width: 1280px; max-width: 94vw; max-height: 88vh; overflow-y: auto;
   background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: 18px; padding: 26px 30px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
@@ -767,6 +767,12 @@ body {
   background: var(--surface-2);
 }
 .mcp-server .field-toggle { margin-bottom: 8px; }
+/* Buttons stay on one line; test/tool results wrap underneath at full width
+   (the tool list is one long unbroken run of names). */
+.mcp-server .field-row { flex-wrap: wrap; }
+.mcp-server .field-row .capability-line {
+  order: 1; flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere;
+}
 
 /* ---------------------------------------------------------------- connection notice (startup offline pop) */
 .connection-notice-overlay {

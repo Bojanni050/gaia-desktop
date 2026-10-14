@@ -148,3 +148,9 @@
 - Findings: de EN-lexicon miste 10 sleutels die bij de desktop-capability alleen in NL waren toegevoegd (`settingsDesktop*`, `desktopAsk/Allow/Deny/NoticeClose`). De `L`-proxy valt terug op de sleutelnaam zelf, dus de EN-gebruiker zag ruwe sleutels in Settings, en de bevestigingsprompt voor schrijf-/commando-acties had dezelfde gaten.
 - Conclusions: sleutels aangevuld met een vertaling van de NL-tekst (zelfde betekenis, inclusief de waarschuwing dat de blokkadelijst geen sandbox is). Daarnaast een pariteitstest, omdat dit anders ongemerkt opnieuw gebeurt bij de volgende NL-only toevoeging.
 - Actions: `desktop/src/lib/lexicon.js` (10 EN-sleutels), nieuw `desktop/src/lib/lexicon.test.js` (NL en EN hebben dezelfde sleutels); validated.
+
+## 2026-10-14 (Settings-popup breder, MCP-meldingen wrappen)
+
+- Findings: met de naam-/testvelden en de uitgebreide Desktop-sectie was de popup (980px) te krap: de lange toolslijst en de teststatus stonden in één niet-wrappende flex-rij en liepen buiten de MCP-kaart.
+- Conclusions: breedte naar 1280px (blijft begrensd door `max-width: 94vw`, dus smallere vensters en de bestaande 1-kolom-breakpoint onder 820px blijven werken). In de MCP-rij blijven de knoppen op één regel en komen test-/toolsmeldingen eronder op volle breedte met `overflow-wrap: anywhere`, omdat de toolslijst één lange reeks namen zonder spaties is.
+- Actions: `desktop/src/styles.css` (`.settings-panel` width, `.mcp-server .field-row` wrap + `.capability-line` order/basis); validated in de draaiende dev-app (screenshot).
