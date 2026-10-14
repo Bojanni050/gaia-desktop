@@ -28,7 +28,7 @@ const RAIL_WIDTH = 16;
 const SLIDE_MS = 450;
 
 /** The drawer never narrows below this (unless the window itself is smaller). */
-export const MIN_WIDTH = 300;
+export const MIN_WIDTH = 320; // 20rem
 /** The drawer never grows past this share of the window — the request's max 33%. */
 export const MAX_WIDTH_RATIO = 0.33;
 

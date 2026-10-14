@@ -69,7 +69,7 @@ body {
 /* ---------------------------------------------------------------- shell */
 .gaia-shell {
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: 20rem 1fr;
   height: 100vh;
   background: var(--bg);
   overflow: hidden;
@@ -83,6 +83,7 @@ body {
   background: var(--surface);
   border-right: 1px solid var(--border);
   height: 100vh;
+  min-width: 20rem;
 }
 .brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 26px; }
 .brand-mark {
@@ -187,7 +188,7 @@ body {
 }
 .understanding-drawer {
   position: fixed; top: 0; right: 16px; height: 100vh; z-index: 30;
-  width: 380px; min-width: 0; max-width: 33vw; display: flex; flex-direction: column;
+  width: 380px; min-width: 20rem; max-width: 33vw; display: flex; flex-direction: column;
   background: var(--surface); border-left: 1px solid var(--border-strong);
   /* Hidden: pushed out past the rail, and without its shadow (which would otherwise bleed in). */
   transform: translateX(calc(100% + 16px)); box-shadow: none;
@@ -858,7 +859,7 @@ body {
 /* ---------------------------------------------------------------- logos: episode timeline (right drawer) */
 .logos-drawer {
   position: fixed; top: 0; right: 0; height: 100vh; z-index: 15;
-  width: min(33vw, 640px);
+  width: min(33vw, 640px); min-width: 20rem;
   display: flex; flex-direction: column;
   background: var(--surface);
   border-left: 1px solid var(--border-strong);
