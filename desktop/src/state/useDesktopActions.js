@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import { serverApi, settingsApi, mcpApi } from '../server/api';
+import { serverApi, settingsApi, mcpApi, desktopApi } from '../server/api';
 import { createDesktopActions } from './desktopActions';
 
 /**
@@ -16,6 +16,7 @@ export function useDesktopActions() {
         callTool: mcpApi.callTool,
         listTools: mcpApi.listTools,
         getSettings: settingsApi.get,
+        getPlaces: desktopApi.knownPlaces,
       }),
     []
   );

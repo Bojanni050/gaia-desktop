@@ -6,6 +6,7 @@ import {
   blockedCommandHit,
   checkLimits,
   toolCallsFor,
+  foldersMatching,
   readToolResult,
   truncateOutput,
   createDesktopActions,
@@ -31,7 +32,7 @@ const frame = (fields) => ({
   ...fields,
 });
 
-function setup({ settings = DESKTOP, callTool, listTools } = {}) {
+function setup({ settings = DESKTOP, callTool, listTools, getPlaces } = {}) {
   const request = vi.fn(async () => ({ status: 204 }));
   const tool = callTool || vi.fn(async () => ({ content: [{ type: 'text', text: 'ok-output' }] }));
   const controller = createDesktopActions({
@@ -39,6 +40,7 @@ function setup({ settings = DESKTOP, callTool, listTools } = {}) {
     callTool: tool,
     listTools: listTools || vi.fn(async () => []),
     getSettings: async () => ({ desktop: settings }),
+    ...(getPlaces ? { getPlaces } : {}),
   });
   const posts = () => request.mock.calls.map(([r]) => [r.path, r.body]);
   return { controller, request, tool, posts };
@@ -108,11 +110,36 @@ describe('mapping skills onto Desktop Commander', () => {
     expect(toolCallsFor('file-read', { path: 'p' })[0]).toEqual({ tool: 'read_file', args: { path: 'p' } });
     expect(toolCallsFor('file-write', { path: 'p', content: 'x' })[0].tool).toBe('write_file');
     expect(toolCallsFor('run-command', { command: 'ls' })[0].tool).toBe('start_process');
-    expect(toolCallsFor('file-search', { path: 'p', query: 'q' }).map((c) => c.args.searchType)).toEqual([
-      'files',
-      'content',
-    ]);
     expect(toolCallsFor('something-else', {})).toEqual([]);
+  });
+
+  it('finds folders by listing a few levels and keeping matching folder names, as full paths', () => {
+    const listing = [
+      '[FILE] txtjes-notes.txt',
+      '[DIR] Claude Skills',
+      '[DIR] txtjes',
+      '[FILE] txtjes\\a.txt',
+      '[DIR] Astra\\More TXTJES copy',
+      '[DIR] other\\txtjes-old\\deep',
+    ].join('\n');
+    expect(foldersMatching(listing, 'D:\\Desk\\', 'TxtJes')).toBe(
+      ['[DIR] D:\\Desk\\txtjes', '[DIR] D:\\Desk\\Astra\\More TXTJES copy'].join('\n'),
+    );
+    expect(foldersMatching(listing, 'D:\\Desk', 'nope')).toMatch(/Geen map met "nope"/);
+
+    const [call] = toolCallsFor('file-search', { path: 'D:\\Desk', query: 'txtjes', where: 'folders' });
+    expect(call.tool).toBe('list_directory');
+    expect(call.args).toEqual({ path: 'D:\\Desk', depth: 3 });
+    expect(call.transform(listing)).toContain('[DIR] D:\\Desk\\txtjes');
+  });
+
+  it('searches names by default, and contents only when asked', () => {
+    const types = (where) => toolCallsFor('file-search', { path: 'p', query: 'q', where }).map((c) => c.args.searchType);
+    expect(types(undefined)).toEqual(['files']);
+    expect(types('names')).toEqual(['files']);
+    expect(types('anything-else')).toEqual(['files']);
+    expect(types('contents')).toEqual(['content']);
+    expect(types('both')).toEqual(['files', 'content']);
   });
 
   it('reads the text and the error flag of a tool result, and clips output', () => {
@@ -332,5 +359,33 @@ describe('whether a turn may offer desktop', () => {
     expect(await controller.isAvailable()).toBe(true);
     expect(await controller.isAvailable()).toBe(true);
     expect(listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports Desktop, Documents and Downloads only when they are inside the allowed folders', async () => {
+    const getPlaces = async () => ({
+      home: 'C:/Users/bojan',
+      desktop: 'D:/OneDrive/Bureaublad',
+      documents: 'D:/OneDrive/Documenten',
+      downloads: 'C:/Users/bojan/Downloads',
+    });
+    const both = setup({ settings: { ...DESKTOP, allowedDirs: ['D:/', 'C:/Users/bojan'] }, getPlaces });
+    expect(await both.controller.knownPlaces()).toEqual({
+      desktop: 'D:/OneDrive/Bureaublad',
+      documents: 'D:/OneDrive/Documenten',
+      downloads: 'C:/Users/bojan/Downloads',
+    });
+    const onlyD = setup({ settings: { ...DESKTOP, allowedDirs: ['D:/'] }, getPlaces });
+    expect(await onlyD.controller.knownPlaces()).toEqual({
+      desktop: 'D:/OneDrive/Bureaublad',
+      documents: 'D:/OneDrive/Documenten',
+    });
+    const broken = setup({ getPlaces: async () => { throw new Error('no'); } });
+    expect(await broken.controller.knownPlaces()).toEqual({});
+  });
+
+  it('reports the usable allowed folders, so Gaia knows where she may look', async () => {
+    const dirs = ['C:/Users/bojan', ' D:/ ', 'relative', '', '  '];
+    const { controller } = setup({ settings: { ...DESKTOP, allowedDirs: dirs } });
+    expect(await controller.allowedRoots()).toEqual(['C:/Users/bojan', 'D:/']);
   });
 });

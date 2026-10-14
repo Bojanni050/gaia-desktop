@@ -133,6 +133,30 @@ export function checkLimits(skill, input, desktopSettings) {
 
 // --- Desktop Commander ------------------------------------------------------
 
+const FOLDER_SEARCH_DEPTH = 3;
+const MAX_FOLDER_HITS = 50;
+
+/**
+ * The `[DIR]` lines of a `list_directory` result whose own name contains `query`, turned into full
+ * paths (the listing is relative to `base`), so Gaia can use them directly.
+ */
+export function foldersMatching(text, base, query) {
+  const needle = String(query ?? '').trim().toLowerCase();
+  const root = String(base ?? '').replace(/[\\/]+$/, '');
+  const hits = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const match = /^\s*\[DIR\]\s+(.+?)\s*$/.exec(line);
+    if (!match) continue;
+    const relative = match[1];
+    const name = relative.split(/[\\/]/).pop().toLowerCase();
+    if (needle && name.includes(needle)) hits.push(`[DIR] ${root}\\${relative.replace(/\//g, '\\')}`);
+    if (hits.length >= MAX_FOLDER_HITS) break;
+  }
+  return hits.length > 0
+    ? hits.join('\n')
+    : `Geen map met "${query}" in de naam gevonden, tot ${FOLDER_SEARCH_DEPTH} niveaus onder ${base}.`;
+}
+
 /**
  * The Desktop Commander tool calls that carry out a skill. A skill may take more
  * than one call (a search by name and by content); results are joined in order.
@@ -146,10 +170,22 @@ export function toolCallsFor(skill, input) {
       const query = String(i.query ?? '');
       if (!query.trim()) return [];
       const base = { path: i.path, pattern: query, literalSearch: true, maxResults: 50, timeout_ms: 10000 };
-      return [
-        { tool: 'start_search', args: { ...base, searchType: 'files' } },
-        { tool: 'start_search', args: { ...base, searchType: 'content' } },
-      ];
+      // Names by default: fast, and fine for a whole drive. Reading the text of every file under a
+      // drive is slow and sends far more of the person's data to Gaia, so contents are opt-in.
+      const where = String(i.where ?? 'names').toLowerCase();
+      // Desktop Commander's name search only matches files, never folders, so finding a folder
+      // means listing a few levels down and keeping the folders whose name matches.
+      if (where === 'folders') {
+        return [
+          {
+            tool: 'list_directory',
+            args: { path: i.path, depth: FOLDER_SEARCH_DEPTH },
+            transform: (text) => foldersMatching(text, i.path, query),
+          },
+        ];
+      }
+      const types = where === 'contents' ? ['content'] : where === 'both' ? ['files', 'content'] : ['files'];
+      return types.map((searchType) => ({ tool: 'start_search', args: { ...base, searchType } }));
     }
     case 'file-write':
       return [{ tool: 'write_file', args: { path: i.path, content: String(i.content ?? ''), mode: 'rewrite' } }];
@@ -186,7 +222,7 @@ export function truncateOutput(text, max = MAX_OUTPUT_CHARS) {
  * `listTools`– mcpApi.listTools(serverId), used only to see whether it runs
  * `getSettings` – settingsApi.get
  */
-export function createDesktopActions({ request, callTool, listTools, getSettings, now = Date.now }) {
+export function createDesktopActions({ request, callTool, listTools, getSettings, getPlaces = async () => ({}), now = Date.now }) {
   // id → 'prompted' | 'decided' | 'running' | 'done'. A frame for an id that is
   // past its prompt is ignored; 'done' is kept so a late repeat can't re-run it.
   const phase = new Map();
@@ -262,12 +298,12 @@ export function createDesktopActions({ request, callTool, listTools, getSettings
 
     try {
       const outputs = [];
-      for (const { tool, args } of calls) {
+      for (const { tool, args, transform } of calls) {
         if (run.aborted) return finish(false, 'Afgebroken.');
         const result = await withTimeout(callTool(settings.serverId, tool, args), CALL_TIMEOUT_MS);
         const { text, isError } = readToolResult(result);
         if (isError) return finish(false, text || 'De actie mislukte.');
-        outputs.push(text);
+        outputs.push(transform ? transform(text) : text);
       }
       return finish(true, outputs.filter(Boolean).join('\n---\n') || '(geen uitvoer)');
     } catch (_) {
@@ -384,11 +420,45 @@ export function createDesktopActions({ request, callTool, listTools, getSettings
     return ok;
   }
 
+  /**
+   * The allowed folders, as full paths, for telling Gaia where she may look. Same list the limits
+   * are checked against; entries that are not usable paths are left out.
+   */
+  async function allowedRoots() {
+    try {
+      const dirs = (await getSettings())?.desktop?.allowedDirs;
+      return (Array.isArray(dirs) ? dirs : []).filter((dir) => normalizePath(dir)).map((dir) => String(dir).trim());
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /**
+   * Desktop, Documents and Downloads as Windows has them (OneDrive may have moved them to another
+   * drive), limited to what is inside the allowed folders: she is never pointed at a place she
+   * may not use.
+   */
+  async function knownPlaces() {
+    try {
+      const [places, dirs] = await Promise.all([getPlaces(), allowedRoots()]);
+      const out = {};
+      for (const key of ['desktop', 'documents', 'downloads']) {
+        const path = places?.[key];
+        if (typeof path === 'string' && normalizePath(path) && isWithinAllowed(path, dirs)) out[key] = path;
+      }
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
   return {
     handleFrame,
     decide,
     abortAll,
     isAvailable,
+    allowedRoots,
+    knownPlaces,
     dismissNotice: () => setNotice(null),
     subscribe: (fn) => {
       listeners.add(fn);

@@ -96,6 +96,11 @@ export const settingsApi = {
   save: (newSettings) => invoke('settings_save', { newSettings }),
 };
 
+export const desktopApi = {
+  // The person's Desktop / Documents / Downloads, where Windows really keeps them.
+  knownPlaces: () => invoke('desktop_known_places'),
+};
+
 export const mcpApi = {
   listTools: (serverId) => invoke('mcp_list_tools', { serverId }),
   testServer: (command, args) => invoke('mcp_test_server', { command, args }),

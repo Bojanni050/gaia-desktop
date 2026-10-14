@@ -166,7 +166,15 @@ export function useConversation(server, desktop) {
           canDesktop = !!desktop && (await desktop.isAvailable());
         } catch (_) { /* unavailable */ }
         if (turn.cancelled) return;
-        const body = buildStreamTurnBody(history, threadId, { desktop: canDesktop });
+        let desktopRoots = [];
+        let desktopPlaces = {};
+        try {
+          if (canDesktop) {
+            desktopRoots = await desktop.allowedRoots();
+            desktopPlaces = await desktop.knownPlaces();
+          }
+        } catch (_) { /* she then just does not know the folders */ }
+        const body = buildStreamTurnBody(history, threadId, { desktop: canDesktop, desktopRoots, desktopPlaces });
         const fullReply = await server.streamTurn(body, (delta) => {
           // Deltas already on their way when the turn was cancelled are dropped.
           if (turn.cancelled) return;

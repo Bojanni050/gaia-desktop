@@ -109,6 +109,24 @@ describe('buildStreamTurnBody', () => {
   });
 });
 
+describe('buildStreamTurnBody desktopRoots', () => {
+  const messages = [{ id: '1', role: 'user', content: 'hi' }];
+
+  it('sends the allowed folders only together with desktop: true', () => {
+    expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopRoots: ['D:/'] }).desktopRoots).toEqual(['D:/']);
+    expect(buildStreamTurnBody(messages, 't', { desktop: false, desktopRoots: ['D:/'] })).not.toHaveProperty('desktopRoots');
+    expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopRoots: [] })).not.toHaveProperty('desktopRoots');
+    expect(buildStreamTurnBody(messages, 't', { desktop: true })).not.toHaveProperty('desktopRoots');
+  });
+
+  it('sends the known places only together with desktop: true', () => {
+    const places = { desktop: 'D:/OneDrive/Bureaublad' };
+    expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopPlaces: places }).desktopPlaces).toEqual(places);
+    expect(buildStreamTurnBody(messages, 't', { desktop: false, desktopPlaces: places })).not.toHaveProperty('desktopPlaces');
+    expect(buildStreamTurnBody(messages, 't', { desktop: true, desktopPlaces: {} })).not.toHaveProperty('desktopPlaces');
+  });
+});
+
 describe('history contract', () => {
   it('buildHistoryListRequest is a plain GET, no body', () => {
     expect(buildHistoryListRequest()).toEqual({ method: 'get', path: 'conversations' });

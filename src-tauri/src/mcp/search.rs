@@ -41,10 +41,16 @@ fn session_id(text: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Whether the session reports anything other than still running.
+/// Whether the session reports anything other than still working. The server says `RUNNING` when
+/// a search starts and `IN PROGRESS` while polling it, so both (and similar) count as not done.
 fn is_finished(text: &str) -> bool {
     match text.lines().find_map(|l| l.trim().strip_prefix("Status:")) {
-        Some(status) => !status.trim().eq_ignore_ascii_case("RUNNING"),
+        Some(status) => {
+            let status = status.trim().to_ascii_uppercase();
+            !["RUNNING", "PROGRESS", "STARTED", "PENDING", "SEARCHING"]
+                .iter()
+                .any(|working| status.contains(working))
+        }
         None => true,
     }
 }
@@ -118,6 +124,8 @@ mod tests {
     #[test]
     fn finished_means_status_is_not_running() {
         assert!(!is_finished("Search session: s\nStatus: RUNNING\nTotal results: 0"));
+        // what the server really says while it is polled mid-search
+        assert!(!is_finished("Search session: s\nStatus: IN PROGRESS\nTotal results: 0"));
         assert!(is_finished("Status: COMPLETED\nTotal results: 2"));
         assert!(is_finished("Status: ERROR"));
         assert!(is_finished("no status line at all"));
@@ -143,7 +151,7 @@ rl.on('line', (line) => {
     else if (name === 'get_more_search_results') {
       if (args.sessionId !== 'search_1_42') return text('Status: ERROR\nunknown session');
       polls += 1;
-      if (process.env.NEVER_DONE || polls < 3) text('Search session: search_1_42\nStatus: RUNNING\nTotal results: 0 matches');
+      if (process.env.NEVER_DONE || polls < 3) text('Search session: search_1_42\nStatus: IN PROGRESS\nTotal results: 0 matches');
       else text('Search session: search_1_42\nStatus: COMPLETED\nTotal results: 1 matches\nC:\\txtjes\\notes.txt');
     } else if (name === 'stop_search') text('stopped');
   }

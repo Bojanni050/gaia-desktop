@@ -20,6 +20,7 @@ pub mod history;
 pub mod library;
 pub mod mcp;
 pub mod notifications;
+pub mod places;
 pub mod presence;
 pub mod settings;
 pub mod speech;
@@ -259,6 +260,8 @@ pub fn run() {
             mcp::mcp_list_tools,
             mcp::mcp_test_server,
             mcp::mcp_call_tool,
+            // well-known folders, told to Gaia so she knows where to start looking
+            places::desktop_known_places,
             // presence
             presence::presence_get,
             presence::presence_set_quiet,
