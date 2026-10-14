@@ -22,6 +22,7 @@ function renderCard(props) {
   const onConfirm = vi.fn();
   const onReject = vi.fn();
   const onReopen = vi.fn();
+  const onAnswer = vi.fn();
   render(
     <EpistemicReviewCard
       item={props.item}
@@ -29,9 +30,10 @@ function renderCard(props) {
       onConfirm={onConfirm}
       onReject={onReject}
       onReopen={onReopen}
+      onAnswer={onAnswer}
     />,
   );
-  return { onConfirm, onReject, onReopen };
+  return { onConfirm, onReject, onReopen, onAnswer };
 }
 
 describe('EpistemicReviewCard — one question, two answers', () => {
@@ -89,10 +91,73 @@ describe('EpistemicReviewCard — the question follows the kind', () => {
     expect(screen.getByText(L.cognitionAskRelationship)).toBeTruthy();
     expect(screen.queryByText(L.cognitionAsk)).toBeNull();
   });
+});
 
-  it('asks whether it is still open for an open question', () => {
-    renderCard({ item: item({ kind: 'open_question' }) });
-    expect(screen.getByText(L.cognitionAskOpenQuestion)).toBeTruthy();
+describe('EpistemicReviewCard — a question is answered, not judged', () => {
+  const question = (overrides = {}) => item({ kind: 'open_question', status: 'proposed', ...overrides });
+
+  it('gives a yes/no question the Ja/Nee pair as the answer, and keeps Loslaten beside it', () => {
+    const q = question({ question_shape: 'yes_no' });
+    const { onAnswer, onConfirm } = renderCard({ item: q });
+
+    expect(screen.getByText(L.cognitionAskAnswer)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
+    expect(onAnswer).toHaveBeenCalledWith(q, 'yes');
+    fireEvent.click(screen.getByLabelText(L.cognitionNo));
+    expect(onAnswer).toHaveBeenCalledWith(q, 'no');
+    expect(onConfirm).not.toHaveBeenCalled(); // a question is never confirmed
+  });
+
+  it('offers the options the server sent as the choices', () => {
+    const q = question({ question_shape: 'choice', question_options: ['openen', 'inhouden'] });
+    const { onAnswer, onReject } = renderCard({ item: q });
+
+    expect(screen.queryByLabelText(L.cognitionYes)).toBeNull();
+    fireEvent.click(screen.getByText('inhouden'));
+    expect(onAnswer).toHaveBeenCalledWith(q, 'inhouden');
+
+    fireEvent.click(screen.getByLabelText(L.cognitionReject));
+    expect(onReject).toHaveBeenCalledWith(q);
+  });
+
+  it("takes an open question in the person's own words", () => {
+    const q = question({ question_shape: 'open' });
+    const { onAnswer } = renderCard({ item: q });
+
+    const submit = screen.getByLabelText(L.cognitionAnswerAction);
+    expect(submit.disabled).toBe(true); // nothing typed yet
+
+    fireEvent.change(screen.getByLabelText(L.cognitionAnswerPlaceholder), {
+      target: { value: '  openen  ' },
+    });
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(onAnswer).toHaveBeenCalledWith(q, 'openen');
+  });
+
+  it('falls back to the text field for an unknown shape and for a choice without options', () => {
+    renderCard({ item: question({ question_shape: 'whatever' }) });
+    expect(screen.getByLabelText(L.cognitionAnswerPlaceholder)).toBeTruthy();
+
+    cleanup();
+
+    renderCard({ item: question({ question_shape: 'choice', question_options: ['openen'] }) });
+    expect(screen.getByLabelText(L.cognitionAnswerPlaceholder)).toBeTruthy();
+  });
+
+  it('carries no macro friction — a question has nothing to establish', () => {
+    const q = question({ question_shape: 'yes_no', scope: 'macro', counter_hypothesis: 'an objection' });
+    const { onAnswer } = renderCard({ item: q });
+
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
+    expect(onAnswer).toHaveBeenCalledWith(q, 'yes');
+    expect(screen.queryByText(L.cognitionConfirm)).toBeNull();
+  });
+
+  it('locks the answers while busy', () => {
+    renderCard({ item: question({ question_shape: 'yes_no' }), busy: true });
+    expect(screen.getByLabelText(L.cognitionYes).disabled).toBe(true);
+    expect(screen.getByLabelText(L.cognitionReject).disabled).toBe(true);
   });
 });
 

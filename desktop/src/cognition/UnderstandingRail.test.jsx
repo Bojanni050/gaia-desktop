@@ -89,6 +89,40 @@ describe('UnderstandingRail', () => {
     fireEvent.click(railOf(container));
     await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
   });
+
+  it('answers an open question and drops it from the list', async () => {
+    invoke.mockResolvedValueOnce({
+      body: {
+        hypotheses: [
+          {
+            id: 'q1',
+            statement: 'Zal Bo het bestand verder gebruiken (openen/inhouden)?',
+            kind: 'open_question',
+            question_shape: 'choice',
+            question_options: ['openen', 'inhouden'],
+            status: 'proposed',
+            scope: 'micro',
+          },
+        ],
+      },
+    });
+    invoke.mockResolvedValue({ body: { id: 'q1', answer: 'openen' } });
+    const { container } = render(<UnderstandingRail pollMs={0} />);
+    fireEvent.click(railOf(container));
+    await waitFor(() => expect(screen.getByText('inhouden')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('inhouden'));
+
+    // A verdict would stay in the list; an answered question leaves it.
+    await waitFor(() => expect(screen.queryByText('inhouden')).toBeNull());
+    expect(invoke).toHaveBeenLastCalledWith('server_request', {
+      request: {
+        method: 'post',
+        path: 'cognition/hypotheses/q1/answer',
+        body: { answer: 'inhouden' },
+      },
+    });
+  });
 });
 
 describe('drawer width', () => {

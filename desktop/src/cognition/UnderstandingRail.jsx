@@ -2,9 +2,10 @@
  * Understanding — the human Absolute Override, as a right-hand drawer.
  *
  * These are the derived statements Logos is still weighing (hypotheses,
- * candidate models, open questions, relationships); the person confirms one or
- * lets it go. Only this verdict reaches `confirmed` — no model, no accumulation
- * of evidence on its own. Each row renders as an EpistemicReviewCard.
+ * candidate models, open questions, relationships); the person confirms one,
+ * answers a question, or lets it go. Only this verdict reaches `confirmed` — no
+ * model, no accumulation of evidence on its own. Each row renders as an
+ * EpistemicReviewCard.
  *
  * Closed, the drawer is only a 16px edge on the right of the window with a
  * golden dot in its middle: it pulses softly while there is something in
@@ -194,6 +195,13 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     run(item, () => cognitionApi.reopen(item.id, reason),
       (response) => afterAction(item.id, { ...((response && response.body) || {}), status: 'testing' }));
 
+  // Answering an open question is not a verdict: no status changes, nothing is
+  // mirrored — the answer is recorded and the question leaves the list (the
+  // server drops it from the next list too).
+  const handleAnswer = (item, answer) =>
+    run(item, () => cognitionApi.answer(item.id, answer),
+      () => setItems((prev) => (prev || []).filter((it) => it.id !== item.id)));
+
   // Keep the clamp honest when the window shrinks: the drawer can be dragged
   // out to at most a third of the screen, and narrows with the window if it
   // was wider than that third.
@@ -285,6 +293,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
                     onConfirm={handleConfirm}
                     onReject={handleReject}
                     onReopen={handleReopen}
+                    onAnswer={handleAnswer}
                   />
                 ))}
               </>

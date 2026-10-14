@@ -135,6 +135,16 @@ export function buildCognitionReopenRequest(id, reason) {
 }
 
 /**
+ * An open question is not confirmed or rejected — it is ANSWERED, with the
+ * human's own words (or the option the server offered). Answering changes no
+ * status and mirrors nothing; it only records the answer, and the question then
+ * leaves the review list. `question_shape` on the record names the control.
+ */
+export function buildCognitionAnswerRequest(id, answer) {
+  return { method: 'post', path: `cognition/hypotheses/${id}/answer`, body: { answer } };
+}
+
+/**
  * `confirm` is the only path to `confirmed`. `supersedes` names the older,
  * contradicting statements this confirmation replaces (the server marks them
  * rejected as `consolidatie`); `rationale` is the human-readable "why now".

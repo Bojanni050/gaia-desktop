@@ -18,6 +18,7 @@ import {
   buildCognitionTestRequest,
   buildCognitionRejectRequest,
   buildCognitionReopenRequest,
+  buildCognitionAnswerRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
   buildEpisodeListRequest,
@@ -307,14 +308,17 @@ export const notify = (options) => invoke('notify', { options });
 /**
  * Cognition review — the derived statements Logos is still weighing, and the
  * human verdicts on them (`/cognition/*` on Gaia Cloud). `confirm` is the only
- * path to `confirmed`; it may name older statements to supersede. Every call
- * is plain JSON over the generic server_request seam.
+ * path to `confirmed`; it may name older statements to supersede. An open
+ * question is not a verdict but a question, so it is `answer`ed instead — see
+ * the card, which picks the control from the record's `question_shape`. Every
+ * call is plain JSON over the generic server_request seam.
  */
 export const cognitionApi = {
   list: () => serverApi.request(buildCognitionListRequest()).then(parseCognitionList),
   test: (id) => serverApi.request(buildCognitionTestRequest(id)),
   reject: (id, reason) => serverApi.request(buildCognitionRejectRequest(id, reason)),
   reopen: (id, reason) => serverApi.request(buildCognitionReopenRequest(id, reason)),
+  answer: (id, answer) => serverApi.request(buildCognitionAnswerRequest(id, answer)),
   confirm: (id, options) => serverApi.request(buildCognitionConfirmRequest(id, options)),
 };
 

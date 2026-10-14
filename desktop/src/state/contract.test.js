@@ -18,6 +18,7 @@ import {
   buildCognitionTestRequest,
   buildCognitionRejectRequest,
   buildCognitionReopenRequest,
+  buildCognitionAnswerRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
 } from './contract';
@@ -201,6 +202,12 @@ describe('cognition contract', () => {
   it('buildCognitionReopenRequest always carries the reason', () => {
     expect(buildCognitionReopenRequest('h1', 'the disproof was retracted')).toEqual({
       method: 'post', path: 'cognition/hypotheses/h1/reopen', body: { reason: 'the disproof was retracted' },
+    });
+  });
+
+  it('buildCognitionAnswerRequest always carries the answer', () => {
+    expect(buildCognitionAnswerRequest('q1', 'inhouden')).toEqual({
+      method: 'post', path: 'cognition/hypotheses/q1/answer', body: { answer: 'inhouden' },
     });
   });
 

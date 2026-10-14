@@ -284,6 +284,14 @@ body {
 .cognition-choice button:disabled { opacity: 0.4; cursor: default; }
 .cognition-choice .cognition-yes:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .cognition-choice .cognition-no:hover:not(:disabled) { border-color: #C98B7A; color: #C98B7A; }
+/* an answer, not a verdict: the same pill for Ja/Nee and for every option */
+.cognition-choice .cognition-option:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.cognition-letgo {
+  margin-left: auto; background: none; border: none; color: var(--text-faint);
+  font-family: var(--sans); font-size: 0.74rem; cursor: pointer; padding: 4px 2px;
+}
+.cognition-letgo:hover:not(:disabled) { color: #C98B7A; }
+.cognition-letgo:disabled { opacity: 0.4; cursor: default; }
 .cognition-more-toggle {
   margin-left: auto; background: none; border: none; color: var(--text-faint);
   font-family: var(--sans); font-size: 0.74rem; cursor: pointer; padding: 4px 2px;
@@ -296,7 +304,7 @@ body {
 /* rejected = hard quarantine: the only action is an explicit, reasoned reopen */
 .cognition-reopen { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-top: 1px dashed var(--surface-3); }
 .cognition-reopen-hint { font-family: var(--sans); font-size: 0.74rem; color: var(--text-muted); }
-.cognition-reopen textarea {
+.cognition-reopen textarea, .cognition-answer-input {
   font-family: var(--sans); font-size: 0.8rem; color: var(--text);
   background: var(--surface-2); border: 1px solid var(--surface-3); border-radius: 6px;
   padding: 6px 8px; resize: vertical;
