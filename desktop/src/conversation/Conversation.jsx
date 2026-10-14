@@ -5,6 +5,7 @@ import Composer from './Composer';
 import ResearchStatus from './ResearchStatus';
 import DesktopPrompt from './DesktopPrompt';
 import Presence from '../presence/Presence';
+import { stepProgressLabel } from '../state/stepProgress';
 import { PresenceOrb } from '../presence/PresenceOrb';
 import { getGreeting } from '../lib/greeting';
 
@@ -76,11 +77,13 @@ export default function Conversation({ thread, busy, streaming, progress, presen
                 );
               })}
               {busy && !streaming && (
-                // Only the pulsing orb while Gaia works on her reply: no sequenced thinking
-                // words and no "Step 2 of 3" line. The row disappears the moment the reply
-                // itself starts streaming in.
+                // The pulsing orb while Gaia works on her reply, with no sequenced thinking
+                // words. Only a multi-step plan adds its step line ("Step 2 of 3 - ..."): that
+                // is concrete, honest information about what she is doing right now. Progress
+                // is a separate frame from the answer, so this row disappears the moment the
+                // reply itself starts streaming in.
                 <div className="thinking-row">
-                  <Presence state="thinking" size={26} />
+                  <Presence state="thinking" size={26} label={progress ? stepProgressLabel(progress) : undefined} />
                 </div>
               )}
             </>
