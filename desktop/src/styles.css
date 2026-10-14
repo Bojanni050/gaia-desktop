@@ -776,6 +776,18 @@ body {
   background: var(--surface-2);
 }
 .mcp-server .field-toggle { margin-bottom: 8px; }
+/* One tab per MCP server inside the Tools tab; "+" adds a server. */
+.mcp-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+.settings-panel .mcp-tab {
+  font-family: var(--sans); font-size: 0.84rem; padding: 6px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-faint);
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.settings-panel .mcp-tab:hover { color: var(--text); }
+.settings-panel .mcp-tab.active { color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
+.settings-panel .mcp-tab.off:not(.active) { opacity: 0.55; }
+.settings-panel .mcp-tab-add { padding: 6px 14px; }
+
 /* Buttons stay on one line; test/tool results wrap underneath at full width
    (the tool list is one long unbroken run of names). */
 .mcp-server .field-row { flex-wrap: wrap; }

@@ -60,6 +60,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const [toolsState, setToolsState] = useState({ loading: null, result: null, error: null });
   const [testState, setTestState] = useState({ loading: null, serverId: null, result: null, error: false });
   const [tab, setTab] = useState('general'); // general | tools
+  const [mcpSel, setMcpSel] = useState(null); // selected MCP server id; null = the first one
 
   useEffect(() => {
     let active = true;
@@ -181,12 +182,17 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
     setMcpServers(
       mcpServers().map((server, i) => (i === index ? { ...server, ...part } : server)),
     );
-  const addMcpServer = () =>
-    setMcpServers([
-      ...mcpServers(),
-      { id: `mcp-${Date.now()}`, enabled: true, command: '', args: [] },
-    ]);
-  const removeMcpServer = (index) => setMcpServers(mcpServers().filter((_, i) => i !== index));
+  const addMcpServer = () => {
+    const id = `mcp-${Date.now()}`;
+    setMcpServers([...mcpServers(), { id, enabled: true, command: '', args: [] }]);
+    setMcpSel(id);
+  };
+  const removeMcpServer = (index) => {
+    setMcpServers(mcpServers().filter((_, i) => i !== index));
+    setMcpSel(null);
+  };
+  // An unknown or removed selection falls back to the first server.
+  const mcpSelectedIndex = Math.max(0, mcpServers().findIndex((s) => s.id === mcpSel));
 
   const desktopSettings = () => settings.desktop || {};
   const patchDesktop = (part) => patch({ desktop: { ...desktopSettings(), ...part } });
@@ -515,10 +521,26 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
             <section>
               <h3>{L.settingsMcp}</h3>
               <p className="capability-line">{L.settingsMcpHint}</p>
-              {(settings.mcp?.servers || []).length === 0 && (
+              <div className="mcp-tabs" role="tablist">
+                {mcpServers().map((server, index) => (
+                  <button
+                    key={server.id || index}
+                    role="tab"
+                    aria-selected={index === mcpSelectedIndex}
+                    className={`mcp-tab${index === mcpSelectedIndex ? ' active' : ''}${server.enabled === false ? ' off' : ''}`}
+                    onClick={() => setMcpSel(server.id)}
+                  >
+                    {server.name || server.command || L.settingsMcpNewServer}
+                  </button>
+                ))}
+                <button className="mcp-tab mcp-tab-add" onClick={addMcpServer} title={L.settingsMcpAdd} aria-label={L.settingsMcpAdd}>
+                  +
+                </button>
+              </div>
+              {mcpServers().length === 0 && (
                 <p className="capability-line">{L.settingsMcpEmpty}</p>
               )}
-              {(settings.mcp?.servers || []).map((server, index) => (
+              {mcpServers().map((server, index) => index !== mcpSelectedIndex ? null : (
                 <div className="mcp-server" key={server.id || index}>
                   <label className="field field-toggle">
                     <input
@@ -526,7 +548,7 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                       checked={server.enabled ?? true}
                       onChange={(e) => patchMcpServer(index, { enabled: e.target.checked })}
                     />
-                    <span>{server.name || (server.command ? `${server.id}` : L.settingsMcpCommand)}</span>
+                    <span>{L.settingsMcpEnabled}</span>
                   </label>
                   <label className="field">
                     <span>{L.settingsMcpName}</span>
@@ -589,9 +611,6 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                   </div>
                 </div>
               ))}
-              <div className="field-row">
-                <button onClick={addMcpServer}>{L.settingsMcpAdd}</button>
-              </div>
             </section>
           </div>
         </div>
