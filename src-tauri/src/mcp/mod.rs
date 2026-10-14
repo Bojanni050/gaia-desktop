@@ -13,6 +13,7 @@
 
 pub mod client;
 pub mod config;
+pub mod search;
 
 pub use client::StdioClient;
 pub use config::{McpServerConfig, McpSettings};
@@ -134,8 +135,19 @@ pub async fn mcp_call_tool(
     arguments: Value,
 ) -> Result<Value, DesktopError> {
     let config = find_runnable(&settings, &server_id)?;
-    let mut client = StdioClient::connect(&config)?;
-    Ok(client.call_tool(&tool, arguments)?)
+    // A search is a session on the server, and each call here is a fresh process: it has to be
+    // started and followed in this one connection or its results are lost (see `search`).
+    tauri::async_runtime::spawn_blocking(move || -> Result<Value, McpError> {
+        let mut client = StdioClient::connect(&config)?;
+        if tool == "start_search" {
+            search::run_search(&mut client, arguments, search::SEARCH_BUDGET, search::POLL_INTERVAL)
+        } else {
+            client.call_tool(&tool, arguments)
+        }
+    })
+    .await
+    .map_err(|e| DesktopError::Message(e.to_string()))?
+    .map_err(DesktopError::from)
 }
 
 #[cfg(test)]
