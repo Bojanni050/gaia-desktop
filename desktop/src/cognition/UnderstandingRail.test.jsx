@@ -125,11 +125,12 @@ describe('UnderstandingRail', () => {
   });
 });
 
-describe("the drawer's two lists", () => {
+describe("the drawer's three lists", () => {
   const mixed = () => ({
     body: {
       hypotheses: [
         { id: 'h1', statement: 's-h1', status: 'proposed', scope: 'micro' },
+        { id: 'c1', statement: 's-c1', status: 'confirmed', scope: 'micro' },
         { id: 'r1', statement: 's-r1', status: 'rejected', scope: 'micro' },
       ],
     },
@@ -147,25 +148,37 @@ describe("the drawer's two lists", () => {
   // number too — match on the label, not on the whole name.
   const tab = (name) => screen.getByRole('tab', { name: new RegExp(name) });
 
-  it('keeps a rejected statement out of the cards awaiting a verdict', async () => {
+  it('keeps a decided statement out of the cards that await a verdict', async () => {
     await open(mixed());
 
     await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
+    expect(screen.queryByText('s-c1')).toBeNull();
     expect(screen.queryByText('s-r1')).toBeNull();
   });
 
-  it('counts what waits on each tab, including the one that is closed', async () => {
+  it('gives what you confirmed a tab of its own, beside what you let go', async () => {
+    await open(mixed());
+    await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
+
+    expect(tab('Bevestigd').getAttribute('aria-selected')).toBe('false');
+    fireEvent.click(tab('Bevestigd'));
+
+    await waitFor(() => expect(screen.getByText('s-c1')).toBeTruthy());
+    expect(screen.queryByText('s-h1')).toBeNull();
+    expect(screen.queryByText('s-r1')).toBeNull();
+
+    fireEvent.click(tab('Heroverwegen'));
+    await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());
+    expect(screen.queryByText('s-c1')).toBeNull();
+  });
+
+  it('counts what waits on each tab, including the ones that are closed', async () => {
     const container = await open(mixed());
     await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
 
     const counts = [...container.querySelectorAll('.understanding-tab-count')];
-    expect(counts.map((n) => n.textContent)).toEqual(['1', '1']);
-    expect(tab('Heroverwegen').getAttribute('aria-selected')).toBe('false');
-
-    fireEvent.click(tab('Heroverwegen'));
-
-    await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());
-    expect(screen.queryByText('s-h1')).toBeNull();
+    expect(counts.map((n) => n.textContent)).toEqual(['1', '1', '1']);
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
   });
 
   it('says a tab is empty in its own words', async () => {
@@ -176,6 +189,9 @@ describe("the drawer's two lists", () => {
     await waitFor(() => expect(screen.getByText('Er wacht nu niets op je oordeel.')).toBeTruthy());
     expect(tab('Te beoordelen').textContent).toBe('Te beoordelen');
     expect(screen.queryByText('s-r1')).toBeNull();
+
+    fireEvent.click(tab('Bevestigd'));
+    await waitFor(() => expect(screen.getByText('Je hebt nog niets bevestigd.')).toBeTruthy());
 
     fireEvent.click(tab('Heroverwegen'));
     await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());

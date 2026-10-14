@@ -7,13 +7,14 @@
  * model, no accumulation of evidence on its own. Each row renders as an
  * EpistemicReviewCard.
  *
- * The drawer holds two lists, one per tab: "Te beoordelen" — what still waits
- * for a verdict (plus the verdicts already given, which are the person's own
- * record) — and "Heroverwegen", the statements that were let go. A rejected
- * statement is a hard quarantine whose only way back is a stated reason, so it
- * is a list of its own instead of a form sitting in the middle of the cards
- * that still ask something of the person. Both tabs are filled from the one
- * list the server returns, so switching never costs a round trip.
+ * The drawer holds three lists, one per tab: "Te beoordelen" — what still
+ * waits for a verdict — "Bevestigd", the statements the person has taken as
+ * their own, which is their record to read back — and "Heroverwegen", the
+ * statements that were let go. A rejected statement is a hard quarantine whose
+ * only way back is a stated reason, so it is a list of its own instead of a
+ * form sitting in the middle of the cards that still ask something of the
+ * person. All three are filled from the one list the server returns, so
+ * switching never costs a round trip.
  *
  * Closed, the drawer is only a 16px edge on the right of the window with a
  * golden dot in its middle: it pulses softly while there is something in
@@ -32,15 +33,18 @@ import EpistemicReviewCard from './EpistemicReviewCard';
 
 const SEEN_KEY = 'gaia.understanding.seen';
 const WIDTH_KEY = 'gaia.understanding.width';
-// The drawer's two lists. `review` is everything that is not a rejection —
-// statements still waiting for a verdict AND the ones already confirmed, since
-// the drawer is also where a person reads their own record. `reopen` is the
-// rejected quarantine, whose only way back is a stated reason.
+// The drawer's three lists. `review` is everything that still waits for a
+// verdict; `confirmed` is what the person has taken as their own — their own
+// record, read back; `reopen` is the rejected quarantine, whose only way back
+// is a stated reason.
 const TAB_REVIEW = 'review';
+const TAB_CONFIRMED = 'confirmed';
 const TAB_REOPEN = 'reopen';
+const TAB_ORDER = [TAB_REVIEW, TAB_CONFIRMED, TAB_REOPEN];
 
-/** A rejected statement is the only kind that can be taken back — see EpistemicReviewCard. */
-const isReopenable = (item) => item.status === 'rejected';
+/** The one place that decides which list a statement belongs to. */
+const listOf = (item) =>
+  item.status === 'rejected' ? TAB_REOPEN : item.status === 'confirmed' ? TAB_CONFIRMED : TAB_REVIEW;
 const RAIL_WIDTH = 16;
 // How long the drawer and the rail button take to slide; matches `--understanding-slide` in styles.css.
 const SLIDE_MS = 450;
@@ -151,8 +155,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
   // is said by its count.
   useEffect(() => {
     if (!open || !items) return;
-    const reopenable = items.filter(isReopenable);
-    const visible = tab === TAB_REOPEN ? reopenable : items.filter((it) => !isReopenable(it));
+    const visible = items.filter((it) => listOf(it) === tab);
     const next = new Set([...seen, ...visible.map((it) => it.id)]);
     if (next.size === seen.size) return;
     writeSeen(next);
@@ -191,16 +194,20 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     [items, seen]
   );
 
-  // Both tabs are filled from the one list the server returned, so switching
+  // Every tab is filled from the one list the server returned, so switching
   // never costs a round trip.
-  const { review, reopen } = useMemo(() => {
-    const list = items || [];
-    return {
-      review: list.filter((it) => !isReopenable(it)),
-      reopen: list.filter(isReopenable),
-    };
+  const lists = useMemo(() => {
+    const grouped = { [TAB_REVIEW]: [], [TAB_CONFIRMED]: [], [TAB_REOPEN]: [] };
+    (items || []).forEach((it) => grouped[listOf(it)].push(it));
+    return grouped;
   }, [items]);
-  const shownItems = tab === TAB_REOPEN ? reopen : review;
+  const shownItems = lists[tab];
+  // Read at render time, the same way L is read everywhere else.
+  const tabCopy = {
+    [TAB_REVIEW]: { label: L.cognitionTabReview, empty: L.cognitionEmpty },
+    [TAB_CONFIRMED]: { label: L.cognitionTabConfirmed, empty: L.cognitionConfirmedEmpty },
+    [TAB_REOPEN]: { label: L.cognitionTabReopen, empty: L.cognitionReopenEmpty },
+  };
 
   const afterAction = (id, updated) =>
     setItems((prev) => (prev || []).map((it) => (it.id === id ? { ...it, ...(updated || {}) } : it)));
@@ -313,10 +320,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
             </button>
           </div>
           <div className="understanding-tabs" role="tablist" aria-label={L.cognitionTitle}>
-            {[
-              { id: TAB_REVIEW, label: L.cognitionTabReview, count: review.length },
-              { id: TAB_REOPEN, label: L.cognitionTabReopen, count: reopen.length },
-            ].map(({ id, label, count }) => (
+            {TAB_ORDER.map((id) => (
               <button
                 key={id}
                 type="button"
@@ -327,8 +331,10 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
                 className={`understanding-tab${tab === id ? ' active' : ''}`}
                 onClick={() => setTab(id)}
               >
-                {label}
-                {count > 0 && <span className="understanding-tab-count">{count}</span>}
+                {tabCopy[id].label}
+                {lists[id].length > 0 && (
+                  <span className="understanding-tab-count">{lists[id].length}</span>
+                )}
               </button>
             ))}
           </div>
@@ -342,9 +348,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
             {items === null ? (
               <p className="sidebar-section-hint">{L.cognitionLoading}</p>
             ) : shownItems.length === 0 ? (
-              <p className="sidebar-section-hint">
-                {tab === TAB_REOPEN ? L.cognitionReopenEmpty : L.cognitionEmpty}
-              </p>
+              <p className="sidebar-section-hint">{tabCopy[tab].empty}</p>
             ) : (
               <>
                 {tab === TAB_REVIEW && <p className="sidebar-section-hint">{L.cognitionHint}</p>}

@@ -180,8 +180,10 @@ export const LANGUAGES = {
     // cognitionReopen: de knop op een kaart en de tab heten nu hetzelfde, maar
     // ze zijn niet hetzelfde ding.
     cognitionTabReview: 'Te beoordelen',
+    cognitionTabConfirmed: 'Bevestigd',
     cognitionTabReopen: 'Heroverwegen',
     cognitionReopenEmpty: 'Je hebt nog niets losgelaten.',
+    cognitionConfirmedEmpty: 'Je hebt nog niets bevestigd.',
     cognitionLoading: 'Laden…',
     cognitionLoadFailed: 'Dit kon ik niet ophalen.',
     cognitionOpenFailed: 'Dit kon ik niet openen.',
@@ -475,8 +477,10 @@ export const LANGUAGES = {
     cognitionHint: 'What I think I notice, waiting for your judgement. You confirm — I do not.',
     cognitionEmpty: 'Nothing is awaiting your judgement right now.',
     cognitionTabReview: 'To review',
+    cognitionTabConfirmed: 'Confirmed',
     cognitionTabReopen: 'Reconsider',
     cognitionReopenEmpty: 'You have let nothing go yet.',
+    cognitionConfirmedEmpty: 'You have confirmed nothing yet.',
     cognitionLoading: 'Loading…',
     cognitionLoadFailed: 'Could not fetch this.',
     cognitionOpenFailed: 'Could not open this.',
