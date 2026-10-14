@@ -186,6 +186,12 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
     ]);
   const removeMcpServer = (index) => setMcpServers(mcpServers().filter((_, i) => i !== index));
 
+  const desktopSettings = () => settings.desktop || {};
+  const patchDesktop = (part) => patch({ desktop: { ...desktopSettings(), ...part } });
+  // One entry per line, kept as typed (a trailing newline must survive while editing). Blank
+  // entries never match anything, so an empty row cannot mean "allow everything".
+  const lines = (text) => text.split('\n');
+
   const showTools = async (serverId) => {
     setToolsState({ loading: serverId, result: null, error: null });
     try {
@@ -429,6 +435,44 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
           </div>
 
           <div className="settings-col">
+            <section>
+              <h3>{L.settingsDesktop}</h3>
+              <p className="capability-line">{L.settingsDesktopHint}</p>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={desktopSettings().enabled ?? false}
+                  onChange={(e) => patchDesktop({ enabled: e.target.checked })}
+                />
+                <span>{L.settingsDesktopEnabled}</span>
+              </label>
+              <label className="field">
+                <span>{L.settingsDesktopServer}</span>
+                <input
+                  type="text"
+                  value={desktopSettings().serverId || ''}
+                  onChange={(e) => patchDesktop({ serverId: e.target.value.trim() })}
+                />
+              </label>
+              <label className="field">
+                <span>{L.settingsDesktopDirs}</span>
+                <textarea
+                  rows={3}
+                  value={(desktopSettings().allowedDirs || []).join('\n')}
+                  placeholder="C:\Users\jij\Documents"
+                  onChange={(e) => patchDesktop({ allowedDirs: lines(e.target.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>{L.settingsDesktopBlocked}</span>
+                <textarea
+                  rows={4}
+                  value={(desktopSettings().blockedCommands || []).join('\n')}
+                  onChange={(e) => patchDesktop({ blockedCommands: lines(e.target.value) })}
+                />
+              </label>
+            </section>
+
             <section>
               <h3>{L.settingsMcp}</h3>
               <p className="capability-line">{L.settingsMcpHint}</p>

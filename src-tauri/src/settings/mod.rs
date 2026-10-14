@@ -25,6 +25,53 @@ pub struct Settings {
     pub voice: VoiceSettings,
     pub capture: CaptureSettings,
     pub mcp: crate::mcp::McpSettings,
+    pub desktop: DesktopSettings,
+}
+
+/// What Gaia may do on this computer through Desktop Commander. Everything
+/// here is a *limit*: the person's own boundaries, enforced on this device
+/// before an action runs. Off by default, and with no allowed folder every
+/// file action is refused.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DesktopSettings {
+    /// Whether Gaia may offer to work on this computer at all.
+    pub enabled: bool,
+    /// The id of the configured MCP server that is Desktop Commander.
+    pub server_id: String,
+    /// Absolute folders file actions are confined to (subfolders included).
+    pub allowed_dirs: Vec<String>,
+    /// Commands containing any of these (case-insensitive) are refused.
+    pub blocked_commands: Vec<String>,
+}
+
+impl Default for DesktopSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            server_id: "desktop-commander".to_string(),
+            allowed_dirs: Vec::new(),
+            blocked_commands: [
+                "rm -rf",
+                "rm -r /",
+                "del /s",
+                "rd /s",
+                "rmdir /s",
+                "remove-item -recurse",
+                "format ",
+                "diskpart",
+                "mkfs",
+                "shutdown",
+                "restart-computer",
+                "reg delete",
+                "git push --force",
+                "git push -f",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,6 +278,14 @@ pub async fn settings_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_is_off_and_confined_until_the_person_says_otherwise() {
+        let old: Settings = serde_json::from_str(r#"{}"#).unwrap();
+        assert!(!old.desktop.enabled);
+        assert!(old.desktop.allowed_dirs.is_empty(), "no folder allowed by default");
+        assert!(!old.desktop.blocked_commands.is_empty(), "a blocklist ships by default");
+    }
 
     #[test]
     fn audio_defaults_to_full_and_unmuted() {

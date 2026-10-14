@@ -12,6 +12,7 @@ import { serverApi, presenceApi, settingsApi, historyApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useResearchJobs } from './state/useResearchJobs';
 import { useServerStatus } from './state/useServerStatus';
+import { useDesktopActions } from './state/useDesktopActions';
 import { useVoiceSession } from './state/useVoiceSession';
 import { setSpeechGain } from './lib/speech';
 import { L } from './lib/lexicon';
@@ -30,7 +31,8 @@ export default function App() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [logosOpen, setLogosOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
-  const conversation = useConversation(serverApi);
+  const desktop = useDesktopActions();
+  const conversation = useConversation(serverApi, desktop.controller);
   // Hands-free: turns what Rust hears into conversation (and interruptions into cancelled turns).
   const voiceSession = useVoiceSession({ conversation });
 
@@ -172,6 +174,7 @@ export default function App() {
           onSend={conversation.send}
           onRetry={conversation.retry}
           research={research}
+          desktop={desktop}
           onOpenResearchConversation={handleOpenResearchConversation}
         />
       </main>

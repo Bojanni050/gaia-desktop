@@ -424,3 +424,41 @@ describe('interrupting a turn', () => {
     expect(server.cancelTurn).toHaveBeenCalledWith('early');
   });
 });
+
+describe('desktop actions on a turn', () => {
+  const fakeDesktop = (available) => ({
+    isAvailable: vi.fn(async () => available),
+    handleFrame: vi.fn(),
+    abortAll: vi.fn(),
+  });
+
+  it('declares desktop only when it is available, and hands desktop frames over without showing them', async () => {
+    const desktop = fakeDesktop(true);
+    const action = { id: 'a1', skill: 'file-read', status: 'approved' };
+    const server = {
+      streamTurn: vi.fn(async (body, onDelta) => {
+        onDelta({ desktop: action });
+        onDelta({ content: 'Klaar.' });
+        return 'Klaar.';
+      }),
+    };
+    const { result } = renderHook(() => useConversation(server, desktop));
+    await act(async () => {
+      await result.current.send('lees mijn notitie');
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    expect(server.streamTurn.mock.calls[0][0].desktop).toBe(true);
+    expect(desktop.handleFrame).toHaveBeenCalledWith(action);
+    expect(result.current.active.messages.at(-1).content).toBe('Klaar.');
+    expect(desktop.abortAll).toHaveBeenCalled();
+  });
+
+  it('leaves desktop out when it is not available', async () => {
+    const server = { streamTurn: vi.fn(async (body, onDelta) => { onDelta({ content: 'Hoi.' }); return 'Hoi.'; }) };
+    const { result } = renderHook(() => useConversation(server, fakeDesktop(false)));
+    await act(async () => {
+      await result.current.send('hoi');
+    });
+    expect('desktop' in server.streamTurn.mock.calls[0][0]).toBe(false);
+  });
+});

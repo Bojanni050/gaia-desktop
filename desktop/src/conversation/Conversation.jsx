@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import MessageView from './MessageView';
 import Composer from './Composer';
 import ResearchStatus from './ResearchStatus';
+import DesktopPrompt from './DesktopPrompt';
 import Presence from '../presence/Presence';
 import { PresenceOrb } from '../presence/PresenceOrb';
 import { getGreeting } from '../lib/greeting';
@@ -13,7 +14,7 @@ import { stepProgressLabel } from '../state/stepProgress';
  * moment (orb + greeting), messages, the thinking row, and the composer
  * dock with Gaia's presence above it.
  */
-export default function Conversation({ thread, busy, streaming, progress, presenceState, listenState, whisper, onSend, onRetry, research, onOpenResearchConversation }) {
+export default function Conversation({ thread, busy, streaming, progress, presenceState, listenState, whisper, onSend, onRetry, research, onOpenResearchConversation, desktop }) {
   const scrollRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const messages = thread?.messages || [];
@@ -111,6 +112,15 @@ export default function Conversation({ thread, busy, streaming, progress, presen
           activeConversationId={thread?.id}
           onAnswer={research.answer}
           onOpen={onOpenResearchConversation}
+        />
+      )}
+
+      {desktop && (
+        <DesktopPrompt
+          prompts={desktop.prompts}
+          notice={desktop.notice}
+          onDecide={desktop.controller.decide}
+          onDismissNotice={desktop.controller.dismissNotice}
         />
       )}
 

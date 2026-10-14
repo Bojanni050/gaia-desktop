@@ -109,6 +109,12 @@ pub struct TurnDelta {
     /// turn, never content; the frontend shows a light next to the reply.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory: Option<Value>,
+    /// Gaia wants to act on this computer:
+    /// `{ type: 'desktop', desktop: { id, skill, policy, status, summary, input, conversationId } }`.
+    /// The server repeats the same id on every status change. Relayed verbatim; the frontend
+    /// decides what to ask the person and whether the action may run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<Value>,
 }
 
 /// Receiver for a streamed turn's incremental deltas. Closes when the

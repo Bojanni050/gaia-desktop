@@ -1109,3 +1109,7 @@ body {
 }
 
 .research-error { margin: 0; color: var(--accent); font-size: 0.82rem; }
+
+/* Desktop actions: the prompt reuses the research question's look; long file content scrolls. */
+.desktop-content { max-height: 220px; overflow: auto; }
+.mcp-server textarea, .settings-col textarea { width: 100%; resize: vertical; font: inherit; }

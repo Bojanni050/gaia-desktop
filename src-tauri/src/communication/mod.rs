@@ -231,6 +231,7 @@ impl ServerLink {
                         step: delta.step,
                         error: delta.error,
                         memory: delta.memory,
+                        desktop: delta.desktop,
                     },
                 );
             }
@@ -348,6 +349,10 @@ pub struct TurnDeltaPayload {
     /// `{ type: 'memory' }` frame - see `TurnDelta::memory`.
     #[serde(skip_serializing_if = "Option::is_none")]
     memory: Option<Value>,
+    /// An action Gaia wants carried out on this computer, relayed verbatim
+    /// from a `{ type: 'desktop' }` frame - see `TurnDelta::desktop`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    desktop: Option<Value>,
 }
 
 #[tauri::command]

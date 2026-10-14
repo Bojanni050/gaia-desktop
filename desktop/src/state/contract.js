@@ -52,8 +52,12 @@ export function buildTurnRequest(messages, conversationId) {
  * into the prompt the way the non-streaming path does (gaia-api/src/
  * server.js); a pre-existing gap shared with Web, not introduced here.
  */
-export function buildStreamTurnBody(messages, conversationId) {
-  return buildTurnBody(messages, conversationId);
+export function buildStreamTurnBody(messages, conversationId, { desktop = false } = {}) {
+  const body = buildTurnBody(messages, conversationId);
+  // Declares that this client can carry out actions on this computer (Desktop Commander is
+  // running and allowed). Left off entirely otherwise: the server then never offers the tool.
+  if (desktop) body.desktop = true;
+  return body;
 }
 
 export function parseReply(response) {

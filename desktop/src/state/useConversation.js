@@ -21,7 +21,7 @@ import { shouldSpeak } from '../lib/language';
 let counter = 1;
 const localId = () => `${Date.now()}-${counter++}`;
 
-export function useConversation(server) {
+export function useConversation(server, desktop) {
   const [threads, setThreads] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -158,7 +158,15 @@ export function useConversation(server) {
         // threadId doubles as the server's conversationId — Gaia Cloud
         // saves/appends the transcript under it (conversationStore.js),
         // which is what lets History reopen this same thread later.
-        const body = buildStreamTurnBody(history, threadId);
+        // Desktop actions ride this same stream (`desktop` frames), so the turn only says it can
+        // carry them out when Desktop Commander is running and the person allowed it. A probe that
+        // fails is simply "no": the turn goes ahead without the capability.
+        let canDesktop = false;
+        try {
+          canDesktop = !!desktop && (await desktop.isAvailable());
+        } catch (_) { /* unavailable */ }
+        if (turn.cancelled) return;
+        const body = buildStreamTurnBody(history, threadId, { desktop: canDesktop });
         const fullReply = await server.streamTurn(body, (delta) => {
           // Deltas already on their way when the turn was cancelled are dropped.
           if (turn.cancelled) return;
@@ -167,6 +175,10 @@ export function useConversation(server) {
           // (the next step's `start` — or the reply itself — takes over).
           if (delta.step) {
             setProgress(delta.step.status === 'start' ? delta.step : null);
+            return;
+          }
+          if (delta.desktop) {
+            if (desktop) desktop.handleFrame(delta.desktop);
             return;
           }
           if (delta.memory) {
@@ -263,10 +275,12 @@ export function useConversation(server) {
           setBusy(false);
           setStreaming(false);
           setProgress(null);
+          // Whatever is still open when the turn ends is over: the server has expired it.
+          if (desktop) desktop.abortAll();
         }
       }
     },
-    [server]
+    [server, desktop]
   );
 
   /**
@@ -285,8 +299,10 @@ export function useConversation(server) {
     setBusy(false);
     setStreaming(false);
     setProgress(null);
+    // Interrupted: close prompts and let running actions go (the closed stream expires them server-side).
+    if (desktop) desktop.abortAll();
     return true;
-  }, [server]);
+  }, [server, desktop]);
 
   const send = useCallback(
     (rawText, attachments = [], options = {}) => {

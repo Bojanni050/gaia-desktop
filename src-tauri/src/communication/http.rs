@@ -329,7 +329,17 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         Some("memory") => value.get("memory").cloned(),
         _ => None,
     };
-    if content.is_none() && reasoning_content.is_none() && step.is_none() && error.is_none() && memory.is_none() {
+    let desktop = match frame_type {
+        Some("desktop") => value.get("desktop").cloned(),
+        _ => None,
+    };
+    if content.is_none()
+        && reasoning_content.is_none()
+        && step.is_none()
+        && error.is_none()
+        && memory.is_none()
+        && desktop.is_none()
+    {
         return None;
     }
     Some(Ok(Some(TurnDelta {
@@ -338,6 +348,7 @@ fn parse_sse_frame(frame: &str) -> Option<Result<Option<TurnDelta>, Communicatio
         step,
         error,
         memory,
+        desktop,
     })))
 }
 
@@ -390,6 +401,19 @@ mod tests {
             Some(Ok(delta)) => delta,
             other => panic!("expected a relayable frame, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn a_desktop_frame_relays_the_action_and_nothing_else() {
+        let frame = "data: {\"choices\":[{\"delta\":{}}],\"type\":\"desktop\",\"desktop\":{\"id\":\"a1\",\"skill\":\"run-command\",\"policy\":\"confirm\",\"status\":\"awaiting_confirmation\",\"summary\":\"Run command: npm test\",\"input\":{\"command\":\"npm test\"},\"conversationId\":\"c1\"}}
+
+";
+        let delta = relayed(frame).expect("a desktop frame must relay, not be dropped");
+        let action = delta.desktop.expect("desktop payload");
+        assert_eq!(action["id"], "a1");
+        assert_eq!(action["status"], "awaiting_confirmation");
+        assert_eq!(action["input"]["command"], "npm test");
+        assert!(delta.content.is_none() && delta.memory.is_none() && delta.error.is_none());
     }
 
     #[test]
