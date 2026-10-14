@@ -176,6 +176,12 @@ export const LANGUAGES = {
     cognitionTitle: 'Wat ik begrijp',
     cognitionHint: 'Wat ik meen op te merken, wacht op jouw oordeel. Jij bevestigt — ik niet.',
     cognitionEmpty: 'Er wacht nu niets op je oordeel.',
+    // De twee lijsten van de drawer. De tablabels staan hier apart van
+    // cognitionReopen: de knop op een kaart en de tab heten nu hetzelfde, maar
+    // ze zijn niet hetzelfde ding.
+    cognitionTabReview: 'Te beoordelen',
+    cognitionTabReopen: 'Heroverwegen',
+    cognitionReopenEmpty: 'Je hebt nog niets losgelaten.',
     cognitionLoading: 'Laden…',
     cognitionLoadFailed: 'Dit kon ik niet ophalen.',
     cognitionOpenFailed: 'Dit kon ik niet openen.',
@@ -468,6 +474,9 @@ export const LANGUAGES = {
     cognitionTitle: 'What I understand',
     cognitionHint: 'What I think I notice, waiting for your judgement. You confirm — I do not.',
     cognitionEmpty: 'Nothing is awaiting your judgement right now.',
+    cognitionTabReview: 'To review',
+    cognitionTabReopen: 'Reconsider',
+    cognitionReopenEmpty: 'You have let nothing go yet.',
     cognitionLoading: 'Loading…',
     cognitionLoadFailed: 'Could not fetch this.',
     cognitionOpenFailed: 'Could not open this.',

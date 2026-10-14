@@ -219,6 +219,24 @@ body {
 }
 .understanding-drawer-close:hover { color: var(--text); background: var(--surface-2); }
 .understanding-drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px 26px; }
+/* The drawer's two lists — what waits for a verdict, and what was let go — as
+   pills on the drawer's own surface. Same shape as the MCP tabs, sized for a
+   drawer that is at most a third of the window wide. */
+.understanding-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 0; }
+.understanding-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent;
+  font-family: var(--sans); font-size: 0.82rem; color: var(--text-faint);
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+.understanding-tab:hover { color: var(--text); }
+.understanding-tab.active { color: var(--text); border-color: var(--accent-line); background: var(--surface-2); }
+.understanding-tab-count {
+  font-size: 0.72rem; line-height: 1; padding: 3px 6px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
+}
+.understanding-tab.active .understanding-tab-count { border-color: var(--accent-line); color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   .understanding-rail.has-new .understanding-dot { animation: none; opacity: 1; }
   .understanding-drawer, .understanding-rail { transition: none; }

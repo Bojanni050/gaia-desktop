@@ -7,13 +7,22 @@
  * model, no accumulation of evidence on its own. Each row renders as an
  * EpistemicReviewCard.
  *
+ * The drawer holds two lists, one per tab: "Te beoordelen" — what still waits
+ * for a verdict (plus the verdicts already given, which are the person's own
+ * record) — and "Heroverwegen", the statements that were let go. A rejected
+ * statement is a hard quarantine whose only way back is a stated reason, so it
+ * is a list of its own instead of a form sitting in the middle of the cards
+ * that still ask something of the person. Both tabs are filled from the one
+ * list the server returns, so switching never costs a round trip.
+ *
  * Closed, the drawer is only a 16px edge on the right of the window with a
  * golden dot in its middle: it pulses softly while there is something in
  * Understanding the person has not seen yet, and rests when there is not. The
  * list is fetched in the background (at mount and on an interval) so the dot
- * knows what is there even while the drawer is closed; opening it marks
- * everything currently shown as seen, and arriving items while it is open are
- * marked seen too, so the dot never pulses under the person's eyes.
+ * knows what is there even while the drawer is closed; what the open tab shows
+ * counts as seen (and arriving items while it is open are marked seen too), so
+ * the dot never pulses under the person's eyes — a count on the other tab
+ * still says what is waiting there.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
@@ -23,6 +32,15 @@ import EpistemicReviewCard from './EpistemicReviewCard';
 
 const SEEN_KEY = 'gaia.understanding.seen';
 const WIDTH_KEY = 'gaia.understanding.width';
+// The drawer's two lists. `review` is everything that is not a rejection —
+// statements still waiting for a verdict AND the ones already confirmed, since
+// the drawer is also where a person reads their own record. `reopen` is the
+// rejected quarantine, whose only way back is a stated reason.
+const TAB_REVIEW = 'review';
+const TAB_REOPEN = 'reopen';
+
+/** A rejected statement is the only kind that can be taken back — see EpistemicReviewCard. */
+const isReopenable = (item) => item.status === 'rejected';
 const RAIL_WIDTH = 16;
 // How long the drawer and the rail button take to slide; matches `--understanding-slide` in styles.css.
 const SLIDE_MS = 450;
@@ -97,6 +115,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
   const [items, setItems] = useState(null); // null = not loaded yet
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [tab, setTab] = useState(TAB_REVIEW);
   const [seen, setSeen] = useState(readSeen);
   const [width, setWidth] = useState(readWidth); // null = default (30vw, max 460)
   const [viewport, setViewport] = useState(() =>
@@ -125,14 +144,20 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     return () => clearInterval(timer);
   }, [load, pollMs]);
 
-  // Whatever is on screen while the drawer is open counts as seen — including
-  // items that arrive from a background refresh while the person is reading.
+  // Whatever the open tab shows counts as seen — including items that arrive
+  // from a background refresh while the person is reading, and everything a
+  // tab shown earlier showed. The dot is about what has ever been on screen,
+  // never about the tab that happens to be open; what waits on the other tab
+  // is said by its count.
   useEffect(() => {
     if (!open || !items) return;
-    const next = new Set(items.map((it) => it.id));
+    const reopenable = items.filter(isReopenable);
+    const visible = tab === TAB_REOPEN ? reopenable : items.filter((it) => !isReopenable(it));
+    const next = new Set([...seen, ...visible.map((it) => it.id)]);
+    if (next.size === seen.size) return;
     writeSeen(next);
     setSeen(next);
-  }, [open, items]);
+  }, [open, items, tab, seen]);
 
   useEffect(() => {
     if (open) {
@@ -165,6 +190,17 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
     () => Boolean(items && items.some((it) => !seen.has(it.id))),
     [items, seen]
   );
+
+  // Both tabs are filled from the one list the server returned, so switching
+  // never costs a round trip.
+  const { review, reopen } = useMemo(() => {
+    const list = items || [];
+    return {
+      review: list.filter((it) => !isReopenable(it)),
+      reopen: list.filter(isReopenable),
+    };
+  }, [items]);
+  const shownItems = tab === TAB_REOPEN ? reopen : review;
 
   const afterAction = (id, updated) =>
     setItems((prev) => (prev || []).map((it) => (it.id === id ? { ...it, ...(updated || {}) } : it)));
@@ -276,16 +312,43 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
               <X size={16} />
             </button>
           </div>
-          <div className="understanding-drawer-body">
+          <div className="understanding-tabs" role="tablist" aria-label={L.cognitionTitle}>
+            {[
+              { id: TAB_REVIEW, label: L.cognitionTabReview, count: review.length },
+              { id: TAB_REOPEN, label: L.cognitionTabReopen, count: reopen.length },
+            ].map(({ id, label, count }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`understanding-tab-${id}`}
+                aria-controls="understanding-tabpanel"
+                aria-selected={tab === id}
+                className={`understanding-tab${tab === id ? ' active' : ''}`}
+                onClick={() => setTab(id)}
+              >
+                {label}
+                {count > 0 && <span className="understanding-tab-count">{count}</span>}
+              </button>
+            ))}
+          </div>
+          <div
+            className="understanding-drawer-body"
+            id="understanding-tabpanel"
+            role="tabpanel"
+            aria-labelledby={`understanding-tab-${tab}`}
+          >
             {error && <div className="sidebar-section-error">{error}</div>}
             {items === null ? (
               <p className="sidebar-section-hint">{L.cognitionLoading}</p>
-            ) : items.length === 0 ? (
-              <p className="sidebar-section-hint">{L.cognitionEmpty}</p>
+            ) : shownItems.length === 0 ? (
+              <p className="sidebar-section-hint">
+                {tab === TAB_REOPEN ? L.cognitionReopenEmpty : L.cognitionEmpty}
+              </p>
             ) : (
               <>
-                <p className="sidebar-section-hint">{L.cognitionHint}</p>
-                {items.map((item) => (
+                {tab === TAB_REVIEW && <p className="sidebar-section-hint">{L.cognitionHint}</p>}
+                {shownItems.map((item) => (
                   <EpistemicReviewCard
                     key={item.id}
                     item={item}

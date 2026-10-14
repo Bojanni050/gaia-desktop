@@ -125,6 +125,87 @@ describe('UnderstandingRail', () => {
   });
 });
 
+describe("the drawer's two lists", () => {
+  const mixed = () => ({
+    body: {
+      hypotheses: [
+        { id: 'h1', statement: 's-h1', status: 'proposed', scope: 'micro' },
+        { id: 'r1', statement: 's-r1', status: 'rejected', scope: 'micro' },
+      ],
+    },
+  });
+
+  const open = async (payload) => {
+    invoke.mockResolvedValue(payload);
+    const { container } = render(<UnderstandingRail pollMs={0} />);
+    fireEvent.click(railOf(container));
+    await waitFor(() => expect(container.querySelector('.understanding-drawer')).toBeTruthy());
+    return container;
+  };
+
+  // The count badge rides inside the tab, so its accessible name carries the
+  // number too — match on the label, not on the whole name.
+  const tab = (name) => screen.getByRole('tab', { name: new RegExp(name) });
+
+  it('keeps a rejected statement out of the cards awaiting a verdict', async () => {
+    await open(mixed());
+
+    await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
+    expect(screen.queryByText('s-r1')).toBeNull();
+  });
+
+  it('counts what waits on each tab, including the one that is closed', async () => {
+    const container = await open(mixed());
+    await waitFor(() => expect(screen.getByText('s-h1')).toBeTruthy());
+
+    const counts = [...container.querySelectorAll('.understanding-tab-count')];
+    expect(counts.map((n) => n.textContent)).toEqual(['1', '1']);
+    expect(tab('Heroverwegen').getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(tab('Heroverwegen'));
+
+    await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());
+    expect(screen.queryByText('s-h1')).toBeNull();
+  });
+
+  it('says a tab is empty in its own words', async () => {
+    await open({
+      body: { hypotheses: [{ id: 'r1', statement: 's-r1', status: 'rejected', scope: 'micro' }] },
+    });
+
+    await waitFor(() => expect(screen.getByText('Er wacht nu niets op je oordeel.')).toBeTruthy());
+    expect(tab('Te beoordelen').textContent).toBe('Te beoordelen');
+    expect(screen.queryByText('s-r1')).toBeNull();
+
+    fireEvent.click(tab('Heroverwegen'));
+    await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());
+  });
+
+  it('moves a reopened statement back to the cards awaiting a verdict', async () => {
+    invoke.mockResolvedValueOnce({
+      body: { hypotheses: [{ id: 'r1', statement: 's-r1', status: 'rejected', scope: 'micro' }] },
+    });
+    invoke.mockResolvedValue({ body: { id: 'r1', status: 'testing' } });
+    const { container } = render(<UnderstandingRail pollMs={0} />);
+    fireEvent.click(railOf(container));
+    await waitFor(() => expect(container.querySelector('.understanding-drawer')).toBeTruthy());
+
+    fireEvent.click(tab('Heroverwegen'));
+    await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());
+
+    fireEvent.change(screen.getByPlaceholderText('Waarom heroverwegen?'), {
+      target: { value: 'omdat het toch klopt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Heroverwegen/ }));
+
+    // The reopened card is no longer a rejection, so it belongs to the other
+    // list now — and there it is, without a refetch.
+    await waitFor(() => expect(screen.queryByText('s-r1')).toBeNull());
+    fireEvent.click(tab('Te beoordelen'));
+    await waitFor(() => expect(screen.getByText('s-r1')).toBeTruthy());
+  });
+});
+
 describe('drawer width', () => {
   it('never grows past a third of the viewport', () => {
     expect(clampWidth(9999, 1000)).toBe(330);
