@@ -203,3 +203,9 @@
 - Findings: de uitleg- en statusregels in de instellingen (`.capability-line`) erfden de regelhoogte van de pagina, wat de lange teksten (zoals de desktop-uitleg en de toolslijst) krap liet ogen.
 - Conclusions: expliciete `line-height: 1.4`, op verzoek.
 - Actions: `desktop/src/styles.css` (`.capability-line`); geen test nodig.
+
+## 2026-10-14 (`.field` margin-top 10px)
+
+- Findings: `.field` had alleen een onderkant (`margin-bottom: 10px`), waardoor het eerste veld direct onder een kop of uitlegregel kleefde.
+- Conclusions: `margin-top: 10px` erbij, op verzoek, voor alle velden (ook de toggles, want die zijn `.field` met `field-toggle`). Let op: tussen twee velden onder elkaar vallen de marges samen (10 + 10 wordt 10, gewone verticale margin-collapse); de ruimte nieuw is vooral boven het eerste veld van een blok en na losse regels.
+- Actions: `desktop/src/styles.css` (`.field`); visueel bekeken in de dev-app.
