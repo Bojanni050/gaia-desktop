@@ -29,6 +29,33 @@ const INIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 type SharedReader = Arc<Mutex<BufReader<ChildStdout>>>;
 
+fn spawn_with(command: &str, args: &[String]) -> std::io::Result<Child> {
+    Command::new(command)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+/// Launch the configured command. On Windows, tools like `npx` are `.cmd`
+/// shims that `CreateProcess` does not find under their bare name, so a
+/// not-found extensionless command is retried once as `<command>.cmd`.
+fn spawn_server(config: &McpServerConfig) -> Result<Child, McpError> {
+    let command = config.command.trim();
+    match spawn_with(command, &config.args) {
+        Err(e)
+            if cfg!(windows)
+                && e.kind() == std::io::ErrorKind::NotFound
+                && std::path::Path::new(command).extension().is_none() =>
+        {
+            spawn_with(&format!("{command}.cmd"), &config.args)
+                .map_err(|_| McpError::Spawn(e.to_string()))
+        }
+        other => other.map_err(|e| McpError::Spawn(e.to_string())),
+    }
+}
+
 /// A connected stdio MCP server. The process is killed on drop — the
 /// desktop never leaves tool servers running unattended.
 pub struct StdioClient {
@@ -43,13 +70,7 @@ pub struct StdioClient {
 impl StdioClient {
     /// Launch the configured server and perform MCP `initialize`.
     pub fn connect(config: &McpServerConfig) -> Result<Self, McpError> {
-        let mut child = Command::new(&config.command)
-            .args(&config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| McpError::Spawn(e.to_string()))?;
+        let mut child = spawn_server(config)?;
         let stdin = child
             .stdin
             .take()
@@ -262,6 +283,23 @@ rl.on('line', (line) => {
         assert!(matches!(
             StdioClient::connect(&config),
             Err(McpError::Spawn(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bare_cmd_shim_name_still_launches_on_windows() {
+        // `npx` only exists as npx.cmd; `--version` is not MCP, so getting a
+        // transport error (not Spawn) proves the process itself launched.
+        let config = McpServerConfig {
+            enabled: true,
+            command: "npx".to_string(),
+            args: vec!["--version".to_string()],
+            ..Default::default()
+        };
+        assert!(matches!(
+            StdioClient::connect(&config),
+            Err(McpError::Transport(_))
         ));
     }
 
