@@ -233,3 +233,9 @@
 - Findings: op verzoek een marge op de dropdowns (`.field select`). De twee selects (uitvoer- en invoerapparaat) zitten elk in een `.field`-label met de labeltekst erboven (kolom, `gap: 5px`).
 - Conclusions: 15px boven en onder, gelijk aan de knoppen. Bijwerking, in de app bekeken: de marge zit op de select zelf, dus het label komt 15px + de 5px gap (20px) boven zijn dropdown te staan en hoort visueel minder bij elkaar; onder de select komt 15px bovenop de 15px van het veld. Dat is wat letterlijk gevraagd is; als alleen de ruimte tussen velden bedoeld was, is `margin-bottom` alleen, of de ruimte op het label, de nettere keuze.
 - Actions: `desktop/src/styles.css` (`.field select`); visueel bekeken in de dev-app (tab Algemeen).
+
+## 2026-10-14 (alle veldsoorten: 15px boven en onder, ook sliders)
+
+- Findings: na de marge op `.field select` bleek dat een los control-type niet consistent was; gevraagd werd alle veldsoorten gelijk te behandelen: invoervelden, dropdowns, tekstvakken en sliders, 15px boven en onder.
+- Conclusions: één regel voor `.field input` (zonder checkbox en radio), `.field select` en `.field textarea`; de sliders (volume, gevoeligheid) zijn `input[type=range]` in een `.field` en vallen er dus onder. Checkboxes bewust uitgezonderd: die staan in een rij naast hun tekst, de rij heeft de veldmarge al, en 15px extra eromheen zou elke toggle zichtbaar te hoog maken. Bijwerking en oplossing: de oogknop naast het tokenveld rekte met de marge van de input mee (de rij rekt de knop tot de hoogte van het veld); de ruimte zit daarom voor die rij op `.token-row` zelf en de input erin heeft geen eigen marge, zodat knop en veld even hoog blijven. Het label staat nu overal 20px (15 + gap 5) boven zijn control; dat is de gevraagde keuze en eerder benoemd.
+- Actions: `desktop/src/styles.css` (controlregel, `.token-row`); visueel bekeken in de dev-app (tab Algemeen).

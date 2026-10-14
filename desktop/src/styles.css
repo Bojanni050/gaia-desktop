@@ -684,7 +684,14 @@ body {
   background-repeat: no-repeat; background-position: right 13px center;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
-.field select { margin-top: 15px; margin-bottom: 15px; }
+/* Every control inside a field (text inputs, dropdowns, text areas, sliders) gets the same room.
+   Checkboxes are left out: they sit in a row beside their text, which already has the field's margin. */
+.field input:not([type='checkbox']):not([type='radio']),
+.field select,
+.field textarea { margin-top: 15px; margin-bottom: 15px; }
+/* The token row stretches its button to the input's height, so its room sits on the row instead. */
+.token-row { margin-top: 15px; margin-bottom: 15px; }
+.field .token-row input:not([type='checkbox']):not([type='radio']) { margin-top: 0; margin-bottom: 0; }
 .field select:hover { border-color: var(--accent-line); }
 .field select option { background: var(--surface-2); color: var(--text); }
 .field input:focus,
