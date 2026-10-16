@@ -34,7 +34,7 @@ describe('speechApi', () => {
   it('returns bytes and the server mime type from the speech_synthesize command', async () => {
     invoke.mockResolvedValue({ audio: [73, 68, 51], mime_type: 'audio/mpeg' });
     const result = await speechApi.synthesize('hallo daar');
-    expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: 'hallo daar' });
+    expect(invoke).toHaveBeenCalledWith('speech_synthesize', { text: 'hallo daar', language: null });
     expect(result.bytes).toEqual(new Uint8Array([73, 68, 51]));
     expect(result.mimeType).toBe('audio/mpeg');
   });

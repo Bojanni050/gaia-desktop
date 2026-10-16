@@ -16,7 +16,7 @@ import { buildStreamTurnBody } from './contract';
 import { phraseTurnError } from './phrases';
 import { getSpeechInfo } from '../server/api';
 import { playSpeech, speaksReplies, stopSpeech } from '../lib/speech';
-import { shouldSpeak } from '../lib/language';
+import { detectLanguage, shouldSpeak } from '../lib/language';
 
 let counter = 1;
 const localId = () => `${Date.now()}-${counter++}`;
@@ -262,7 +262,7 @@ export function useConversation(server, desktop) {
             const info = await getSpeechInfo(server.request);
             if (!shouldSpeak(fullReply, info && info.languages)) return;
             // Synthesis and playback both happen in Rust (speech_play).
-            await playSpeech(fullReply);
+            await playSpeech(fullReply, detectLanguage(fullReply));
           } catch (error) {
             // Never affects the turn — text is already canonical and shown.
             // But don't hide it either: a silent swallow is exactly what once

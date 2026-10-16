@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { looksEnglish, shouldSpeak } from './language';
+import { detectLanguage, looksEnglish, shouldSpeak } from './language';
 
 describe('looksEnglish', () => {
   it('recognizes an English sentence', () => {
@@ -53,5 +53,17 @@ describe('shouldSpeak', () => {
     expect(shouldSpeak('', ['en', 'nl'])).toBe(false);
     expect(shouldSpeak('   ', ['en', 'nl'])).toBe(false);
     expect(shouldSpeak(undefined, ['en', 'nl'])).toBe(false);
+  });
+});
+
+describe('detectLanguage', () => {
+  it('names the language whose signal wins', () => {
+    expect(detectLanguage('What do you think about this, and how would you do it?')).toBe('en');
+    expect(detectLanguage('Wat vind je hiervan, en hoe zou je het doen?')).toBe('nl');
+  });
+
+  it('returns null on a tie or no signal, so the server uses its default voice', () => {
+    expect(detectLanguage('')).toBeNull();
+    expect(detectLanguage('Okay.')).toBeNull();
   });
 });

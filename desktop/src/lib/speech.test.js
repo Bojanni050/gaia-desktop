@@ -22,8 +22,13 @@ beforeEach(() => {
 describe('playSpeech', () => {
   it('hands the reply text to Rust, which synthesizes and plays it', async () => {
     await expect(playSpeech('hello there')).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'hello there' });
+    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'hello there', language: null });
   });
+  it('passes the detected language so the matching voice is used', async () => {
+    await playSpeech('hallo daar', 'nl');
+    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'hallo daar', language: 'nl' });
+  });
+
 
   it('treats a reply that was stopped on purpose as a normal end, not a failure', async () => {
     invoke.mockResolvedValue({ outcome: 'stopped' });

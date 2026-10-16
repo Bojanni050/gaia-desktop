@@ -54,6 +54,21 @@ export function looksEnglish(text) {
 }
 
 /**
+ * Which voice a reply belongs to: 'en' or 'nl' when one language's signal strictly wins, `null` when
+ * there is no clear winner (the server then uses its default voice).
+ * @param {string} text
+ * @returns {'en'|'nl'|null}
+ */
+export function detectLanguage(text) {
+  const value = String(text || '');
+  const englishScore = scoreText(value, ENGLISH_SIGNALS);
+  const dutchScore = scoreText(value, DUTCH_SIGNALS);
+  if (englishScore > dutchScore) return 'en';
+  if (dutchScore > englishScore) return 'nl';
+  return null;
+}
+
+/**
  * Whether a reply is worth speaking, given the voice behind it.
  *
  * @param {string} text the already-received Gaia reply

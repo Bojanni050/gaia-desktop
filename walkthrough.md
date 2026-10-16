@@ -343,3 +343,9 @@
 - Findings: Een draaiende `gaia.exe` houdt het bestand vast, waardoor de build kan mislukken.
 - Conclusions: Eerst netjes sluiten (`taskkill` zonder `/f`, zodat Gaia kan afsluiten), na 3 s forceren als hij nog draait.
 - Actions: `build-and-start.cmd` (check via `tasklist`, dan `taskkill`); validated: niet uitgevoerd.
+
+## 2026-10-16 (Desktop stuurt taal mee naar /speech)
+
+- Findings: Gaia Cloud kan nu een NL- en EN-stem kiezen (zie Gaia-Cloud walkthrough), maar de desktop meldde de taal van het antwoord niet.
+- Conclusions: De desktop detecteert de taal al met een telling van functiewoorden; `detectLanguage` geeft `'nl'`/`'en'`/`null` (null = gelijke stand of geen signaal → server-default, NL). De taal gaat als optioneel veld door Rust naar `/speech`; `shouldSpeak` blijft ongewijzigd.
+- Actions: `desktop/src/lib/language.js` (`detectLanguage`), `lib/speech.js`, `server/api.js`, `state/useConversation.js` (taal doorgeven), `src-tauri/src/speech/mod.rs` (`language` op `speech_play`/`speech_synthesize`, `speech_body`) + tests; validated: vitest 280/280, `cargo test --lib speech` groen.

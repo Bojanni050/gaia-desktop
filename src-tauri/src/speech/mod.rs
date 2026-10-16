@@ -52,14 +52,27 @@ pub struct SpeechAudio {
     pub mime_type: String,
 }
 
+/// The `/speech` request body. `language` ("nl" or "en", detected on the desktop) lets Gaia Cloud pick the
+/// matching voice; without it the server speaks with its default voice.
+fn speech_body(text: &str, language: Option<&str>) -> serde_json::Value {
+    match language {
+        Some(language @ ("nl" | "en")) => serde_json::json!({ "text": text, "language": language }),
+        _ => serde_json::json!({ "text": text }),
+    }
+}
+
 /// Fetches the synthesized speech for `text` from Gaia Server's `POST /speech`: raw audio bytes plus the
 /// server's own Content-Type. Falls back to `audio/wav` when the server sends no Content-Type — the
 /// pre-provider default, and what older servers always served.
-async fn fetch_speech(link: &ServerLink, text: &str) -> Result<SpeechAudio, DesktopError> {
+async fn fetch_speech(
+    link: &ServerLink,
+    text: &str,
+    language: Option<&str>,
+) -> Result<SpeechAudio, DesktopError> {
     let base = base_url(link)?;
     let client = reqwest::Client::new();
     let request = authorize(client.post(format!("{base}/speech")), link)
-        .json(&serde_json::json!({ "text": text }));
+        .json(&speech_body(text, language));
 
     let response = request
         .send()
@@ -93,11 +106,12 @@ pub async fn speech_synthesize(
     link: tauri::State<'_, ServerLink>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
     text: String,
+    language: Option<String>,
 ) -> Result<SpeechAudio, DesktopError> {
     if !settings.get().audio.speak_replies {
         return Err(DesktopError::Message("speaking replies is switched off".into()));
     }
-    fetch_speech(&link, &text).await
+    fetch_speech(&link, &text, language.as_deref()).await
 }
 
 /// Synthesizes `text` and plays it through the speakers. Resolves when the reply ends or is stopped.
@@ -110,6 +124,7 @@ pub async fn speech_play(
     playback: tauri::State<'_, PlaybackEngine>,
     settings: tauri::State<'_, crate::settings::SettingsState>,
     text: String,
+    language: Option<String>,
 ) -> Result<PlayOutcome, DesktopError> {
     // Switched off: nothing is requested from Gaia Cloud, so no provider is called.
     if !settings.get().audio.speak_replies {
@@ -118,7 +133,7 @@ pub async fn speech_play(
     let epoch = playback.begin();
     // Anything still speaking is superseded by this reply.
     playback.stop_current(DEFAULT_FADE_MS);
-    let speech = fetch_speech(&link, &text).await?;
+    let speech = fetch_speech(&link, &text, language.as_deref()).await?;
     if !playback.is_current(epoch) {
         return Ok(PlayOutcome::Stopped);
     }
@@ -156,4 +171,17 @@ pub fn speech_select_output_device(
 #[tauri::command]
 pub fn speech_set_gain(playback: tauri::State<'_, PlaybackEngine>, volume: f32, muted: bool) {
     playback.set_gain(volume, muted);
+}
+
+#[cfg(test)]
+mod speech_body_tests {
+    use super::speech_body;
+
+    #[test]
+    fn sends_the_language_only_when_known() {
+        assert_eq!(speech_body("hoi", Some("nl")), serde_json::json!({ "text": "hoi", "language": "nl" }));
+        assert_eq!(speech_body("hi", Some("en"))["language"], "en");
+        assert_eq!(speech_body("hi", None), serde_json::json!({ "text": "hi" }));
+        assert_eq!(speech_body("hi", Some("xx")), serde_json::json!({ "text": "hi" }));
+    }
 }

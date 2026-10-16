@@ -218,7 +218,7 @@ export const speechApi = {
    * `{ outcome: 'ended' | 'stopped' }`, or `{ outcome: 'failed', message }`; rejects if the
    * synthesis request itself fails.
    */
-  play: (text) => invoke('speech_play', { text }),
+  play: (text, language) => invoke('speech_play', { text, language: language || null }),
   /** Eases the current reply out over `fadeMs` and cancels one still being synthesised. */
   stop: (fadeMs) => invoke('speech_stop', { fadeMs }),
   setGain: (volume, muted) => invoke('speech_set_gain', { volume, muted }),
@@ -226,8 +226,8 @@ export const speechApi = {
   listOutputDevices: () => invoke('speech_list_output_devices'),
   /** `id` is a device id from listOutputDevices, or null for the system default. Persisted. */
   selectOutputDevice: (id) => invoke('speech_select_output_device', { id }),
-  async synthesize(text) {
-    const result = await invoke('speech_synthesize', { text });
+  async synthesize(text, language) {
+    const result = await invoke('speech_synthesize', { text, language: language || null });
     if (Array.isArray(result)) {
       return { bytes: new Uint8Array(result), mimeType: 'audio/wav' };
     }

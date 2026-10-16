@@ -214,7 +214,7 @@ describe("Gaia's voice gate", () => {
       await result.current.send('kun je dit uitspreken?');
     });
 
-    await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(dutchReply));
+    await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(dutchReply, 'nl'));
     await waitFor(() => expect(result.current.busy).toBe(false));
     expect(result.current.active.messages.at(-1).content).toBe(dutchReply);
   });
@@ -263,7 +263,7 @@ describe("Gaia's voice gate", () => {
       await result.current.send('can you say this?');
     });
 
-    await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(englishReply));
+    await waitFor(() => expect(playSpeech).toHaveBeenCalledWith(englishReply, 'en'));
   });
 
   it('cuts the previous reply off the moment a new turn begins', async () => {

@@ -64,10 +64,11 @@ export function stopSpeech() {
  * in Rust; this resolves when the reply ends or is stopped, and rejects if it could not be spoken.
  *
  * @param {string} text
+ * @param {'nl'|'en'|null} [language] detected language of the reply; picks the matching voice
  * @returns {Promise<void>}
  */
-export async function playSpeech(text) {
-  const result = await speechApi.play(text);
+export async function playSpeech(text, language) {
+  const result = await speechApi.play(text, language);
   if (result && result.outcome === 'failed') {
     throw new Error(result.message || 'speech playback failed');
   }
