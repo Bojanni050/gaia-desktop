@@ -337,3 +337,9 @@
 - Findings: Voor alleen opstarten is een rebuild overbodig.
 - Conclusions: Aparte cmd die enkel de laatst gebouwde `gaia.exe` start, met melding als die nog niet bestaat.
 - Actions: `start.cmd` (nieuw); validated: niet uitgevoerd.
+
+## 2026-10-16 (build-and-start sluit draaiende Gaia)
+
+- Findings: Een draaiende `gaia.exe` houdt het bestand vast, waardoor de build kan mislukken.
+- Conclusions: Eerst netjes sluiten (`taskkill` zonder `/f`, zodat Gaia kan afsluiten), na 3 s forceren als hij nog draait.
+- Actions: `build-and-start.cmd` (check via `tasklist`, dan `taskkill`); validated: niet uitgevoerd.
