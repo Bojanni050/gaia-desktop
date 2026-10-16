@@ -32,7 +32,7 @@
 //! window afterwards, then goes back to waiting. Saying the phrase while she is speaking also interrupts her.
 
 use std::collections::{HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -54,6 +54,15 @@ pub const WAKE_EVENT: &str = "voice://wake";
 
 /// Speech this long while Gaia is speaking is an interruption, not a cough or leftover echo.
 const BARGE_IN_MS: u32 = 250;
+/// How loud (rms of a cleaned 20 ms frame, 0..1) the user must be to interrupt Gaia. The speech detector
+/// alone is deliberately sensitive (it hears a quiet voice in a quiet room); while she speaks that is too
+/// easy to trip: a murmur, a cough, a neighbour, or a bit of her own echo is "speech" but is not someone
+/// taking the floor. Normal talking into a desktop microphone is around 0.03 to 0.1.
+pub const DEFAULT_BARGE_IN_LEVEL: f32 = 0.04;
+/// The range the level can be set to, so a bad setting can neither disable nor jam interruption.
+const BARGE_IN_LEVEL_RANGE: (f32, f32) = (0.01, 0.3);
+/// Length of one speech-detector frame, in ms.
+const FRAME_MS: u32 = 20;
 /// How long after Gaia's voice ends her echo may still be arriving: speakers and monitors add output delay
 /// on top of the room, so her last words are still sounding after the reference has run out (in 10 ms blocks).
 const ECHO_TAIL_BLOCKS: u32 = 40;
@@ -182,6 +191,8 @@ struct Inner {
     emit: Emitter,
     spawn: Spawner,
     barge_in: AtomicBool,
+    /// Minimum loudness of an interruption (f32 bits of an rms level).
+    barge_in_level: AtomicU32,
     /// Set while hands-free mode runs; push-to-talk refuses to start meanwhile (one tap at a time).
     exclusive: Arc<AtomicBool>,
     /// Always attentive (continuous conversation).
@@ -235,6 +246,7 @@ impl ContinuousListener {
                 emit,
                 spawn,
                 barge_in: AtomicBool::new(barge_in),
+                barge_in_level: AtomicU32::new(DEFAULT_BARGE_IN_LEVEL.to_bits()),
                 exclusive,
                 continuous: AtomicBool::new(false),
                 wake: AtomicBool::new(false),
@@ -262,6 +274,14 @@ impl ContinuousListener {
 
     pub fn set_barge_in(&self, enabled: bool) {
         self.inner.barge_in.store(enabled, Ordering::SeqCst);
+    }
+
+    /// How loud the user must be to interrupt Gaia (rms of a cleaned frame). Clamped to a sane range;
+    /// takes effect within a moment.
+    pub fn set_barge_in_level(&self, level: f32) {
+        let level = if level.is_finite() { level } else { DEFAULT_BARGE_IN_LEVEL };
+        let (lo, hi) = BARGE_IN_LEVEL_RANGE;
+        self.inner.barge_in_level.store(level.clamp(lo, hi).to_bits(), Ordering::SeqCst);
     }
 
     /// Gives the listener the enrolled wake word (`None` forgets it). Takes effect within a moment.
@@ -412,6 +432,7 @@ fn run(
     let mut reply_pos = 0usize; // samples of the current reply played so far
     let mut onset_in_echo_zone = false; // the utterance in progress began while her voice was ending
     let mut barged = false;
+    let mut loud_frames = 0u32; // frames of the current utterance, while she speaks, loud enough to interrupt
     let mut hearing = false;
     let mut clean = vec![0.0f32; BLOCK];
     let mut now: u64 = 0; // 10 ms blocks processed
@@ -600,7 +621,19 @@ fn run(
             if seg.in_speech() {
                 armed_until = armed_until.max(now + arm.speech_extend as u64);
             }
-            if speaking && !barged && !onset_in_echo_zone && seg.in_speech() && seg.speech_ms() >= BARGE_IN_MS {
+            // Interrupting needs volume, not only speech: the microphone is gated for the interruption on a
+            // level. Only frames of the utterance that are at least that loud count, so a murmur, a cough
+            // or a neighbour never takes the floor, while someone really talking over her does within
+            // BARGE_IN_MS. (Normal listening, while she is silent, is not affected.)
+            if speaking && seg.in_speech() {
+                let barge_level = f32::from_bits(inner.barge_in_level.load(Ordering::SeqCst));
+                if utterance::rms(&frame) >= barge_level {
+                    loud_frames += 1;
+                }
+            } else {
+                loud_frames = 0;
+            }
+            if speaking && !barged && !onset_in_echo_zone && seg.in_speech() && loud_frames * FRAME_MS >= BARGE_IN_MS {
                 barged = true;
                 (inner.emit)(ContinuousEvent::BargeIn);
             }
@@ -688,6 +721,20 @@ pub fn voice_set_barge_in(
 ) -> Result<(), VoiceError> {
     settings.update(|s| s.voice.barge_in_enabled = enabled).map_err(settings_error)?;
     listener.set_barge_in(enabled);
+    Ok(())
+}
+
+/// How loud the user must be to interrupt Gaia by talking over her (rms level, 0.01 to 0.3).
+#[tauri::command]
+pub fn voice_set_barge_in_level(
+    listener: tauri::State<'_, ContinuousListener>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    level: f32,
+) -> Result<(), VoiceError> {
+    let (lo, hi) = BARGE_IN_LEVEL_RANGE;
+    let level = if level.is_finite() { level.clamp(lo, hi) } else { DEFAULT_BARGE_IN_LEVEL };
+    settings.update(|s| s.voice.barge_in_level = level).map_err(settings_error)?;
+    listener.set_barge_in_level(level);
     Ok(())
 }
 
@@ -883,6 +930,37 @@ mod tests {
         assert_eq!(barge_ins(&r.log), 1, "one interruption per spoken reply, not one per frame");
         r.listener.stop();
         r.mic.set_enabled(false, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn speech_quieter_than_the_barge_in_level_does_not_interrupt_her() {
+        let r = rig(Mode::Bursts, true);
+        // The fake microphone's "speech" has an rms of about 0.2: a level above that is a voice too quiet.
+        r.listener.set_barge_in_level(0.3);
+        r.mic.set_enabled(true, None);
+        r.listener.start().unwrap();
+        (r.listener.render_sink())(RenderCmd::Start(reply_audio(20)));
+        tokio::time::sleep(Duration::from_millis(2_500)).await;
+        assert_eq!(barge_ins(&r.log), 0, "too quiet to take the floor");
+        r.listener.stop();
+        r.mic.set_enabled(false, None);
+    }
+
+    #[test]
+    fn the_barge_in_level_is_kept_within_its_range() {
+        let r = {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let _g = rt.enter();
+            rig(Mode::Quiet, true)
+        };
+        let level = |l: &ContinuousListener| f32::from_bits(l.inner.barge_in_level.load(Ordering::SeqCst));
+        assert!((level(&r.listener) - DEFAULT_BARGE_IN_LEVEL).abs() < f32::EPSILON);
+        r.listener.set_barge_in_level(5.0);
+        assert!((level(&r.listener) - BARGE_IN_LEVEL_RANGE.1).abs() < f32::EPSILON);
+        r.listener.set_barge_in_level(0.0);
+        assert!((level(&r.listener) - BARGE_IN_LEVEL_RANGE.0).abs() < f32::EPSILON);
+        r.listener.set_barge_in_level(f32::NAN);
+        assert!((level(&r.listener) - DEFAULT_BARGE_IN_LEVEL).abs() < f32::EPSILON);
     }
 
     #[tokio::test(flavor = "multi_thread")]

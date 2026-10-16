@@ -144,6 +144,8 @@ pub struct VoiceSettings {
     pub wake_sensitivity: f32,
     /// Voice interruption while Gaia speaks (Phase 3).
     pub barge_in_enabled: bool,
+    /// How loud (rms, 0.01 to 0.3) the user must be to interrupt Gaia while she speaks.
+    pub barge_in_level: f32,
 }
 
 impl Default for VoiceSettings {
@@ -156,6 +158,7 @@ impl Default for VoiceSettings {
             wake_enrolled: false,
             wake_sensitivity: 0.55,
             barge_in_enabled: true,
+            barge_in_level: 0.04,
         }
     }
 }
@@ -313,6 +316,7 @@ mod tests {
         assert!(!voice.wake_enrolled);
         assert!(voice.input_device.is_none());
         assert!(voice.barge_in_enabled);
+        assert!((voice.barge_in_level - 0.04).abs() < f32::EPSILON);
         assert!((voice.wake_sensitivity - 0.55).abs() < f32::EPSILON);
     }
 

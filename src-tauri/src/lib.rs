@@ -158,6 +158,7 @@ pub fn run() {
                 mic_claim.clone(),
                 loaded.voice.barge_in_enabled,
             );
+            continuous.set_barge_in_level(loaded.voice.barge_in_level);
             app.state::<speech::PlaybackEngine>().set_render_sink(continuous.render_sink());
 
             // The enrolled wake word: its reference (features, never audio) is loaded from the config
@@ -230,6 +231,7 @@ pub fn run() {
             audio::ptt::voice_ptt_state,
             audio::continuous::voice_continuous_set,
             audio::continuous::voice_set_barge_in,
+            audio::continuous::voice_set_barge_in_level,
             audio::continuous::voice_continuous_state,
             audio::enroll::voice_wake_status,
             audio::enroll::voice_wake_enroll_record,
