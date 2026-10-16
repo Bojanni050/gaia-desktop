@@ -176,6 +176,16 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
       /* ignored: the next successful change wins */
     }
   };
+  // The volume gate for interrupting her: the slider moves the shown value at once and the shell hears
+  // it when the drag ends (not on every step).
+  const bargeInLevel = settings.voice?.bargeInLevel ?? 0.04;
+  const commitBargeInLevel = async () => {
+    try {
+      await voiceApi.setBargeInLevel(bargeInLevel);
+    } catch (_) {
+      /* ignored: the next successful change wins */
+    }
+  };
 
   const mcpServers = () => settings.mcp?.servers || [];
   const setMcpServers = (servers) => patch({ mcp: { ...settings.mcp, servers } });
@@ -528,6 +538,30 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <span>{L.settingsBargeIn}</span>
               </label>
               <p className="capability-line">{L.settingsBargeInHint}</p>
+              {(settings.voice?.bargeInEnabled ?? true) && (
+                <>
+                  <label className="field">
+                    <span>{L.settingsBargeInLevel}</span>
+                    <div className="volume-row">
+                      <span className="capability-line">{L.settingsBargeInLevelEasy}</span>
+                      <input
+                        type="range"
+                        aria-label={L.settingsBargeInLevel}
+                        min="0.01"
+                        max="0.3"
+                        step="0.005"
+                        value={bargeInLevel}
+                        onChange={(e) => patch({ voice: { ...settings.voice, bargeInLevel: Number(e.target.value) } })}
+                        onMouseUp={commitBargeInLevel}
+                        onKeyUp={commitBargeInLevel}
+                        onBlur={commitBargeInLevel}
+                      />
+                      <span className="capability-line">{L.settingsBargeInLevelFirm}</span>
+                    </div>
+                  </label>
+                  <p className="capability-line">{L.settingsBargeInLevelHint}</p>
+                </>
+              )}
               {voice.status && voice.status.state === 'listening' && (
                 <>
                   <p className="capability-line">

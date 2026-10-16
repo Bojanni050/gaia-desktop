@@ -160,6 +160,8 @@ export const voiceApi = {
   continuousState: () => invoke('voice_continuous_state'),
   /** Whether talking over Gaia interrupts her (otherwise her speech is simply not listened to). */
   setBargeIn: (enabled) => invoke('voice_set_barge_in', { enabled }),
+  /** How loud (rms level, 0.01 to 0.3) talking over Gaia must be to interrupt her. */
+  setBargeInLevel: (level) => invoke('voice_set_barge_in_level', { level }),
   /** `{ state: 'off'|'listening'|'hearing'|'transcribing'|'failed', code?, message? }` */
   onContinuous: (handler) => listen('voice://continuous', (event) => handler(event.payload)),
   /** The user started talking over Gaia. Rust has already stopped her voice; cancel the turn too. */
