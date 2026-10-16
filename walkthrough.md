@@ -331,3 +331,9 @@
 - Findings: Handmatig bouwen en starten kostte twee stappen; `tauri build` maakt standaard ook installers (`createUpdaterArtifacts` vraagt dan een signeerkey).
 - Conclusions: Een cmd in de projectroot bouwt met `--no-bundle` (alleen `gaia.exe`, sneller, geen signeerkey nodig) en start daarna de exe; bij een mislukte build start hij niet.
 - Actions: `build-and-start.cmd` (nieuw); validated: niet uitgevoerd, pad `src-tauri/target/release/gaia.exe` bestaat.
+
+## 2026-10-16 (start.cmd)
+
+- Findings: Voor alleen opstarten is een rebuild overbodig.
+- Conclusions: Aparte cmd die enkel de laatst gebouwde `gaia.exe` start, met melding als die nog niet bestaat.
+- Actions: `start.cmd` (nieuw); validated: niet uitgevoerd.
