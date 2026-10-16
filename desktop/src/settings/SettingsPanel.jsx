@@ -187,6 +187,16 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
     }
   };
 
+  // How long a pause ends what you are saying: same as above, shown at once and sent when the drag ends.
+  const pauseMs = settings.voice?.pauseMs ?? 1200;
+  const commitPauseMs = async () => {
+    try {
+      await voiceApi.setPauseMs(pauseMs);
+    } catch (_) {
+      /* ignored: the next successful change wins */
+    }
+  };
+
   const mcpServers = () => settings.mcp?.servers || [];
   const setMcpServers = (servers) => patch({ mcp: { ...settings.mcp, servers } });
   const patchMcpServer = (index, part) =>
@@ -528,6 +538,26 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                   {listenState === 'hearing' ? L.settingsContinuousHearing : L.settingsContinuousOn}
                 </p>
               )}
+              <label className="field">
+                <span>{L.settingsPause}</span>
+                <div className="volume-row">
+                  <span className="capability-line">{L.settingsPauseShort}</span>
+                  <input
+                    type="range"
+                    aria-label={L.settingsPause}
+                    min="400"
+                    max="3000"
+                    step="100"
+                    value={pauseMs}
+                    onChange={(e) => patch({ voice: { ...settings.voice, pauseMs: Number(e.target.value) } })}
+                    onMouseUp={commitPauseMs}
+                    onKeyUp={commitPauseMs}
+                    onBlur={commitPauseMs}
+                  />
+                  <span className="capability-line">{L.settingsPauseLong}</span>
+                </div>
+              </label>
+              <p className="capability-line">{L.settingsPauseHint} ({(pauseMs / 1000).toFixed(1)} s)</p>
               {renderWake()}
               <label className="field field-toggle">
                 <input

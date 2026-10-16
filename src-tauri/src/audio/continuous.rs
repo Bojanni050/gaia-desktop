@@ -63,6 +63,12 @@ pub const DEFAULT_BARGE_IN_LEVEL: f32 = 0.04;
 const BARGE_IN_LEVEL_RANGE: (f32, f32) = (0.01, 0.3);
 /// Length of one speech-detector frame, in ms.
 const FRAME_MS: u32 = 20;
+/// How long a pause may last before it ends what the user is saying. The listener starts on the
+/// segmenter's own default; the saved setting (default 1200 ms) is applied at startup and when it changes.
+const DEFAULT_PAUSE_MS: u32 = 700;
+/// The range the pause can be set to: short enough to still feel like a conversation, long enough for
+/// someone who thinks while they talk.
+const PAUSE_MS_RANGE: (u32, u32) = (400, 3_000);
 /// How long after Gaia's voice ends her echo may still be arriving: speakers and monitors add output delay
 /// on top of the room, so her last words are still sounding after the reference has run out (in 10 ms blocks).
 const ECHO_TAIL_BLOCKS: u32 = 40;
@@ -193,6 +199,8 @@ struct Inner {
     barge_in: AtomicBool,
     /// Minimum loudness of an interruption (f32 bits of an rms level).
     barge_in_level: AtomicU32,
+    /// How long a pause ends the user's utterance, in ms.
+    pause_ms: AtomicU32,
     /// Set while hands-free mode runs; push-to-talk refuses to start meanwhile (one tap at a time).
     exclusive: Arc<AtomicBool>,
     /// Always attentive (continuous conversation).
@@ -247,6 +255,7 @@ impl ContinuousListener {
                 spawn,
                 barge_in: AtomicBool::new(barge_in),
                 barge_in_level: AtomicU32::new(DEFAULT_BARGE_IN_LEVEL.to_bits()),
+                pause_ms: AtomicU32::new(DEFAULT_PAUSE_MS),
                 exclusive,
                 continuous: AtomicBool::new(false),
                 wake: AtomicBool::new(false),
@@ -282,6 +291,13 @@ impl ContinuousListener {
         let level = if level.is_finite() { level } else { DEFAULT_BARGE_IN_LEVEL };
         let (lo, hi) = BARGE_IN_LEVEL_RANGE;
         self.inner.barge_in_level.store(level.clamp(lo, hi).to_bits(), Ordering::SeqCst);
+    }
+
+    /// How long a pause ends what the user is saying (ms). Clamped to a sane range; takes effect within a
+    /// moment, also in the middle of an utterance.
+    pub fn set_pause_ms(&self, ms: u32) {
+        let (lo, hi) = PAUSE_MS_RANGE;
+        self.inner.pause_ms.store(ms.clamp(lo, hi), Ordering::SeqCst);
     }
 
     /// Gives the listener the enrolled wake word (`None` forgets it). Takes effect within a moment.
@@ -580,6 +596,7 @@ fn run(
                 continue;
             }
 
+            seg.set_end_silence_ms(inner.pause_ms.load(Ordering::SeqCst));
             let event = seg.push_frame(&frame);
             if !armed {
                 // Waiting for the wake word: the room is tracked, but nothing found in it is acted on, so
@@ -735,6 +752,20 @@ pub fn voice_set_barge_in_level(
     let level = if level.is_finite() { level.clamp(lo, hi) } else { DEFAULT_BARGE_IN_LEVEL };
     settings.update(|s| s.voice.barge_in_level = level).map_err(settings_error)?;
     listener.set_barge_in_level(level);
+    Ok(())
+}
+
+/// How long a pause ends what the user is saying in continuous conversation (ms, 400 to 3000).
+#[tauri::command]
+pub fn voice_set_pause_ms(
+    listener: tauri::State<'_, ContinuousListener>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    ms: u32,
+) -> Result<(), VoiceError> {
+    let (lo, hi) = PAUSE_MS_RANGE;
+    let ms = ms.clamp(lo, hi);
+    settings.update(|s| s.voice.pause_ms = ms).map_err(settings_error)?;
+    listener.set_pause_ms(ms);
     Ok(())
 }
 
@@ -944,6 +975,23 @@ mod tests {
         assert_eq!(barge_ins(&r.log), 0, "too quiet to take the floor");
         r.listener.stop();
         r.mic.set_enabled(false, None);
+    }
+
+    #[test]
+    fn the_pause_is_kept_within_its_range() {
+        let r = {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let _g = rt.enter();
+            rig(Mode::Quiet, true)
+        };
+        let pause = |l: &ContinuousListener| l.inner.pause_ms.load(Ordering::SeqCst);
+        assert_eq!(pause(&r.listener), DEFAULT_PAUSE_MS);
+        r.listener.set_pause_ms(1_500);
+        assert_eq!(pause(&r.listener), 1_500);
+        r.listener.set_pause_ms(10);
+        assert_eq!(pause(&r.listener), PAUSE_MS_RANGE.0);
+        r.listener.set_pause_ms(600_000);
+        assert_eq!(pause(&r.listener), PAUSE_MS_RANGE.1);
     }
 
     #[test]

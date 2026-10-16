@@ -146,6 +146,8 @@ pub struct VoiceSettings {
     pub barge_in_enabled: bool,
     /// How loud (rms, 0.01 to 0.3) the user must be to interrupt Gaia while she speaks.
     pub barge_in_level: f32,
+    /// How long a pause (ms, 400 to 3000) ends what you are saying, in continuous conversation.
+    pub pause_ms: u32,
 }
 
 impl Default for VoiceSettings {
@@ -159,6 +161,7 @@ impl Default for VoiceSettings {
             wake_sensitivity: 0.55,
             barge_in_enabled: true,
             barge_in_level: 0.04,
+            pause_ms: 1200,
         }
     }
 }
@@ -317,6 +320,7 @@ mod tests {
         assert!(voice.input_device.is_none());
         assert!(voice.barge_in_enabled);
         assert!((voice.barge_in_level - 0.04).abs() < f32::EPSILON);
+        assert_eq!(voice.pause_ms, 1200);
         assert!((voice.wake_sensitivity - 0.55).abs() < f32::EPSILON);
     }
 

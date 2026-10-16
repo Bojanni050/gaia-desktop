@@ -105,6 +105,11 @@ impl Segmenter {
         self.speaking
     }
 
+    /// Changes how long a pause must last to end an utterance; applies from the next frame on.
+    pub fn set_end_silence_ms(&mut self, ms: u32) {
+        self.cfg.end_silence_ms = ms;
+    }
+
     /// Milliseconds of speech so far in the current utterance (0 when idle).
     pub fn speech_ms(&self) -> u32 {
         if self.speaking {
@@ -281,6 +286,17 @@ mod tests {
         let events = feed(&mut seg, &[(false, 50), (true, 50), (false, 20), (true, 50), (false, 60)]);
         let utterances: Vec<_> = events.iter().filter(|e| matches!(e.1, SegEvent::Utterance(_))).collect();
         assert_eq!(utterances.len(), 1, "{events:?}");
+    }
+
+    #[test]
+    fn a_longer_pause_setting_keeps_a_slow_thinker_in_one_utterance() {
+        // 1.0 s of silence (50 frames) ends an utterance at the default 700 ms, but not at 1.5 s.
+        let plan = [(false, 50), (true, 50), (false, 50), (true, 50), (false, 120)];
+        let utterances = |seg: &mut Segmenter| feed(seg, &plan).iter().filter(|e| matches!(e.1, SegEvent::Utterance(_))).count();
+        assert_eq!(utterances(&mut Segmenter::new(SegmenterConfig::default())), 2);
+        let mut patient = Segmenter::new(SegmenterConfig::default());
+        patient.set_end_silence_ms(1_500);
+        assert_eq!(utterances(&mut patient), 1);
     }
 
     #[test]
