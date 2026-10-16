@@ -1,8 +1,8 @@
 @echo off
 rem Starts Gaia Desktop (last built release) without rebuilding.
-if not exist "%~dp0src-tauri	argetelease\gaia.exe" (
+if not exist "%~dp0src-tauri\target\release\gaia.exe" (
   echo gaia.exe not found - run build-and-start.cmd first.
   pause
   exit /b 1
 )
-start "" "%~dp0src-tauri	argetelease\gaia.exe"
+start "" "%~dp0src-tauri\target\release\gaia.exe"
