@@ -105,6 +105,16 @@ impl Segmenter {
         self.speaking
     }
 
+    /// How much audio the utterance in progress holds so far, preroll included (0 when idle). The
+    /// utterance later ends with exactly these samples first, so a position noted now stays valid.
+    pub fn buffered_samples(&self) -> usize {
+        if self.speaking {
+            self.buf.len()
+        } else {
+            0
+        }
+    }
+
     /// Changes how long a pause must last to end an utterance; applies from the next frame on.
     pub fn set_end_silence_ms(&mut self, ms: u32) {
         self.cfg.end_silence_ms = ms;
@@ -286,6 +296,18 @@ mod tests {
         let events = feed(&mut seg, &[(false, 50), (true, 50), (false, 20), (true, 50), (false, 60)]);
         let utterances: Vec<_> = events.iter().filter(|e| matches!(e.1, SegEvent::Utterance(_))).collect();
         assert_eq!(utterances.len(), 1, "{events:?}");
+    }
+
+    #[test]
+    fn the_buffer_length_noted_mid_utterance_stays_valid_when_it_ends() {
+        let mut seg = Segmenter::new(SegmenterConfig::default());
+        let events = feed(&mut seg, &[(false, 50), (true, 50)]);
+        assert!(matches!(events.last().map(|e| &e.1), Some(SegEvent::Started)) || seg.in_speech());
+        let noted = seg.buffered_samples();
+        assert!(noted > 0);
+        let events = feed(&mut seg, &[(true, 30), (false, 80)]);
+        let SegEvent::Utterance(samples) = &events.iter().find(|e| matches!(e.1, SegEvent::Utterance(_))).expect("utterance").1 else { unreachable!() };
+        assert!(samples.len() > noted, "the utterance holds everything noted before it ended");
     }
 
     #[test]

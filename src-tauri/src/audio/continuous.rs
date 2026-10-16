@@ -166,6 +166,48 @@ pub enum ContinuousEvent {
 
 type Emitter = Arc<dyn Fn(ContinuousEvent) + Send + Sync>;
 
+/// What was said after the wake phrase: the utterance from `cut` on, or nothing when no real speech is
+/// left there (the user said only "Hey Gaia").
+fn after_wake_phrase(samples: Vec<f32>, cut: usize) -> Vec<f32> {
+    let rest = samples[cut.min(samples.len())..].to_vec();
+    if utterance::speech_range(&rest, 16_000).is_some() {
+        rest
+    } else {
+        Vec::new()
+    }
+}
+
+/// Removes a leading "Hey Gaia" (and the ways it tends to be written: hé, hee, Gaja, Gaya, with a comma or
+/// not) from a transcript. Used only for an utterance that began with the wake phrase.
+fn strip_wake_phrase(text: &str) -> String {
+    const GREETINGS: [&str; 5] = ["hey", "hé", "hee", "hei", "he"];
+    const NAMES: [&str; 6] = ["gaia", "gaja", "gaya", "gaïa", "gaja", "gaiya"];
+    let trimmed = text.trim_start_matches(|c: char| !c.is_alphanumeric());
+    let lower = trimmed.to_lowercase();
+    for greeting in GREETINGS {
+        let Some(rest) = lower.strip_prefix(greeting) else { continue };
+        let rest_trimmed = rest.trim_start_matches(|c: char| !c.is_alphanumeric());
+        if rest_trimmed.len() == rest.len() {
+            continue; // "hey" must be a word of its own
+        }
+        for name in NAMES {
+            if let Some(after) = rest_trimmed.strip_prefix(name) {
+                if after.chars().next().map_or(true, |c| !c.is_alphanumeric()) {
+                    // `lower` and `trimmed` may differ in byte length for odd characters: count chars instead.
+                    let skip = lower.chars().count() - after.chars().count();
+                    return trimmed
+                        .chars()
+                        .skip(skip)
+                        .collect::<String>()
+                        .trim_start_matches(|c: char| !c.is_alphanumeric())
+                        .to_string();
+                }
+            }
+        }
+    }
+    text.to_string()
+}
+
 /// A transcript that is plainly a recognizer hallucinating on noise rather than words: nothing to read,
 /// or the same few words over and over (`"бла-бла-бла-бла…"`).
 pub fn plausible_transcript(text: &str) -> bool {
@@ -448,6 +490,9 @@ fn run(
     let mut reply_pos = 0usize; // samples of the current reply played so far
     let mut onset_in_echo_zone = false; // the utterance in progress began while her voice was ending
     let mut barged = false;
+    // Where in the utterance in progress the wake phrase ended (samples from its start): that much of it is
+    // "Hey Gaia", which is a signal to her and not something the user said to her.
+    let mut wake_cut: Option<usize> = None;
     let mut loud_frames = 0u32; // frames of the current utterance, while she speaks, loud enough to interrupt
     let mut hearing = false;
     let mut clean = vec![0.0f32; BLOCK];
@@ -477,6 +522,7 @@ fn run(
                 pending.clear();
                 half.clear();
                 seg.reset();
+                wake_cut = None;
                 if let Some(s) = spotter.as_mut() {
                     s.reset();
                 }
@@ -487,6 +533,7 @@ fn run(
             None => {
                 // switched off (or failed): listening ends with it
                 seg.reset();
+                wake_cut = None;
                 break 'outer;
             }
         }
@@ -555,6 +602,9 @@ fn run(
                             (inner.emit)(ContinuousEvent::BargeIn);
                         }
                         armed_until = now + arm.wake_window as u64;
+                        if seg.in_speech() {
+                            wake_cut = Some(seg.buffered_samples());
+                        }
                         (inner.emit)(ContinuousEvent::Wake);
                     }
                 }
@@ -589,6 +639,7 @@ fn run(
             }
             if deaf {
                 seg.reset();
+                wake_cut = None;
                 if hearing {
                     hearing = false;
                     (inner.emit)(ContinuousEvent::State(ListenState::Listening));
@@ -611,11 +662,21 @@ fn run(
                 }
                 Some(SegEvent::TooShort) => {
                     hearing = false;
+                    wake_cut = None;
                     (inner.emit)(ContinuousEvent::State(ListenState::Listening));
                 }
                 Some(SegEvent::Utterance(samples)) => {
                     hearing = false;
-                    if onset_in_echo_zone {
+                    // The wake phrase is not part of what she is told: cut it off before anything is transcribed.
+                    // A recognizer given only "Hey Gaia" makes something up (it has even answered in Japanese).
+                    let (samples, after_wake) = match wake_cut.take() {
+                        Some(cut) => (after_wake_phrase(samples, cut), true),
+                        None => (samples, false),
+                    };
+                    if after_wake && samples.is_empty() {
+                        eprintln!("[voice] the wake phrase on its own: nothing was said after it, nothing is sent");
+                        (inner.emit)(ContinuousEvent::State(ListenState::Listening));
+                    } else if onset_in_echo_zone {
                         // Her own last words, heard again: not sent, not answered.
                         eprintln!(
                             "[voice] dropped {:.1} s of speech that began as Gaia's voice was ending (her own echo)",
@@ -629,7 +690,7 @@ fn run(
                             samples.len() as f32 / 16_000.0,
                             if speaking { " while Gaia was speaking (interruption)" } else { "" }
                         );
-                        submit(&inner, samples);
+                        submit(&inner, samples, after_wake);
                         armed_until = armed_until.max(now + arm.think_hold as u64);
                     }
                 }
@@ -669,7 +730,7 @@ fn run(
 }
 
 /// Sends one finished utterance for transcription, in order, without holding up listening.
-fn submit(inner: &Arc<Inner>, samples: Vec<f32>) {
+fn submit(inner: &Arc<Inner>, samples: Vec<f32>, after_wake: bool) {
     let pcm: Vec<i16> = samples.iter().map(|s| (s.clamp(-1.0, 1.0) * 32_767.0) as i16).collect();
     let wav = utterance::wav_bytes(&pcm);
     drop(samples);
@@ -680,10 +741,16 @@ fn submit(inner: &Arc<Inner>, samples: Vec<f32>) {
         let _turn = inner.order.lock().await;
         let result: Result<Transcript, TranscribeError> = inner.transcriber.transcribe(wav).await;
         match result {
-            Ok(t) if plausible_transcript(&t.text) => {
-                (inner.emit)(ContinuousEvent::Transcript(TranscriptEvent::new(t, "continuous")));
+            Ok(mut t) => {
+                // Should the phrase have got through anyway (it was not found inside the utterance), it is not
+                // printed either.
+                if after_wake {
+                    t.text = strip_wake_phrase(&t.text);
+                }
+                if plausible_transcript(&t.text) {
+                    (inner.emit)(ContinuousEvent::Transcript(TranscriptEvent::new(t, "continuous")));
+                }
             }
-            Ok(_) => {} // silence or hallucination: nothing to say
             Err(e) => {
                 (inner.emit)(ContinuousEvent::State(ListenState::Failed {
                     code: e.code,
@@ -975,6 +1042,32 @@ mod tests {
         assert_eq!(barge_ins(&r.log), 0, "too quiet to take the floor");
         r.listener.stop();
         r.mic.set_enabled(false, None);
+    }
+
+    #[test]
+    fn the_wake_phrase_is_cut_from_what_is_sent() {
+        let utter: Vec<f32> = (0..16_000).map(|i| 0.3 * ((i as f32) * 0.05).sin()).collect();
+        // Everything after the cut is kept; the phrase before it is not.
+        assert_eq!(after_wake_phrase(utter.clone(), 6_000).len(), 10_000);
+        // Only the phrase and silence after it: nothing to send.
+        let mut only_phrase = utter.clone();
+        only_phrase.extend(std::iter::repeat(0.0).take(8_000));
+        assert!(after_wake_phrase(only_phrase, 16_000 + 8_000).is_empty());
+        // A cut beyond the end is harmless.
+        assert!(after_wake_phrase(utter, 99_999).is_empty());
+    }
+
+    #[test]
+    fn a_leading_hey_gaia_is_not_printed() {
+        assert_eq!(strip_wake_phrase("Hey Gaia, wat is het weer?"), "wat is het weer?");
+        assert_eq!(strip_wake_phrase("hé Gaia wat is het weer"), "wat is het weer");
+        assert_eq!(strip_wake_phrase("Hey, Gaia. Zet de muziek aan."), "Zet de muziek aan.");
+        assert_eq!(strip_wake_phrase("Hey Gaja!"), "");
+        assert_eq!(strip_wake_phrase("hey gaia"), "");
+        // Nothing else is touched.
+        assert_eq!(strip_wake_phrase("Wat denk je, Gaia?"), "Wat denk je, Gaia?");
+        assert_eq!(strip_wake_phrase("Heyday Gaia"), "Heyday Gaia");
+        assert_eq!(strip_wake_phrase("Gaia, hoe laat is het?"), "Gaia, hoe laat is het?");
     }
 
     #[test]
