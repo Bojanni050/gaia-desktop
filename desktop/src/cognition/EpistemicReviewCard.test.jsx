@@ -237,3 +237,14 @@ describe('EpistemicReviewCard — the rest', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 });
+
+describe('EpistemicReviewCard — weight needs the second step', () => {
+  it('sends a micro statement with a counter-hypothesis through the objection first', () => {
+    const h = item({ scope: 'micro', status: 'proposed', counter_hypothesis: 'the opposite reading' });
+    const { onConfirm } = renderCard({ item: h });
+
+    fireEvent.click(screen.getByLabelText(L.cognitionYes));
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByText(L.cognitionMacroSure)).toBeTruthy();
+  });
+});

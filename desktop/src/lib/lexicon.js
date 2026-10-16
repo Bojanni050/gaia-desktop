@@ -176,6 +176,7 @@ export const LANGUAGES = {
     cognitionTitle: 'Wat ik begrijp',
     cognitionHint: 'Wat ik meen op te merken, wacht op jouw oordeel. Jij bevestigt — ik niet.',
     cognitionEmpty: 'Er wacht nu niets op je oordeel.',
+    cognitionWaiting: 'Wachten op een volgende ronde: {n}',
     // De twee lijsten van de drawer. De tablabels staan hier apart van
     // cognitionReopen: de knop op een kaart en de tab heten nu hetzelfde, maar
     // ze zijn niet hetzelfde ding.
@@ -476,6 +477,7 @@ export const LANGUAGES = {
     cognitionTitle: 'What I understand',
     cognitionHint: 'What I think I notice, waiting for your judgement. You confirm — I do not.',
     cognitionEmpty: 'Nothing is awaiting your judgement right now.',
+    cognitionWaiting: 'Waiting for a later round: {n}',
     cognitionTabReview: 'To review',
     cognitionTabConfirmed: 'Confirmed',
     cognitionTabReopen: 'Reconsider',

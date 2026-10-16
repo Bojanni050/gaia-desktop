@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
+import { L } from '../lib/lexicon';
 import UnderstandingRail, { clampWidth, MIN_WIDTH } from './UnderstandingRail';
 
 const list = (ids) => ({
@@ -234,5 +235,37 @@ describe('drawer width', () => {
 
   it('fills the third of a narrow window rather than overflow it', () => {
     expect(clampWidth(9999, 500)).toBe(165);
+  });
+});
+
+describe('the review round, as the drawer shows it', () => {
+  const round = () => ({
+    body: {
+      hypotheses: [
+        { id: 'a', statement: 's-a', status: 'proposed', scope: 'macro', in_round: true },
+        { id: 'b', statement: 's-b', status: 'proposed', scope: 'macro', in_round: false },
+        { id: 'c', statement: 's-c', status: 'proposed', scope: 'macro', in_round: false },
+      ],
+    },
+  });
+
+  it('shows only the round and says how many wait', async () => {
+    invoke.mockResolvedValue(round());
+    const { container } = render(<UnderstandingRail pollMs={0} />);
+    fireEvent.click(railOf(container));
+    await waitFor(() => expect(screen.getByText('s-a')).toBeTruthy());
+
+    expect(screen.queryByText('s-b')).toBeNull();
+    expect(screen.queryByText('s-c')).toBeNull();
+    expect(screen.getByText(L.cognitionWaiting.replace('{n}', '2'))).toBeTruthy();
+  });
+
+  it('does not pulse for statements that are only waiting', async () => {
+    invoke.mockResolvedValue({
+      body: { hypotheses: [{ id: 'b', statement: 's-b', status: 'proposed', scope: 'macro', in_round: false }] },
+    });
+    const { container } = render(<UnderstandingRail pollMs={0} />);
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+    expect(railOf(container).className).not.toContain('has-new');
   });
 });

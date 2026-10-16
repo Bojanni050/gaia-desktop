@@ -45,6 +45,15 @@ const TAB_ORDER = [TAB_REVIEW, TAB_CONFIRMED, TAB_REOPEN];
 /** The one place that decides which list a statement belongs to. */
 const listOf = (item) =>
   item.status === 'rejected' ? TAB_REOPEN : item.status === 'confirmed' ? TAB_CONFIRMED : TAB_REVIEW;
+
+/**
+ * gaia-api serves what is under review as a round (reviewRound.js): at most a
+ * handful of statements that carry weight (macro, or a counter-hypothesis) and
+ * have built up enough evidence. The rest waits for a later round and is only
+ * counted. A statement that waits is not "on screen", so it never makes the dot
+ * pulse. A server that sends no round (`in_round` absent) shows everything.
+ */
+const isWaiting = (it) => listOf(it) === TAB_REVIEW && it.in_round === false;
 const RAIL_WIDTH = 16;
 // How long the drawer and the rail button take to slide; matches `--understanding-slide` in styles.css.
 const SLIDE_MS = 450;
@@ -155,7 +164,7 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
   // is said by its count.
   useEffect(() => {
     if (!open || !items) return;
-    const visible = items.filter((it) => listOf(it) === tab);
+    const visible = items.filter((it) => listOf(it) === tab && !isWaiting(it));
     const next = new Set([...seen, ...visible.map((it) => it.id)]);
     if (next.size === seen.size) return;
     writeSeen(next);
@@ -190,16 +199,23 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
   }, [open]);
 
   const hasNew = useMemo(
-    () => Boolean(items && items.some((it) => !seen.has(it.id))),
+    () => Boolean(items && items.some((it) => !isWaiting(it) && !seen.has(it.id))),
     [items, seen]
   );
 
   // Every tab is filled from the one list the server returned, so switching
   // never costs a round trip.
-  const lists = useMemo(() => {
+  const { lists, waiting } = useMemo(() => {
     const grouped = { [TAB_REVIEW]: [], [TAB_CONFIRMED]: [], [TAB_REOPEN]: [] };
-    (items || []).forEach((it) => grouped[listOf(it)].push(it));
-    return grouped;
+    let waitingCount = 0;
+    (items || []).forEach((it) => {
+      if (isWaiting(it)) {
+        waitingCount += 1;
+        return;
+      }
+      grouped[listOf(it)].push(it);
+    });
+    return { lists: grouped, waiting: waitingCount };
   }, [items]);
   const shownItems = lists[tab];
   // Read at render time, the same way L is read everywhere else.
@@ -364,6 +380,9 @@ export default function UnderstandingRail({ pollMs = 45000 } = {}) {
                   />
                 ))}
               </>
+            )}
+            {items !== null && tab === TAB_REVIEW && waiting > 0 && (
+              <p className="sidebar-section-hint">{L.cognitionWaiting.replace('{n}', String(waiting))}</p>
             )}
           </div>
         </aside>

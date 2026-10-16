@@ -84,6 +84,10 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
   const isConfirmed = item.status === 'confirmed';
   const isMacro = item.scope !== 'micro';
   const hasCounter = Boolean(item.counter_hypothesis && item.counter_hypothesis.trim());
+  // Weight reaches the person two ways: a macro statement, or a micro one that
+  // carries a counter-hypothesis (the server's review round lets both through).
+  // Either way "Ja" is never a single click.
+  const needsFriction = isMacro || hasCounter;
   const evidenceFor = Array.isArray(item.evidence_for) ? item.evidence_for : [];
   const evidenceAgainst = Array.isArray(item.evidence_against) ? item.evidence_against : [];
   const hasEvidence = evidenceFor.length > 0 || evidenceAgainst.length > 0;
@@ -94,7 +98,7 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
   const canAnswer = !busy && answer.trim().length > 0;
 
   const handleYes = () => {
-    if (isMacro) {
+    if (needsFriction) {
       setConfirming(true); // face the objection first — see the doc comment
       return;
     }
