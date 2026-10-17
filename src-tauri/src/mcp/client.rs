@@ -30,12 +30,24 @@ const INIT_TIMEOUT: Duration = Duration::from_secs(10);
 type SharedReader = Arc<Mutex<BufReader<ChildStdout>>>;
 
 fn spawn_with(command: &str, args: &[String]) -> std::io::Result<Child> {
-    Command::new(command)
-        .args(args)
+    let mut cmd = Command::new(command);
+    cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    // A GUI process owns no console, so Windows hands a freshly spawned console
+    // program (`npx.cmd` here) a brand-new console window — and this client
+    // opens a fresh connection per operation, so a window would appear on every
+    // tool call. CREATE_NO_WINDOW suppresses it; the pipes above are unaffected,
+    // and the server's own children (Desktop Commander spawns its shells with
+    // `windowsHide: true`) inherit the invisible console, so nothing the tool
+    // runs can flash a window either. Same posture as everything.rs's es.exe.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console window
+    }
+    cmd.spawn()
 }
 
 /// Launch the configured command. On Windows, tools like `npx` are `.cmd`
