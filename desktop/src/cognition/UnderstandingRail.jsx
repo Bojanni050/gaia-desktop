@@ -42,9 +42,13 @@ const TAB_CONFIRMED = 'confirmed';
 const TAB_REOPEN = 'reopen';
 const TAB_ORDER = [TAB_REVIEW, TAB_CONFIRMED, TAB_REOPEN];
 
-/** The one place that decides which list a statement belongs to. */
+/** The one place that decides which list a statement belongs to. A lapsed
+ * statement belongs with the things that were let go: it is not waiting for a
+ * round, and counting it as waiting is what made the old figure so large. */
 const listOf = (item) =>
-  item.status === 'rejected' ? TAB_REOPEN : item.status === 'confirmed' ? TAB_CONFIRMED : TAB_REVIEW;
+  item.status === 'rejected' || item.status === 'expired'
+    ? TAB_REOPEN
+    : item.status === 'confirmed' ? TAB_CONFIRMED : TAB_REVIEW;
 
 /**
  * gaia-api serves what is under review as a round (reviewRound.js): at most a
