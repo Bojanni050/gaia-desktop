@@ -704,10 +704,18 @@ mod tests {
         let key = format!(
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged\{exe}"
         );
-        let out = std::process::Command::new("reg")
+        let mut command = std::process::Command::new("reg");
+        command
             .args(["query", &key, "/v", "LastUsedTimeStop"])
-            .output()
-            .ok()?;
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console flash
+        }
+        let out = command.output().ok()?;
         let text = String::from_utf8_lossy(&out.stdout).to_string();
         let hex = text.split_whitespace().last()?.trim_start_matches("0x").to_string();
         u64::from_str_radix(&hex, 16).ok()
