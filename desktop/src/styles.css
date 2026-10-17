@@ -109,6 +109,7 @@ body {
   padding: 10px 12px; border-radius: 10px; cursor: pointer;
   color: var(--text-muted); font-size: 0.88rem;
   transition: background-color 0.2s ease, color 0.2s ease;
+  position: relative;
 }
 .thread-item:hover { background: var(--surface-2); color: var(--text); }
 .thread-item.active { background: var(--surface-3); color: var(--text); }
@@ -128,11 +129,17 @@ body {
 .thread-item:hover .thread-export { opacity: 1; }
 .thread-export:hover { color: var(--accent); }
 
+/* Anchored to the row it belongs to (that is what .thread-item's
+   position: relative is for): a menu that floats off the right edge of the
+   window belongs to nothing. It drops open under the download button, and
+   rises above the last row so it can never fall out of the scrolling list. */
 .thread-export-menu {
-  position: absolute; right: 40px; background: var(--surface-2);
+  position: absolute; top: 100%; right: 30px; margin-top: 4px;
+  background: var(--surface-2);
   border: 1px solid var(--border-strong); border-radius: 8px;
   padding: 4px; z-index: 10; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
+.thread-item:last-child .thread-export-menu { top: auto; bottom: 100%; margin: 0 0 4px; }
 .thread-export-menu button {
   display: block; width: 100%; padding: 6px 12px; background: none;
   border: none; color: var(--text-muted); font-size: 0.82rem;
