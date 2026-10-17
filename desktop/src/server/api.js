@@ -281,6 +281,14 @@ export const libraryApi = {
     if (!path) return null;
     return invoke('library_upload_file', { path });
   },
+  /**
+   * Uploads bytes the webview already holds — what you paste into the
+   * composer. There is no file dialog and no path: the bytes travel as the
+   * raw request body (Tauri's fast path for a payload of a few megabytes,
+   * which a screenshot easily is) and the name says what to label them.
+   */
+  uploadPastedFile: (bytes, filename) =>
+    invoke('library_upload_pasted_file', bytes, { headers: { 'x-gaia-filename': filename } }),
   /** Opens a native save dialog for `filename`; returns true if the file was saved, false if cancelled. */
   async downloadFile(id, filename) {
     const path = await saveDialog({ defaultPath: filename });

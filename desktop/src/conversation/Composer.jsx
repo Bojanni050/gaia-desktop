@@ -12,7 +12,8 @@ import { L } from '../lib/lexicon';
  * Attaching a file uploads it to the library immediately (same path as the
  * Library panel's own upload) — by the time it's sent as context, it's
  * already durable in Gaia Cloud, not a pending local blob riding along
- * with the message.
+ * with the message. Pasting works the same way: an image (or any file) on the
+ * clipboard becomes a chip, and pasted text stays text.
  *
  * The mic button is push-to-talk: with the microphone off a click switches it on, then one click
  * starts a recording and the next ends it. What was said arrives as text, which is sent exactly like
@@ -23,6 +24,7 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attaching, setAttaching] = useState(false);
+  const [pasteFailed, setPasteFailed] = useState(false);
   const taRef = useRef(null);
   // The transcript handler needs the freshest draft/busy without re-subscribing to events.
   const latest = useRef({});
@@ -81,6 +83,36 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
 
   const removeAttachment = (id) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  /**
+   * Files on the clipboard go to the library exactly like the paperclip's own
+   * pick — the bytes never touch this device's disk. Each one is uploaded on
+   * its own; whatever made it becomes a chip even if another did not.
+   */
+  const attachPasted = async (files) => {
+    setPasteFailed(false);
+    setAttaching(true);
+    const uploaded = [];
+    try {
+      for (const file of files) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        uploaded.push(await libraryApi.uploadPastedFile(bytes, pastedFileName(file)));
+      }
+    } catch (_) {
+      setPasteFailed(true);
+    } finally {
+      if (uploaded.length > 0) setAttachments((prev) => [...prev, ...uploaded]);
+      setAttaching(false);
+    }
+  };
+
+  const onPaste = (e) => {
+    const files = clipboardFiles(e.clipboardData);
+    // Pasted text is text: only a file is taken out of the clipboard.
+    if (files.length === 0) return;
+    e.preventDefault();
+    attachPasted(files);
   };
 
   const micLabel = !ptt.micOn
@@ -149,6 +181,7 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
             if (onDraftChange) onDraftChange(e.target.value.trim().length > 0);
           }}
           onKeyDown={onKey}
+          onPaste={onPaste}
           rows={1}
         />
         <button
@@ -161,11 +194,53 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
         </button>
       </div>
       {(ptt.phase === 'noSpeech' || ptt.phase === 'failed') && (
-        <p className="composer-mic-note" role="status">
+        <p className="composer-note" role="status">
           {ptt.phase === 'noSpeech' ? L.micNoSpeech : micErrorText(ptt.error)}
         </p>
       )}
+      {pasteFailed && (
+        <p className="composer-note" role="status">
+          {L.libraryUploadFailed}
+        </p>
+      )}
     </div>
+  );
+}
+
+/** The files on the clipboard: a screenshot is one, copied text is none. */
+function clipboardFiles(data) {
+  if (!data) return [];
+  const items = Array.from(data.items || []).filter((item) => item.kind === 'file');
+  const files = items.length > 0 ? items.map((item) => item.getAsFile()) : Array.from(data.files || []);
+  return files.filter(Boolean);
+}
+
+/**
+ * What to call a pasted file. A file copied in Explorer still knows its name;
+ * an image off the clipboard does not, so it gets one built from its type and
+ * the moment it was pasted. Extension matters beyond looks: it is how Rust
+ * labels the upload's MIME type.
+ */
+function pastedFileName(file) {
+  const name = String(file.name || '').trim();
+  if (name && name !== 'image.png') return name;
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `pasted-image-${stamp}.${extensionFor(file.type)}`;
+}
+
+function extensionFor(mimeType) {
+  return (
+    {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/bmp': 'bmp',
+      'image/svg+xml': 'svg',
+      'application/pdf': 'pdf',
+    }[mimeType] || 'bin'
   );
 }
 

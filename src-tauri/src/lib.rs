@@ -246,6 +246,7 @@ pub fn run() {
             history::history_export_conversation,
             // library
             library::library_upload_file,
+            library::library_upload_pasted_file,
             library::library_list_files,
             library::library_download_file,
             library::library_delete_file,

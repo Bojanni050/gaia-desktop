@@ -6,7 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args) => invoke(...args),
 }));
 
-import { mcpApi, speechApi, getSpeechInfo } from './api';
+import { mcpApi, speechApi, libraryApi, getSpeechInfo } from './api';
 
 describe('mcpApi', () => {
   beforeEach(() => invoke.mockClear());
@@ -50,6 +50,19 @@ describe('speechApi', () => {
     invoke.mockResolvedValue({ audio: [1, 2, 3] });
     const result = await speechApi.synthesize('hi');
     expect(result.mimeType).toBe('audio/wav');
+  });
+});
+
+describe('libraryApi', () => {
+  beforeEach(() => invoke.mockClear());
+
+  it('sends pasted bytes as the raw body, the name in a header', async () => {
+    invoke.mockResolvedValue({ id: 'f1', filename: 'pasted-image-20261018-143002.png' });
+    const bytes = new Uint8Array([137, 80, 78, 71]);
+    await libraryApi.uploadPastedFile(bytes, 'pasted-image-20261018-143002.png');
+    expect(invoke).toHaveBeenCalledWith('library_upload_pasted_file', bytes, {
+      headers: { 'x-gaia-filename': 'pasted-image-20261018-143002.png' },
+    });
   });
 });
 

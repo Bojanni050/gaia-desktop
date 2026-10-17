@@ -648,7 +648,7 @@ body {
 .wake-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border, rgba(127,127,127,0.3)); transition: background-color 0.2s ease; }
 .wake-dot.is-done { background: var(--accent); }
 .wake-ok { color: var(--accent); }
-.composer-mic-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--text-faint); font-family: var(--sans); }
+.composer-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--text-faint); font-family: var(--sans); }
 @media (prefers-reduced-motion: reduce) {
   .composer-mic.is-recording { animation: none; }
   .composer-mic .spin { animation-duration: 3s; }
