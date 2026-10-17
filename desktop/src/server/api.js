@@ -21,6 +21,8 @@ import {
   buildCognitionAnswerRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
+  buildMemoryRetractRequest,
+  parseMemoryRetraction,
   buildEpisodeListRequest,
   buildEpisodeEvidenceRequest,
   parseEpisodeList,
@@ -327,6 +329,22 @@ export const cognitionApi = {
   reopen: (id, reason) => serverApi.request(buildCognitionReopenRequest(id, reason)),
   answer: (id, answer) => serverApi.request(buildCognitionAnswerRequest(id, answer)),
   confirm: (id, options) => serverApi.request(buildCognitionConfirmRequest(id, options)),
+};
+
+/**
+ * Taking a memory back — the person's own route, not Gaia's
+ * (`POST /memory/retract` on Gaia Cloud). Gaia calling her `retract_memory`
+ * tool herself is exactly the judgement that failed when she recited
+ * something untrue, so this one does not depend on her: the person points at
+ * the sentence, and the server matches it against what is really in memory.
+ * Plain JSON over the generic server_request seam; the answer rides on 200
+ * with the wording to show (`message`), whether it retracted, found nothing,
+ * or found several to choose from.
+ */
+export const memoryApi = {
+  retract: (quote, correction) => serverApi
+    .request(buildMemoryRetractRequest(quote, correction))
+    .then(parseMemoryRetraction),
 };
 
 /**

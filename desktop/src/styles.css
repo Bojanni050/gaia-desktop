@@ -526,6 +526,25 @@ body {
   transition: color 0.2s ease, background-color 0.2s ease;
 }
 .msg-action:hover { color: var(--text); background: var(--surface-2); }
+.msg-action:disabled { opacity: 0.5; cursor: default; }
+
+/* taking a memory back — the person's own route, under her reply */
+.retract-panel {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
+  padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px;
+  background: var(--surface-2);
+}
+.retract-hint { margin: 0; color: var(--text-faint); font-family: var(--sans); font-size: 0.76rem; line-height: 1.45; }
+.retract-field { display: flex; flex-direction: column; gap: 4px; }
+.retract-field span { color: var(--text-faint); font-family: var(--sans); font-size: 0.72rem; }
+.retract-field input {
+  background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 8px;
+  color: var(--text); font-family: var(--sans); font-size: 0.82rem; padding: 6px 8px;
+}
+.retract-actions { display: flex; gap: 6px; }
+.retract-answer { margin-top: 8px; font-family: var(--sans); font-size: 0.78rem; color: var(--text-faint); }
+.retract-answer p { margin: 0 0 4px; }
+.retract-candidates { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 
 /* attachment chips — composer (pending) and message bubble (sent) */
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 6px; }

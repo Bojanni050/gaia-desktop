@@ -166,6 +166,28 @@ export function parseCognitionList(response) {
   return Array.isArray(hypotheses) ? hypotheses : [];
 }
 
+// --- taking a memory back (conversation/MessageView.jsx) --------------------
+// The person points at one specific thing Gaia said and says it is not true.
+// `quote` is that sentence — the text they selected in her reply — and it is
+// what the server matches against what is actually in memory; `correction` is
+// what is true instead, when they choose to say. The answer is never an error:
+// `status` is 'retracted', 'ambiguous' (with `candidates` to pick from) or
+// 'not_found', and `message` is the wording to show as it is.
+
+export function buildMemoryRetractRequest(quote, correction) {
+  const request = { method: 'post', path: 'memory/retract', body: { quote } };
+  if (correction) request.body.correction = correction;
+  return request;
+}
+
+export function parseMemoryRetraction(response) {
+  const body = response?.body;
+  if (!body || typeof body.status !== 'string') {
+    throw new Error('Gaia Server returned no retraction');
+  }
+  return body;
+}
+
 // --- Kairos episodes (logos/EpisodeTimeline.jsx) ----------------------------
 // Episodes Logos has recognised: a time block it read as one coherent activity.
 // Each carries its own interpretation plus the raw captures it was drawn from,

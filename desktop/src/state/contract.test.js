@@ -21,6 +21,8 @@ import {
   buildCognitionAnswerRequest,
   buildCognitionConfirmRequest,
   parseCognitionList,
+  buildMemoryRetractRequest,
+  parseMemoryRetraction,
 } from './contract';
 
 describe('buildTurnRequest', () => {
@@ -270,5 +272,40 @@ describe('research job seam', () => {
   it('reads the research job a turn started, and nothing when there is none', () => {
     expect(parseTurnResearch({ body: { research: { id: 'rj_1', status: 'running' } } }).id).toBe('rj_1');
     expect(parseTurnResearch({ body: { reply: 'hoi' } })).toBeNull();
+  });
+});
+
+// --- taking a memory back ---------------------------------------------------
+
+describe('retraction contract', () => {
+  it('buildMemoryRetractRequest posts the sentence the person pointed at', () => {
+    expect(buildMemoryRetractRequest('Yassine is een vriend van je')).toEqual({
+      method: 'post',
+      path: 'memory/retract',
+      body: { quote: 'Yassine is een vriend van je' },
+    });
+  });
+
+  it('carries what is true instead only when they said it', () => {
+    expect(buildMemoryRetractRequest('iets', '')).toEqual({
+      method: 'post', path: 'memory/retract', body: { quote: 'iets' },
+    });
+    expect(buildMemoryRetractRequest('iets', 'dit wel')).toEqual({
+      method: 'post', path: 'memory/retract', body: { quote: 'iets', correction: 'dit wel' },
+    });
+  });
+
+  it('parseMemoryRetraction hands back the answer the server wrote, wording included', () => {
+    const body = {
+      status: 'ambiguous',
+      message: 'More than one memory matches — say which one.',
+      candidates: [{ bank: 'bojan', id: 'f1', text: 'Yassine is een vriend van je' }],
+    };
+    expect(parseMemoryRetraction({ body })).toEqual(body);
+  });
+
+  it('parseMemoryRetraction refuses a body that is not an answer', () => {
+    expect(() => parseMemoryRetraction({})).toThrow();
+    expect(() => parseMemoryRetraction({ body: {} })).toThrow();
   });
 });

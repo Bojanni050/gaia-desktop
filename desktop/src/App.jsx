@@ -8,7 +8,7 @@ import AboutPanel from './settings/AboutPanel';
 import UpdatePanel from './settings/UpdatePanel';
 import EpisodeTimeline from './logos/EpisodeTimeline';
 import UnderstandingRail from './cognition/UnderstandingRail';
-import { serverApi, presenceApi, settingsApi, historyApi } from './server/api';
+import { serverApi, presenceApi, settingsApi, historyApi, memoryApi } from './server/api';
 import { useConversation } from './state/useConversation';
 import { useResearchJobs } from './state/useResearchJobs';
 import { useServerStatus } from './state/useServerStatus';
@@ -133,6 +133,10 @@ export default function App() {
     presenceApi.setQuiet(next).catch(() => {});
   }, []);
 
+  // Taking a memory back is the person's own act (the sentence they point at
+  // in Gaia's reply), deliberately not something Gaia has to decide to call.
+  const handleRetract = useCallback((quote, correction) => memoryApi.retract(quote, correction), []);
+
   // The orb rests quiet by default; Gaia is present, not performative. While she hears the user speak
   // hands-free it listens with them.
   const presenceState = voiceSession.state === 'hearing' ? 'listening' : 'quiet';
@@ -173,6 +177,7 @@ export default function App() {
           whisper={whisper}
           onSend={conversation.send}
           onRetry={conversation.retry}
+          onRetract={handleRetract}
           research={research}
           desktop={desktop}
           onOpenResearchConversation={handleOpenResearchConversation}
