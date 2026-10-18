@@ -673,6 +673,13 @@ body {
 }
 .composer-send:hover:not(:disabled) { background: #D9B27A; }
 .composer-send:disabled { opacity: 0.3; cursor: default; }
+/* While a turn runs the same button stops her: same place and size, softer
+   surface so it reads as an interruption rather than as the accent action. */
+.composer-send.is-stop {
+  background: var(--accent-soft); color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.composer-send.is-stop:hover { background: rgba(203, 163, 106, 0.22); }
 
 /* ---------------------------------------------------------------- presence */
 .presence { display: inline-flex; align-items: center; gap: 10px; }

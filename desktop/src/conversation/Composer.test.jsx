@@ -186,3 +186,44 @@ describe('Composer: the mic button', () => {
     expect(screen.getByRole('status').textContent.length).toBeGreaterThan(10);
   });
 });
+
+describe('Composer: the arrow becomes her stop button', () => {
+  it('sends as usual while nothing is running', () => {
+    const onSend = vi.fn();
+    const onStop = vi.fn();
+    render(<Composer onSend={onSend} onStop={onStop} busy={false} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hoi' } });
+    fireEvent.click(document.querySelector('.composer-send'));
+    expect(onSend).toHaveBeenCalledWith('hoi', []);
+    expect(onStop).not.toHaveBeenCalled();
+    expect(document.querySelector('.composer-send').className).not.toContain('is-stop');
+  });
+
+  it('offers a stop button while a turn runs, and it interrupts her', () => {
+    const onSend = vi.fn();
+    const onStop = vi.fn();
+    render(<Composer onSend={onSend} onStop={onStop} busy />);
+    const button = document.querySelector('.composer-send');
+    expect(button.className).toContain('is-stop');
+    expect(button.getAttribute('aria-label')).toMatch(/stop|stoppen/i);
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('keeps the arrow disabled when the caller wired no stop', () => {
+    render(<Composer onSend={vi.fn()} busy />);
+    const button = document.querySelector('.composer-send');
+    expect(button.className).not.toContain('is-stop');
+    expect(button.disabled).toBe(true);
+  });
+
+  it('does not send with Enter while a turn runs', () => {
+    const onSend = vi.fn();
+    render(<Composer onSend={onSend} onStop={vi.fn()} busy />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'iets' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+});

@@ -176,6 +176,7 @@ export default function App() {
           listenState={voiceSession.state}
           whisper={whisper}
           onSend={conversation.send}
+          onStop={conversation.cancel}
           onRetry={conversation.retry}
           onRetract={handleRetract}
           research={research}

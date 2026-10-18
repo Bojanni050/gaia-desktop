@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ArrowUp, Loader2, Paperclip, Speech, X } from 'lucide-react';
+import { ArrowUp, Loader2, Paperclip, Speech, Square, X } from 'lucide-react';
 import { libraryApi } from '../server/api';
 import { usePushToTalk } from '../state/usePushToTalk';
 import VoiceControls from './VoiceControls';
@@ -19,8 +19,12 @@ import { L } from '../lib/lexicon';
  * starts a recording and the next ends it. What was said arrives as text, which is sent exactly like
  * typed text — unless a turn is already running or a draft is being typed, in which case it is put in
  * the text box instead, so nothing spoken is ever lost or sent over something half-written.
+ *
+ * While a turn runs the send arrow becomes a stop button: the same place, one meaning — where you
+ * would say something, you can now cut her off. `onStop` is the caller's cancel (the desktop closes
+ * the stream through Rust); without it the arrow simply stays disabled.
  */
-export default function Composer({ onSend, busy, onDraftChange, listenState = 'off' }) {
+export default function Composer({ onSend, onStop, busy, onDraftChange, listenState = 'off' }) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attaching, setAttaching] = useState(false);
@@ -43,6 +47,10 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
     setAttachments([]);
     if (taRef.current) taRef.current.style.height = 'auto';
   };
+
+  // A running turn turns the arrow into her stop button, so the one control
+  // that sends is also the one that interrupts.
+  const canStop = Boolean(busy && typeof onStop === 'function');
 
   const onTranscript = useCallback((spoken) => {
     const said = String(spoken || '').trim();
@@ -184,14 +192,26 @@ export default function Composer({ onSend, busy, onDraftChange, listenState = 'o
           onPaste={onPaste}
           rows={1}
         />
-        <button
-          className="composer-send"
-          onClick={submit}
-          disabled={!text.trim() || busy}
-          aria-label={L.send}
-        >
-          <ArrowUp size={18} />
-        </button>
+        {canStop ? (
+          <button
+            className="composer-send is-stop"
+            onClick={() => onStop()}
+            aria-label={L.stop}
+            title={L.stop}
+            type="button"
+          >
+            <Square size={14} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            className="composer-send"
+            onClick={submit}
+            disabled={!text.trim() || busy}
+            aria-label={L.send}
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
       </div>
       {(ptt.phase === 'noSpeech' || ptt.phase === 'failed') && (
         <p className="composer-note" role="status">

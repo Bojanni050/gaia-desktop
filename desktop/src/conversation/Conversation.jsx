@@ -21,7 +21,7 @@ const NEAR_BOTTOM = 40;
  * moment (orb + greeting), messages, the thinking row, and the composer
  * dock with Gaia's presence above it.
  */
-export default function Conversation({ thread, busy, streaming, progress, presenceState, listenState, whisper, onSend, onRetry, onRetract, research, onOpenResearchConversation, desktop }) {
+export default function Conversation({ thread, busy, streaming, progress, presenceState, listenState, whisper, onSend, onStop, onRetry, onRetract, research, onOpenResearchConversation, desktop }) {
   const scrollRef = useRef(null);
   // Whether the view follows the thread's tail. Only the person's own scrolling
   // turns this off — never our own jump to the bottom (see handleScroll).
@@ -163,7 +163,7 @@ export default function Conversation({ thread, busy, streaming, progress, presen
           <div className="dock-presence">
             <PresenceOrb state={busy ? 'thinking' : hasDraft ? 'listening' : presenceState} size={30} />
           </div>
-          <Composer onSend={onSend} busy={busy} onDraftChange={setHasDraft} listenState={listenState} />
+          <Composer onSend={onSend} onStop={onStop} busy={busy} onDraftChange={setHasDraft} listenState={listenState} />
         </div>
       </div>
     </section>
