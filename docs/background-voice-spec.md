@@ -1,6 +1,6 @@
 # Background Voice — Implementation Spec
 
-Status: **revised after Phase 0** (2026-10-12). Audit 2026-10-11; spike results in `background-voice-phase0-findings.md`. No product code written yet.
+Status: **revised after Phase 0** (2026-10-12). Audit 2026-10-11; spike results in `background-voice-phase0-findings.md`. Phases 1 to 4 (microphone, push-to-talk, continuous conversation with echo cancellation, wake word) are implemented and merged; §3 was re-read on 2026-10-18, Phase 5 is still open.
 Scope: persistent voice conversation for Gaia Desktop on Windows 11.
 
 Everything marked **[verified]** was read in this repo or in `Gaia-Cloud` on the
@@ -26,18 +26,18 @@ Phase 0 before relying on it.
 
 | Area | State | Evidence |
 |---|---|---|
-| Mic capture | Scaffold only. `AudioInputEngine` trait has no implementor; `input_devices()` returns empty; permission is an in-memory enum starting `Unknown`; `audio_set_permission` only sets the field. | `src-tauri/src/audio/mod.rs` |
-| Device selection | `AudioSettings.preferred_input` is persisted but read by nothing. | `src-tauri/src/settings/mod.rs` |
-| Capture subsystem | Registry exists, no sources registered. | `src-tauri/src/capture/mod.rs` |
-| TTS | Implemented. `speech_synthesize` → Cloud `POST /speech`; bytes played in the webview via `Audio` + Blob URL; gain/mute; 150 ms fade-out; `GET /speech/info` language gate. | `src-tauri/src/speech/mod.rs`, `desktop/src/lib/speech.js`, `desktop/src/lib/language.js` |
-| Streaming turn | Implemented, text only, no cancel path. | `src-tauri/src/communication/http.rs:198` |
-| Barge-in | Only "new turn stops old speech". `send()` returns early while `busy`. | `desktop/src/state/useConversation.js` |
-| Presence orb | `speaking` animation exists but `App.jsx` hard-codes `presenceState = 'quiet'`. | `desktop/src/App.jsx`, `desktop/src/presence/PresenceOrb.jsx` |
-| Windows lifecycle | No tray, no close handler, no autostart, no single-instance. Closing the window exits the app. | grep of `src-tauri/` |
-| Cloud STT | **Does not exist.** Only `/speech` and `/speech/info` (TTS: Mistral Voxtral, Xiaomi MiMo). | `Gaia-Cloud/services/gaia-api/src/server.js:609,618` |
-| Cloud turn abort | No client-disconnect / `AbortController` handling found in `server.js`. [unverified for the rest of the service] | grep of `server.js` |
+| Mic capture | Implemented. cpal/WASAPI backend behind `CaptureBackend`, driven by `MicController`: the master switch drops the stream (Windows releases the device), device fallback, no-frames and device-failure watchdogs, level events. Mic permission is an OS setting, surfaced on the settings line. | `src-tauri/src/audio/capture.rs`, `src-tauri/src/audio/mod.rs` |
+| Device selection | `voice.inputDevice` is persisted and used; a legacy `audio.preferredInput` is migrated into it once and removed. | `src-tauri/src/settings/mod.rs`, `desktop/src/settings/SettingsPanel.jsx` |
+| Capture subsystem | Sources registered: a capture tap feeds push-to-talk (`audio/ptt.rs` over `audio/utterance.rs`) and the hands-free listener (`audio/continuous.rs` over `audio/stream.rs`, `audio/vad.rs`, `audio/echo.rs`). | `src-tauri/src/audio/` |
+| TTS | Implemented, in Rust. `speech_play` fetches Cloud `POST /speech/stream` (PCM while the reply is still being synthesized, falling back to the one-clip `POST /speech`; `speech_synthesize` is the buffered one), rodio plays it there via `PlaybackEngine`, with gain/mute, a 150 ms fade-out and stale-reply cancellation; `GET /speech/info` gates the language. Nothing plays in the webview any more. | `src-tauri/src/speech/{mod,playback,stream}.rs`, `desktop/src/lib/speech.js`, `desktop/src/lib/language.js` |
+| Streaming turn | Implemented, text only, with a cancel path. | `src-tauri/src/communication/http.rs`, `server_cancel_turn` |
+| Barge-in | Implemented. Speech on the post-AEC signal for ≥ 250 ms while she speaks stops the reply and becomes the next turn; `bargeInEnabled=false` falls back to half-duplex with a 400 ms cooldown. A typed turn is still refused by the `busy` guard; a voice turn supersedes the running one (`cancel()`, turn tokens). | `src-tauri/src/audio/continuous.rs`, `desktop/src/state/useConversation.js` |
+| Presence orb | Driven by the voice session and turn state: `App.jsx` derives it from `voiceSession.state`, `Conversation.jsx` overrides it for thinking/draft. | `desktop/src/App.jsx`, `desktop/src/conversation/Conversation.jsx` |
+| Windows lifecycle | Tray icon with hide-on-close while the microphone is on. Still no autostart and no single-instance guard. | `src-tauri/src/tray.rs`, `src-tauri/Cargo.toml` |
+| Cloud STT | Exists. `POST /speech/transcribe` takes one utterance and returns `{ text, language }`. The speech routes are `GET /speech/info`, `POST /speech`, `POST /speech/stream` (TTS: Mistral Voxtral, Xiaomi MiMo, ElevenLabs, Fish Audio). | `Gaia-Cloud/services/gaia-api/src/server.js` |
+| Cloud turn abort | Implemented and deployed. The `conversation/turn` route aborts on `res.on('close')` and passes the signal down into the Hermes/generator streams; `POST /speech/stream` likewise hangs the TTS provider up when the listener goes away. | `Gaia-Cloud/services/gaia-api/src/server.js` |
 
-Other facts: `tokio` features are only `sync, time, rt, fs`; `reqwest` has no websocket feature; the CSP is `connect-src 'self' ipc:` and `media-src 'self' blob:`; CI runs `cargo test --lib` and vitest on `windows-latest`, which has no audio hardware.
+Other facts: `tokio` features are `sync, time, rt, rt-multi-thread, fs, macros`; `reqwest` has no websocket feature; the CSP is `connect-src 'self' ipc: http://ipc.localhost` and `media-src 'self' blob:` (the webview no longer plays Gaia's voice); CI runs `cargo test --lib` and vitest on `windows-latest`, which has no audio hardware.
 
 ## 4. Decisions (confirmed by the product owner)
 
