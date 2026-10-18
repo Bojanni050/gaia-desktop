@@ -537,7 +537,6 @@ fn run(
             None => {
                 // switched off (or failed): listening ends with it
                 seg.reset();
-                wake_cut = None;
                 break 'outer;
             }
         }

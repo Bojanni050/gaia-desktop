@@ -6,7 +6,7 @@
 //! empty token. That value stays in memory for the run: it is never written to
 //! `settings.json` or the credential store — only an explicit save does that.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const ENV_FILE: &str = ".env.local";
 const KEY: &str = "GAIA_BRIDGE_TOKEN";
