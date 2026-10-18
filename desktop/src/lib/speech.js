@@ -60,8 +60,10 @@ export function stopSpeech() {
 }
 
 /**
- * Speaks an already-finalized Gaia reply. Synthesis (Gaia Cloud's `/speech`) and playback both happen
- * in Rust; this resolves when the reply ends or is stopped, and rejects if it could not be spoken.
+ * Speaks an already-finalized Gaia reply. Synthesis (Gaia Cloud's `/speech/stream`, falling back to
+ * `/speech` on an older server) and playback both happen in Rust, and the reply starts playing as
+ * soon as the provider has synthesized the first of it; this resolves when the reply ends or is
+ * stopped, and rejects if it could not be spoken.
  *
  * @param {string} text
  * @param {'nl'|'en'|null} [language] detected language of the reply; picks the matching voice

@@ -95,6 +95,10 @@ fn in_echo_zone(speaking: bool, playing: bool, remaining: usize, played: usize) 
 pub enum RenderCmd {
     /// A reply started playing: its audio at 16 kHz mono.
     Start(Arc<Vec<f32>>),
+    /// More of a reply that is still arriving (or being played while it is synthesized): it follows
+    /// what is already queued, unlike `Start`, which plays from the current position — over a reply
+    /// that is still fading out, for instance.
+    Append(Arc<Vec<f32>>),
     /// The reply was stopped: only the next `keep_ms` of it will still be heard (the fade-out).
     Stop { keep_ms: u32 },
 }
@@ -561,6 +565,9 @@ fn run(
                         }
                     }
                 }
+                // The next piece of a reply that is still arriving: it continues the queue's
+                // timeline, so it goes after what is queued rather than at the current position.
+                RenderCmd::Append(samples) => render_queue.extend(samples.iter().copied()),
                 RenderCmd::Stop { keep_ms } => render_queue.truncate(keep_ms as usize * 16),
             }
         }

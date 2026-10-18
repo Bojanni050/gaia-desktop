@@ -218,7 +218,8 @@ export async function getSttInfo(request) {
  */
 export const speechApi = {
   /**
-   * Synthesizes `text` (Gaia Cloud's `/speech`) and plays it in Rust. Resolves with
+   * Synthesizes `text` (Gaia Cloud's `/speech/stream`, which falls back to `/speech`) and plays it
+   * in Rust, starting as soon as the provider has synthesized the first of it. Resolves with
    * `{ outcome: 'ended' | 'stopped' }`, or `{ outcome: 'failed', message }`; rejects if the
    * synthesis request itself fails.
    */

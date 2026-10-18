@@ -7,14 +7,20 @@
 //! stopped reply out instead of clicking it off.
 //!
 //! Only one reply is ever spoken: a new reply supersedes the last, which is faded out while the new one starts.
+//!
+//! A reply can also be played while it is *still being synthesized* ([`PlaybackEngine::stream`]):
+//! its samples are pushed in as they arrive over HTTP, so the first words are heard long before the
+//! provider is done. There is no complete clip to decode then, so the source that pulls from the
+//! arriving queue reports the echo canceller's reference itself, in step with what is played.
 
+use std::collections::VecDeque;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
+use rodio::{ChannelCount, Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, SampleRate, Source};
 use serde::Serialize;
 use tokio::sync::oneshot;
 
@@ -35,6 +41,15 @@ const TICK: Duration = Duration::from_millis(16);
 /// The output device is released this long after the last sound, so a changed default device is
 /// picked up by the next reply.
 const IDLE_RELEASE: Duration = Duration::from_secs(5);
+/// Samples the streaming source takes from the arriving queue at a time (about 10 ms at 24 kHz).
+const STREAM_REFILL: usize = 256;
+/// While nothing has arrived, this many silent samples are yielded before the queue is looked at
+/// again (about 1 ms at 24 kHz), so waiting for the provider costs one lock per millisecond, not one
+/// per sample.
+const STREAM_SILENCE_RUN: usize = 32;
+/// The echo reference is reported in blocks of this many 16 kHz samples (10 ms), the granularity the
+/// canceller consumes anyway.
+const REFERENCE_BLOCK: usize = 160;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "outcome", content = "message", rename_all = "camelCase")]
@@ -52,6 +67,19 @@ enum Cmd {
         audio: Vec<u8>,
         done: oneshot::Sender<PlayOutcome>,
     },
+    /// Starts a reply that is still being synthesized; the samples follow as `StreamChunk`s.
+    StreamBegin {
+        sample_rate: u32,
+        /// `Ok` once the reply is playing, `Err` with the outcome when it could not start at all.
+        started: oneshot::Sender<Result<(), PlayOutcome>>,
+        done: oneshot::Sender<PlayOutcome>,
+    },
+    /// One decoded piece of the reply that is arriving (mono f32 at the stream's own rate).
+    StreamChunk {
+        samples: Vec<f32>,
+    },
+    /// The reply is complete: what is queued plays out and then the reply ends.
+    StreamEnd,
     Stop {
         fade_ms: u64,
     },
@@ -125,6 +153,198 @@ struct Fading {
     fade: Duration,
 }
 
+/// The samples of a reply that is still arriving: the HTTP task pushes what the provider has
+/// synthesized so far, the mixer pulls them as the speakers need them.
+struct StreamQueue {
+    pending: Mutex<VecDeque<f32>>,
+    finished: AtomicBool,
+}
+
+impl StreamQueue {
+    fn new() -> Self {
+        Self {
+            pending: Mutex::new(VecDeque::new()),
+            finished: AtomicBool::new(false),
+        }
+    }
+
+    fn push(&self, samples: &[f32]) {
+        if samples.is_empty() {
+            return;
+        }
+        self.pending
+            .lock()
+            .expect("stream poisoned")
+            .extend(samples.iter().copied());
+    }
+
+    /// The reply will not grow any further: the source ends once what is queued has played.
+    fn finish(&self) {
+        self.finished.store(true, Ordering::SeqCst);
+    }
+
+    /// Moves up to `limit` queued samples into `out`; returns how many it moved (nothing means
+    /// nothing has arrived *yet*).
+    fn take(&self, out: &mut VecDeque<f32>, limit: usize) -> usize {
+        let mut pending = self.pending.lock().expect("stream poisoned");
+        let take = pending.len().min(limit);
+        out.extend(pending.drain(..take));
+        take
+    }
+
+    fn is_finished(&self) -> bool {
+        self.finished.load(Ordering::SeqCst)
+    }
+}
+
+/// The audio of a reply that is played while it is still being synthesized.
+///
+/// The mixer pulls samples from the arriving queue; while nothing has arrived this yields silence —
+/// the reply has not ended, it just is not complete yet — and it ends only once the task has said
+/// the reply is over and everything queued has played. Because there is no complete clip to report
+/// in advance, this is also where the echo canceller's reference comes from: exactly the samples the
+/// speakers are handed, silence included, so the canceller's timeline matches the room's.
+struct StreamSource {
+    queue: Arc<StreamQueue>,
+    rate: u32,
+    buffer: VecDeque<f32>,
+    /// Samples waiting to go through the downsampler.
+    feed: Vec<f32>,
+    /// 16 kHz reference samples not reported yet.
+    reference: Vec<f32>,
+    downsampler: Downsampler,
+    /// Silent samples still to be yielded before the queue is looked at again.
+    silent_run: usize,
+    /// The first block reported *starts* the reply (it plays from now on, possibly over a reply that
+    /// is still fading out); every block after it follows on the same timeline.
+    first: bool,
+    report: Arc<dyn Fn(RenderCmd) + Send + Sync>,
+}
+
+impl StreamSource {
+    fn new(queue: Arc<StreamQueue>, rate: u32, report: Arc<dyn Fn(RenderCmd) + Send + Sync>) -> Self {
+        let rate = rate.max(1);
+        Self {
+            queue,
+            rate,
+            buffer: VecDeque::new(),
+            feed: Vec::new(),
+            reference: Vec::new(),
+            downsampler: Downsampler::new(rate),
+            silent_run: 0,
+            first: true,
+            report,
+        }
+    }
+
+    /// Hands one sample to the caller, keeping the canceller's reference in step with it.
+    fn played(&mut self, sample: f32) -> f32 {
+        self.feed.push(sample);
+        if self.feed.len() >= REFERENCE_BLOCK {
+            self.flush_feed();
+        }
+        if self.reference.len() >= REFERENCE_BLOCK {
+            self.report_reference();
+        }
+        sample
+    }
+
+    /// Pushes whatever still waits in `feed` through the downsampler.
+    fn flush_feed(&mut self) {
+        if self.feed.is_empty() {
+            return;
+        }
+        let feed = std::mem::take(&mut self.feed);
+        self.downsampler.push(&feed, &mut self.reference);
+    }
+
+    fn report_reference(&mut self) {
+        if self.reference.is_empty() {
+            return;
+        }
+        let block: Vec<f32> = self.reference.drain(..).collect();
+        let cmd = if self.first {
+            self.first = false;
+            RenderCmd::Start(Arc::new(block))
+        } else {
+            RenderCmd::Append(Arc::new(block))
+        };
+        (self.report)(cmd);
+    }
+}
+
+impl Iterator for StreamSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        loop {
+            if let Some(sample) = self.buffer.pop_front() {
+                return Some(self.played(sample));
+            }
+            // Nothing buffered. The queue is only looked at when no silent run is in progress, so
+            // waiting for the provider costs one lock per run rather than one per sample.
+            if self.silent_run == 0 {
+                if self.queue.take(&mut self.buffer, STREAM_REFILL) > 0 {
+                    continue;
+                }
+                if self.queue.is_finished() {
+                    // Everything the reply held has played: report the last of it and end.
+                    self.flush_feed();
+                    self.report_reference();
+                    return None;
+                }
+                self.silent_run = STREAM_SILENCE_RUN;
+            }
+            // Still being synthesized: hold the speakers' timeline with silence rather than ending
+            // the reply mid-sentence.
+            self.silent_run -= 1;
+            return Some(self.played(0.0));
+        }
+    }
+}
+
+impl Source for StreamSource {
+    fn current_span_len(&self) -> Option<usize> {
+        None
+    }
+
+    fn channels(&self) -> ChannelCount {
+        ChannelCount::new(1).expect("one channel")
+    }
+
+    fn sample_rate(&self) -> SampleRate {
+        SampleRate::new(self.rate).expect("a non-zero sample rate")
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
+}
+
+/// A reply that is still arriving, from the caller's side: push what has been decoded, then say the
+/// reply is complete. Dropping the handle does not stop playback — the reply plays out what it has.
+pub struct StreamHandle {
+    tx: mpsc::Sender<Cmd>,
+    done: oneshot::Receiver<PlayOutcome>,
+}
+
+impl StreamHandle {
+    /// Hands one decoded chunk (mono f32 at the stream's own rate) to the player.
+    pub fn push(&self, samples: Vec<f32>) {
+        let _ = self.tx.send(Cmd::StreamChunk { samples });
+    }
+
+    /// The reply is complete: what is queued plays out, then the reply ends.
+    pub fn finish(&self) {
+        let _ = self.tx.send(Cmd::StreamEnd);
+    }
+
+    /// Resolves when the reply played to its end or was stopped.
+    pub async fn wait(self) -> PlayOutcome {
+        self.done.await.unwrap_or(PlayOutcome::Stopped)
+    }
+}
+
 /// Handle to the playback thread. Cheap to share; commands are queued to the thread.
 pub struct PlaybackEngine {
     tx: mpsc::Sender<Cmd>,
@@ -166,6 +386,36 @@ impl PlaybackEngine {
             return PlayOutcome::Failed("playback thread is gone".into());
         }
         wait.await.unwrap_or(PlayOutcome::Stopped)
+    }
+
+    /// Starts a reply that is still being synthesized: [`StreamHandle::push`] feeds it the samples as
+    /// they arrive and [`StreamHandle::finish`] says the reply is complete, after which it plays out.
+    ///
+    /// `rate` is the stream's own sample rate (chunks are mono f32 at that rate). Resolves with the
+    /// outcome when the reply cannot start at all — no output device, no playback thread; a reply
+    /// that does play resolves through [`StreamHandle::wait`].
+    pub async fn stream(&self, rate: u32) -> Result<StreamHandle, PlayOutcome> {
+        let (started, wait_started) = oneshot::channel();
+        let (done, wait_done) = oneshot::channel();
+        if self
+            .tx
+            .send(Cmd::StreamBegin {
+                sample_rate: rate,
+                started,
+                done,
+            })
+            .is_err()
+        {
+            return Err(PlayOutcome::Failed("playback thread is gone".into()));
+        }
+        match wait_started.await {
+            Ok(Ok(())) => Ok(StreamHandle {
+                tx: self.tx.clone(),
+                done: wait_done,
+            }),
+            Ok(Err(outcome)) => Err(outcome),
+            Err(_) => Err(PlayOutcome::Failed("playback thread is gone".into())),
+        }
     }
 
     /// Stops what is playing (easing it out over `fade_ms`) and cancels any reply still being synthesised.
@@ -217,17 +467,27 @@ pub fn reference_16k(audio: &[u8]) -> Option<Vec<f32>> {
     Some(out)
 }
 
+/// Ends a reply that was still arriving: it will not grow any further, so the player ends after what
+/// is already queued has played.
+fn end_stream(stream: &mut Option<Arc<StreamQueue>>) {
+    if let Some(queue) = stream.take() {
+        queue.finish();
+    }
+}
+
 fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) {
-    let report = move |cmd: RenderCmd| {
+    let report: Arc<dyn Fn(RenderCmd) + Send + Sync> = Arc::new(move |cmd: RenderCmd| {
         if let Some(sink) = render.lock().expect("render poisoned").as_ref() {
             sink(cmd);
         }
-    };
+    });
     let mut gain = effective_volume(volume, muted);
     let mut sink: Option<MixerDeviceSink> = None;
     let mut device: Option<String> = None;
     let mut current: Option<Playing> = None;
     let mut fading: Vec<Fading> = Vec::new();
+    // The reply that is still arriving, if one is (chunks land in its queue).
+    let mut stream: Option<Arc<StreamQueue>> = None;
     let mut last_active = Instant::now();
 
     let start_fade = |p: Playing, ms: u64, gain: f32, fading: &mut Vec<Fading>| {
@@ -250,6 +510,7 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
     loop {
         match rx.recv_timeout(TICK) {
             Ok(Cmd::Play { audio, done }) => {
+                end_stream(&mut stream);
                 if let Some(old) = current.take() {
                     start_fade(old, DEFAULT_FADE_MS, gain, &mut fading);
                 }
@@ -283,7 +544,49 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
                     }
                 }
             }
+            Ok(Cmd::StreamBegin {
+                sample_rate,
+                started,
+                done,
+            }) => {
+                // A reply that is still arriving takes over from whatever is playing now.
+                end_stream(&mut stream);
+                if let Some(old) = current.take() {
+                    start_fade(old, DEFAULT_FADE_MS, gain, &mut fading);
+                }
+                if sink.is_none() {
+                    match open_sink(device.as_deref()) {
+                        Ok(mut s) => {
+                            s.log_on_drop(false);
+                            sink = Some(s);
+                        }
+                        Err(e) => {
+                            let _ = started
+                                .send(Err(PlayOutcome::Failed(format!("could not open the speakers: {e}"))));
+                            continue;
+                        }
+                    }
+                }
+                let mixer = sink.as_ref().expect("sink just opened").mixer();
+                let queue = Arc::new(StreamQueue::new());
+                let player = Player::connect_new(mixer);
+                player.set_volume(gain);
+                player.append(StreamSource::new(queue.clone(), sample_rate, report.clone()));
+                current = Some(Playing { player, done });
+                stream = Some(queue);
+                last_active = Instant::now();
+                let _ = started.send(Ok(()));
+            }
+            Ok(Cmd::StreamChunk { samples }) => {
+                if let Some(queue) = &stream {
+                    queue.push(&samples);
+                }
+            }
+            Ok(Cmd::StreamEnd) => {
+                end_stream(&mut stream);
+            }
             Ok(Cmd::Stop { fade_ms }) => {
+                end_stream(&mut stream);
                 if let Some(p) = current.take() {
                     start_fade(p, fade_ms, gain, &mut fading);
                 }
@@ -358,6 +661,123 @@ mod tests {
     #[test]
     fn a_zero_length_fade_is_an_immediate_stop() {
         assert_eq!(faded_volume(1.0, Duration::ZERO, Duration::ZERO), 0.0);
+    }
+
+    /// An echo reference that keeps what it was told, in order.
+    fn recording_report() -> (Arc<dyn Fn(RenderCmd) + Send + Sync>, Arc<Mutex<Vec<RenderCmd>>>) {
+        let cmds: Arc<Mutex<Vec<RenderCmd>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = cmds.clone();
+        let report: Arc<dyn Fn(RenderCmd) + Send + Sync> = Arc::new(move |cmd| {
+            sink.lock().expect("commands poisoned").push(cmd);
+        });
+        (report, cmds)
+    }
+
+    /// How many 16 kHz samples a recorded reference holds.
+    fn reference_samples(cmds: &Arc<Mutex<Vec<RenderCmd>>>) -> usize {
+        cmds.lock()
+            .expect("commands poisoned")
+            .iter()
+            .map(|cmd| match cmd {
+                RenderCmd::Start(samples) | RenderCmd::Append(samples) => samples.len(),
+                RenderCmd::Stop { .. } => 0,
+            })
+            .sum()
+    }
+
+    /// Pulls until `expected` comes out of the source, at most one silent run later (while nothing
+    /// has arrived it hands out silence between looks at the queue).
+    fn expect_sample(source: &mut StreamSource, expected: f32) -> bool {
+        for _ in 0..=STREAM_SILENCE_RUN {
+            if source.next() == Some(expected) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn a_streamed_reply_plays_what_arrived_and_ends_when_it_is_complete() {
+        let queue = Arc::new(StreamQueue::new());
+        let (report, _) = recording_report();
+        let mut source = StreamSource::new(queue.clone(), 24_000, report);
+
+        queue.push(&[0.1, 0.2, 0.3]);
+        assert_eq!(source.next(), Some(0.1));
+        assert_eq!(source.next(), Some(0.2));
+        assert_eq!(source.next(), Some(0.3));
+
+        // Nothing has arrived yet: not the end of the reply, so it holds the timeline with silence.
+        assert_eq!(source.next(), Some(0.0));
+
+        queue.push(&[0.4]);
+        assert!(expect_sample(&mut source, 0.4), "the rest of the reply follows the silence");
+
+        queue.push(&[0.5]);
+        queue.finish();
+        assert!(expect_sample(&mut source, 0.5));
+        assert_eq!(source.next(), None, "over once everything it held has played");
+    }
+
+    #[test]
+    fn a_starved_reply_keeps_playing_silence_instead_of_ending() {
+        let queue = Arc::new(StreamQueue::new());
+        let (report, _) = recording_report();
+        let mut source = StreamSource::new(queue.clone(), 24_000, report);
+
+        for _ in 0..10_000 {
+            assert_eq!(source.next(), Some(0.0), "incomplete is not the same as over");
+        }
+        queue.finish();
+        let ended = (0..=STREAM_SILENCE_RUN).any(|_| source.next().is_none());
+        assert!(ended, "and it ends within one silent run of the reply being over");
+    }
+
+    #[test]
+    fn the_echo_reference_covers_everything_played_silence_included() {
+        let queue = Arc::new(StreamQueue::new());
+        let (report, cmds) = recording_report();
+        let mut source = StreamSource::new(queue.clone(), 24_000, report);
+
+        // 100 ms of audio, then 100 ms of waiting, then 100 ms more: 300 ms played in all.
+        let tone: Vec<f32> = (0..2_400).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        queue.push(&tone);
+        for _ in 0..2_400 {
+            source.next();
+        }
+        for _ in 0..2_400 {
+            assert_eq!(source.next(), Some(0.0));
+        }
+        queue.push(&tone);
+        queue.finish();
+        while source.next().is_some() {}
+
+        let seen = cmds.lock().expect("commands poisoned");
+        assert!(
+            matches!(seen.first(), Some(RenderCmd::Start(_))),
+            "the reply is announced before it is followed: {} blocks",
+            seen.len()
+        );
+        assert!(
+            seen.iter().skip(1).all(|cmd| matches!(cmd, RenderCmd::Append(_))),
+            "everything after the first block continues the same reply"
+        );
+        drop(seen);
+        let expected = 7_200 * 16 / 24; // 300 ms at 16 kHz
+        let total = reference_samples(&cmds);
+        assert!((total as i32 - expected as i32).abs() <= 4, "{total} vs {expected}");
+    }
+
+    #[test]
+    fn the_queue_hands_out_no_more_than_it_was_asked_for() {
+        let queue = StreamQueue::new();
+        queue.push(&[0.1, 0.2, 0.3]);
+        let mut out = VecDeque::new();
+        assert_eq!(queue.take(&mut out, 2), 2);
+        assert_eq!(out, VecDeque::from([0.1, 0.2]));
+        assert_eq!(queue.take(&mut out, 10), 1);
+        assert_eq!(out, VecDeque::from([0.1, 0.2, 0.3]));
+        assert_eq!(queue.take(&mut out, 10), 0);
     }
 
     #[test]

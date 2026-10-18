@@ -1,5 +1,7 @@
 //! Gaia's voice — transports an already-finalized Gaia text reply to Gaia
-//! Server's `/speech` endpoint and returns the synthesized audio bytes.
+//! Server and plays it: one complete clip from `POST /speech`, or the reply as
+//! it is *still being synthesized* from `POST /speech/stream` (see [`stream`]),
+//! which is what makes her first words audible before the provider is done.
 //!
 //! Server-side only, same posture as `library`: this module never decides
 //! *whether* Gaia should speak, never generates or alters text, and never
@@ -16,12 +18,15 @@
 //! reply, not a fresh prompt.
 
 mod playback;
+mod stream;
 pub mod stt;
 
 pub use playback::{PlayOutcome, PlaybackEngine, DEFAULT_FADE_MS};
 
 use crate::communication::{CommunicationError, ServerLink};
 use crate::error::DesktopError;
+
+use stream::{Pcm16, SpeechResponse, SpeechStream};
 
 pub(crate) fn base_url(link: &ServerLink) -> Result<String, DesktopError> {
     let config = link.config();
@@ -114,10 +119,12 @@ pub async fn speech_synthesize(
     fetch_speech(&link, &text, language.as_deref()).await
 }
 
-/// Synthesizes `text` and plays it through the speakers. Resolves when the reply ends or is stopped.
+/// Synthesizes `text` and plays it through the speakers, starting as soon as the provider has
+/// synthesized the first of it. Resolves when the reply ends or is stopped.
 ///
-/// A newer `speech_play`, or any `speech_stop`, supersedes this one: if that happens while the audio is
-/// still being fetched, nothing is played and the call resolves as stopped.
+/// A newer `speech_play`, or any `speech_stop`, supersedes this one: if that happens while the reply
+/// is still arriving, nothing more is played, the provider request is hung up and the call resolves
+/// as stopped.
 #[tauri::command]
 pub async fn speech_play(
     link: tauri::State<'_, ServerLink>,
@@ -133,11 +140,62 @@ pub async fn speech_play(
     let epoch = playback.begin();
     // Anything still speaking is superseded by this reply.
     playback.stop_current(DEFAULT_FADE_MS);
-    let speech = fetch_speech(&link, &text, language.as_deref()).await?;
-    if !playback.is_current(epoch) {
-        return Ok(PlayOutcome::Stopped);
+    match stream::request_speech(&link, &text, language.as_deref()).await? {
+        SpeechResponse::Clip(speech) => {
+            if !playback.is_current(epoch) {
+                return Ok(PlayOutcome::Stopped);
+            }
+            Ok(playback.play(speech.audio).await)
+        }
+        SpeechResponse::Stream(speech) => {
+            if !playback.is_current(epoch) {
+                return Ok(PlayOutcome::Stopped);
+            }
+            play_stream(&playback, epoch, speech).await
+        }
     }
-    Ok(playback.play(speech.audio).await)
+}
+
+/// Plays a reply that is still arriving: reads the PCM the server sends as it is synthesized and
+/// hands it to the player chunk by chunk. Resolves when the reply ends, is stopped, or the stream
+/// breaks.
+async fn play_stream(
+    playback: &PlaybackEngine,
+    epoch: u64,
+    speech: SpeechStream,
+) -> Result<PlayOutcome, DesktopError> {
+    let handle = match playback.stream(speech.sample_rate).await {
+        Ok(handle) => handle,
+        // No output device (or no playback thread): the reply cannot be spoken at all.
+        Err(outcome) => return Ok(outcome),
+    };
+    let mut pcm = Pcm16::new(speech.channels);
+    let mut response = speech.response;
+    loop {
+        if !playback.is_current(epoch) {
+            // Stopped or superseded. Finishing the reply here and dropping the response ends what is
+            // left locally *and* hangs the provider request up, so it stops synthesizing a sentence
+            // nobody will hear.
+            handle.finish();
+            return Ok(PlayOutcome::Stopped);
+        }
+        let chunk = match response.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(e) => {
+                // The rest of the reply never arrives. What she has already said is not taken back,
+                // so what is playing runs out and the failure is reported after it.
+                handle.finish();
+                let _ = handle.wait().await;
+                return Err(DesktopError::Message(format!("speech stream failed: {e}")));
+            }
+        };
+        let mut samples = Vec::new();
+        pcm.push(&chunk, &mut samples);
+        handle.push(samples);
+    }
+    handle.finish();
+    Ok(handle.wait().await)
 }
 
 /// Stops the current reply (easing it out over `fade_ms`, default 150) and cancels any reply still
