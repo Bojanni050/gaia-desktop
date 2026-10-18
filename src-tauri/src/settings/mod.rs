@@ -4,6 +4,7 @@
 //! to, notification and audio preferences, enabled capture sources). They
 //! never encode anything cognitive; Gaia's long-term state lives server-side.
 
+mod dotenv;
 mod secrets;
 mod store;
 
@@ -189,6 +190,21 @@ pub struct CaptureSettings {
 pub struct SettingsState {
     current: RwLock<Settings>,
     store: store::FileSettingsStore,
+    /// Dev-only fallback from `.env.local` (see [`dotenv`]): used when neither
+    /// the credential store nor `settings.json` holds a token, and never
+    /// persisted by this path. `None` in a normal build without that file.
+    env_token: Option<String>,
+}
+
+/// Fills an empty `server.auth_token` for the caller: the credential store's
+/// token wins, then a token already in the settings, then the dev-only
+/// `.env.local` value. A token the user typed is never overwritten.
+fn hydrate_token(settings: &mut Settings, stored: Option<String>, env: Option<&str>) {
+    if let Some(token) = stored.filter(|t| !t.trim().is_empty()) {
+        settings.server.auth_token = Some(token);
+    } else if settings.server.auth_token.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        settings.server.auth_token = env.map(str::to_string);
+    }
 }
 
 impl SettingsState {
@@ -217,16 +233,16 @@ impl SettingsState {
         Self {
             current: RwLock::new(current),
             store,
+            env_token: dotenv::bridge_token(),
         }
     }
 
     pub fn get(&self) -> Settings {
         let mut settings = self.current.read().expect("settings lock poisoned").clone();
         // The token lives in the credential store; hydrate it for callers
-        // (the settings UI and the server link) when one is stored there.
-        if let Some(token) = secrets::load_token() {
-            settings.server.auth_token = Some(token);
-        }
+        // (the settings UI and the server link) when one is stored there. With
+        // nothing stored, a dev-only `.env.local` may fill an empty token.
+        hydrate_token(&mut settings, secrets::load_token(), self.env_token.as_deref());
         settings
     }
 
@@ -375,5 +391,39 @@ mod tests {
         assert_eq!(settings.audio.preferred_input.as_deref(), Some("mic-1"));
         assert_eq!(settings.audio.volume, 1.0);
         assert!(!settings.audio.muted);
+    }
+
+    #[test]
+    fn an_empty_token_is_filled_from_the_dev_env_file() {
+        let mut settings = Settings::default();
+        hydrate_token(&mut settings, None, Some("from-env"));
+        assert_eq!(settings.server.auth_token.as_deref(), Some("from-env"));
+    }
+
+    #[test]
+    fn a_typed_or_stored_token_is_never_replaced_by_the_dev_env_file() {
+        let mut typed = Settings::default();
+        typed.server.auth_token = Some("typed".to_string());
+        hydrate_token(&mut typed, None, Some("from-env"));
+        assert_eq!(typed.server.auth_token.as_deref(), Some("typed"));
+
+        let mut stored = Settings::default();
+        hydrate_token(&mut stored, Some("keyring".to_string()), Some("from-env"));
+        assert_eq!(stored.server.auth_token.as_deref(), Some("keyring"));
+    }
+
+    #[test]
+    fn a_blank_token_falls_through_to_the_dev_env_file() {
+        let mut settings = Settings::default();
+        settings.server.auth_token = Some("   ".to_string());
+        hydrate_token(&mut settings, Some("  ".to_string()), Some("from-env"));
+        assert_eq!(settings.server.auth_token.as_deref(), Some("from-env"));
+    }
+
+    #[test]
+    fn without_a_dev_env_file_an_empty_token_stays_empty() {
+        let mut settings = Settings::default();
+        hydrate_token(&mut settings, None, None);
+        assert!(settings.server.auth_token.is_none());
     }
 }
