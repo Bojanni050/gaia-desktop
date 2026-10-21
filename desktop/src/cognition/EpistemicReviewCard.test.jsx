@@ -53,12 +53,16 @@ describe('EpistemicReviewCard — one question, two answers', () => {
     expect(onReject).toHaveBeenCalledWith(h);
   });
 
-  it('hides the objection and the evidence note behind Meer', () => {
+  it('shows what was actually said behind Meer — the sentences, not the ids', () => {
     const h = item({
       status: 'proposed',
       counter_hypothesis: 'the opposite reading',
-      evidence_for: ['e1'],
-      evidence_against: ['e2'],
+      evidence_for: ['hindsight-1'],
+      evidence_against: ['turn-2'],
+      evidence_items: [
+        { id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers in March.' },
+        { id: 'turn-2', source: 'conversation', content: 'They pasted a long explanation and said it was too much.' },
+      ],
     });
     renderCard({ item: h });
 
@@ -71,6 +75,26 @@ describe('EpistemicReviewCard — one question, two answers', () => {
     expect(screen.getByText(L.cognitionCounterHint)).toBeTruthy();
     expect(screen.getByText(L.cognitionEvidenceForNote)).toBeTruthy();
     expect(screen.getByText(L.cognitionEvidenceAgainstNote)).toBeTruthy();
+    expect(screen.getByText('They asked for short answers in March.')).toBeTruthy();
+    expect(
+      screen.getByText('They pasted a long explanation and said it was too much.'),
+    ).toBeTruthy();
+    // A citation id is never a thing to read.
+    expect(screen.queryByText('hindsight-1')).toBeNull();
+    expect(screen.queryByText('turn-2')).toBeNull();
+  });
+
+  it('says the ground was not kept when a statement cites ids without a snapshot', () => {
+    const h = item({
+      status: 'proposed',
+      evidence_for: ['e1'],
+      evidence_against: ['e2'],
+    });
+    renderCard({ item: h });
+
+    fireEvent.click(screen.getByText(L.cognitionMore));
+    expect(screen.getByText(L.cognitionEvidenceUnrecorded)).toBeTruthy();
+    expect(screen.queryByText(L.cognitionEvidenceForNote)).toBeNull();
   });
 
   it('offers no Meer when there is nothing to reveal', () => {

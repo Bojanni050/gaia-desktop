@@ -258,8 +258,11 @@ export const LANGUAGES = {
     cognitionLess: 'Minder',
     cognitionBack: 'Terug',
     cognitionMacroSure: 'Weet je het zeker? Je stelt dit vast als iets wezenlijks.',
-    cognitionEvidenceForNote: 'Iets ondersteunt dit.',
-    cognitionEvidenceAgainstNote: 'Iets spreekt dit tegen.',
+    cognitionEvidenceForNote: 'Wat hiervoor pleit',
+    cognitionEvidenceAgainstNote: 'Wat ertegen pleit',
+    // A statement whose citations were recorded before the text was kept: the
+    // note says why the list is empty instead of pretending nothing is there.
+    cognitionEvidenceUnrecorded: 'Waar dit op rust is niet bewaard gebleven.',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Tijdlijn',
@@ -574,8 +577,9 @@ export const LANGUAGES = {
     cognitionLess: 'Less',
     cognitionBack: 'Back',
     cognitionMacroSure: 'Are you sure? You are settling this as high-impact.',
-    cognitionEvidenceForNote: 'Something supports this.',
-    cognitionEvidenceAgainstNote: 'Something speaks against this.',
+    cognitionEvidenceForNote: 'What supports it',
+    cognitionEvidenceAgainstNote: 'What speaks against it',
+    cognitionEvidenceUnrecorded: 'What this rested on was not kept.',
     // Logos — episodes (interpretation first, observations on request)
     logos: 'Logos',
     logosTitle: 'Timeline',

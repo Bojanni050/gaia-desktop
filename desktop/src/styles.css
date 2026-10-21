@@ -284,6 +284,25 @@ body {
 .cognition-chevron { transition: transform 0.2s ease; }
 .cognition-chevron.open { transform: rotate(90deg); }
 .cognition-evidence-note { margin: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--text-faint); }
+/* The evidence itself: what was said, grouped by which way it weighs. Set in
+   the serif because these are quoted sentences, not interface labels. */
+.cognition-evidence { display: flex; flex-direction: column; gap: 8px; }
+.cognition-evidence-group { display: flex; flex-direction: column; gap: 3px; }
+.cognition-evidence-label {
+  font-family: var(--sans); font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--text-faint);
+}
+.cognition-evidence-list {
+  margin: 0; padding: 0 0 0 14px; display: flex; flex-direction: column; gap: 4px;
+  list-style: none;
+}
+.cognition-evidence-list li {
+  position: relative; font-family: var(--serif); font-size: 0.8rem;
+  color: var(--text-muted); line-height: 1.45;
+}
+.cognition-evidence-list li::before {
+  content: '—'; position: absolute; left: -14px; color: var(--text-faint);
+}
 .cognition-counter-body {
   padding: 4px 0 2px 16px; display: flex; flex-direction: column; gap: 2px;
 }

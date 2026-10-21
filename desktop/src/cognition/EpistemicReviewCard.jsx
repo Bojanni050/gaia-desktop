@@ -7,9 +7,9 @@
  * Everything that made this feel like a control panel — status, scope, raw
  * evidence ids, "examine this", re-wording — is gone. The only thing that still
  * hides behind "Meer" is what a person might actually want to weigh: the
- * objection the card held back, and a plain note of whether anything supports
- * or contradicts the claim. "Meer" only appears when there is such a thing to
- * reveal.
+ * objection the card held back, and the evidence itself — the sentences that
+ * were weighed, kept beside the citations the server stored. "Meer" only
+ * appears when there is such a thing to reveal.
  *
  * An open question is not a claim to judge but a question to answer, and its
  * `question_shape` names the control: 'yes_no' gives the Ja/Nee pair AS the
@@ -90,7 +90,22 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
   const needsFriction = isMacro || hasCounter;
   const evidenceFor = Array.isArray(item.evidence_for) ? item.evidence_for : [];
   const evidenceAgainst = Array.isArray(item.evidence_against) ? item.evidence_against : [];
+  // What the citations actually said. `evidence_items` is the snapshot the
+  // server kept while it still had the words ({ id, source, content }); the
+  // two lists above only name them. A statement written before the snapshot
+  // existed still cites ids, and nothing can be said about those beyond the
+  // plain note below — better an honest "not kept" than a bare id or a
+  // sentence that hides what it is talking about.
+  const captured = new Map(
+    (Array.isArray(item.evidence_items) ? item.evidence_items : [])
+      .filter((entry) => entry && entry.id && typeof entry.content === 'string' && entry.content.trim())
+      .map((entry) => [String(entry.id), entry.content.trim()]),
+  );
+  const sayOf = (ids) => ids.map((id) => captured.get(String(id))).filter(Boolean);
+  const saysFor = sayOf(evidenceFor);
+  const saysAgainst = sayOf(evidenceAgainst);
   const hasEvidence = evidenceFor.length > 0 || evidenceAgainst.length > 0;
+  const hasSomethingToSay = saysFor.length > 0 || saysAgainst.length > 0;
   const canReveal = hasCounter || hasEvidence;
 
   const canConfirmMacro = !busy && hasCounter;
@@ -126,8 +141,10 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
   };
 
   // What a person might still want to weigh — the objection the card held back,
-  // and a plain note of whether anything supports or contradicts the claim. The
-  // same block behind "Meer" on an open statement and on a settled one.
+  // and the evidence itself: what was actually said. Not the ids, and not a
+  // note about the existence of something unreadable. When a statement was
+  // written before the text was kept, the note says so plainly instead.
+  // The same block behind "Meer" on an open statement and on a settled one.
   const moreBlock = more && (
     <div className="cognition-more">
       {hasCounter && (
@@ -137,11 +154,32 @@ export default function EpistemicReviewCard({ item, busy, onReject, onConfirm, o
           <span className="cognition-counter-note">{L.cognitionCounterHint}</span>
         </div>
       )}
-      {evidenceFor.length > 0 && (
-        <p className="cognition-evidence-note">{L.cognitionEvidenceForNote}</p>
+      {hasSomethingToSay && (
+        <div className="cognition-evidence">
+          {saysFor.length > 0 && (
+            <div className="cognition-evidence-group">
+              <span className="cognition-evidence-label">{L.cognitionEvidenceForNote}</span>
+              <ul className="cognition-evidence-list">
+                {saysFor.map((say) => (
+                  <li key={say}>{say}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {saysAgainst.length > 0 && (
+            <div className="cognition-evidence-group">
+              <span className="cognition-evidence-label">{L.cognitionEvidenceAgainstNote}</span>
+              <ul className="cognition-evidence-list">
+                {saysAgainst.map((say) => (
+                  <li key={say}>{say}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
-      {evidenceAgainst.length > 0 && (
-        <p className="cognition-evidence-note">{L.cognitionEvidenceAgainstNote}</p>
+      {hasEvidence && !hasSomethingToSay && (
+        <p className="cognition-evidence-note">{L.cognitionEvidenceUnrecorded}</p>
       )}
     </div>
   );
