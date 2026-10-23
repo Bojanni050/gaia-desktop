@@ -163,24 +163,27 @@ export function useConversation(server, desktop) {
         // saves/appends the transcript under it (conversationStore.js),
         // which is what lets History reopen this same thread later.
         // Desktop actions ride this same stream (`desktop` frames), so the turn only says it can
-        // carry them out when Desktop Commander is running and the person allowed it. A probe that
-        // fails is simply "no": the turn goes ahead without the capability.
-        let canDesktop = false;
+        // carry them out when the person allowed it. Which skills is a separate question: opening a
+        // page needs nothing but the switch, file work needs Desktop Commander. A probe that fails
+        // is simply "not that skill": the turn goes ahead with what does work.
+        let desktopSkills = [];
         try {
-          canDesktop = !!desktop && (await desktop.isAvailable());
+          desktopSkills = desktop ? await desktop.availableSkills() : [];
         } catch (_) { /* unavailable */ }
+        const canDesktop = desktopSkills.length > 0;
         if (turn.cancelled) return;
         let desktopRoots = [];
         let desktopPlaces = {};
         let desktopIndex = false;
         try {
-          if (canDesktop) {
+          // Folders and the search index only matter to the file skills.
+          if (desktopSkills.some((skill) => skill !== 'open-url')) {
             desktopRoots = await desktop.allowedRoots();
             desktopPlaces = await desktop.knownPlaces();
             desktopIndex = await desktop.isIndexAvailable();
           }
         } catch (_) { /* she then just does not know the folders */ }
-        const body = buildStreamTurnBody(history, threadId, { desktop: canDesktop, desktopRoots, desktopPlaces, desktopIndex });
+        const body = buildStreamTurnBody(history, threadId, { desktop: canDesktop, desktopSkills, desktopRoots, desktopPlaces, desktopIndex });
         const fullReply = await server.streamTurn(body, (delta) => {
           // Deltas already on their way when the turn was cancelled are dropped.
           if (turn.cancelled) return;

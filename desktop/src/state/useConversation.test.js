@@ -426,10 +426,16 @@ describe('interrupting a turn', () => {
 });
 
 describe('desktop actions on a turn', () => {
-  const fakeDesktop = (available) => ({
-    isAvailable: vi.fn(async () => available),
+  const fakeDesktop = (skills) => ({
+    // What the machine can really carry out: the page opener always, file work only with a working
+    // Desktop Commander. A bare `true` in these tests means "everything".
+    availableSkills: vi.fn(async () => (Array.isArray(skills) ? skills : skills ? ['file-read', 'file-search', 'file-write', 'run-command', 'open-url'] : [])),
+    isAvailable: vi.fn(async () => Boolean(skills)),
     handleFrame: vi.fn(),
     abortAll: vi.fn(),
+    allowedRoots: vi.fn(async () => ['C:\\Users\\bo\\Documents']),
+    knownPlaces: vi.fn(async () => ({})),
+    isIndexAvailable: vi.fn(async () => false),
   });
 
   it('declares desktop only when it is available, and hands desktop frames over without showing them', async () => {

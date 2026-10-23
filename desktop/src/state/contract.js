@@ -52,12 +52,16 @@ export function buildTurnRequest(messages, conversationId) {
  * into the prompt the way the non-streaming path does (gaia-api/src/
  * server.js); a pre-existing gap shared with Web, not introduced here.
  */
-export function buildStreamTurnBody(messages, conversationId, { desktop = false, desktopRoots = [], desktopPlaces = {}, desktopIndex = false } = {}) {
+export function buildStreamTurnBody(messages, conversationId, { desktop = false, desktopSkills = [], desktopRoots = [], desktopPlaces = {}, desktopIndex = false } = {}) {
   const body = buildTurnBody(messages, conversationId);
-  // Declares that this client can carry out actions on this computer (Desktop Commander is
-  // running and allowed). Left off entirely otherwise: the server then never offers the tool.
+  // Declares that this client can carry out actions on this computer, and which ones. Left off
+  // entirely otherwise: the server then never offers the tool.
   if (desktop) {
     body.desktop = true;
+    // The skills this machine can really carry out (the app opens pages on its own; file work needs
+    // Desktop Commander). The server narrows its tool to this list, so Gaia is never offered a skill
+    // that would fail here. Absent means "all of them", which is what older builds send.
+    if (Array.isArray(desktopSkills) && desktopSkills.length > 0) body.desktopSkills = desktopSkills;
     // Where she may look, so she can find things herself instead of asking for paths.
     if (Array.isArray(desktopRoots) && desktopRoots.length > 0) body.desktopRoots = desktopRoots;
     // Where the person's Desktop, Documents and Downloads really are, so she starts in the right place.

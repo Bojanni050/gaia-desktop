@@ -487,31 +487,47 @@ export function createDesktopActions({
   }
 
   /**
-   * Whether this turn may offer `desktop: true`: switched on in Settings, with at least one
-   * allowed folder, and Desktop Commander actually answering.
+   * Which desktop skills this machine can carry out right now.
+   *
+   * Opening a page is built into the app itself, so it needs nothing but the switch. The file
+   * skills go through Desktop Commander, so they need it answering and at least one allowed
+   * folder. An empty list means the turn offers no desktop capability at all — the server builds
+   * its tool (and Gaia's self-knowledge) from exactly this list, so nothing is promised that
+   * would fail on this machine.
+   * @returns {Promise<string[]>} skill ids, in the registry's order
    */
-  async function isAvailable() {
+  async function availableSkills() {
     let settings;
     try {
       settings = (await getSettings())?.desktop;
     } catch (_) {
-      return false;
+      return [];
     }
-    if (!settings?.enabled || !settings.serverId) return false;
-    if (!Array.isArray(settings.allowedDirs) || !settings.allowedDirs.some((dir) => normalizePath(dir))) {
-      return false;
+    if (!settings?.enabled) return [];
+    const files = [];
+    if (settings.serverId && Array.isArray(settings.allowedDirs) && settings.allowedDirs.some((dir) => normalizePath(dir))) {
+      if (await commanderAnswers(settings.serverId)) files.push('file-read', 'file-search', 'file-write', 'run-command');
     }
-    const fresh =
-      probe && probe.serverId === settings.serverId && now() - probe.at < (probe.ok ? PROBE_OK_MS : PROBE_FAIL_MS);
+    return [...files, 'open-url'];
+  }
+
+  /** Whether this turn may offer `desktop` at all: at least one skill is really available. */
+  async function isAvailable() {
+    return (await availableSkills()).length > 0;
+  }
+
+  /** Whether Desktop Commander answers for this server, cached so a turn does not probe every time. */
+  async function commanderAnswers(serverId) {
+    const fresh = probe && probe.serverId === serverId && now() - probe.at < (probe.ok ? PROBE_OK_MS : PROBE_FAIL_MS);
     if (fresh) return probe.ok;
     let ok = false;
     try {
-      await withTimeout(listTools(settings.serverId), 15000);
+      await withTimeout(listTools(serverId), 15000);
       ok = true;
     } catch (_) {
       ok = false;
     }
-    probe = { serverId: settings.serverId, ok, at: now() };
+    probe = { serverId, ok, at: now() };
     return ok;
   }
 
@@ -567,6 +583,7 @@ export function createDesktopActions({
     decide,
     abortAll,
     isAvailable,
+    availableSkills,
     allowedRoots,
     knownPlaces,
     isIndexAvailable,

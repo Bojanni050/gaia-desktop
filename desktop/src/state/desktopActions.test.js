@@ -59,6 +59,14 @@ describe('the turn body', () => {
     expect('desktop' in buildStreamTurnBody(messages, 't1', { desktop: false })).toBe(false);
     expect('desktop' in buildStreamTurnBody(messages, 't1')).toBe(false);
   });
+  it('sends which skills this machine can carry, and stays silent when it cannot say', () => {
+    const messages = [{ role: 'user', content: 'hoi' }];
+    expect(buildStreamTurnBody(messages, 't1', { desktop: true, desktopSkills: ['open-url'] }).desktopSkills).toEqual(['open-url']);
+    // No list means "all of them" to the server, which is what an older build implies.
+    expect('desktopSkills' in buildStreamTurnBody(messages, 't1', { desktop: true })).toBe(false);
+    // And nothing about skills rides a turn that has no desktop at all.
+    expect('desktopSkills' in buildStreamTurnBody(messages, 't1', { desktop: false, desktopSkills: ['open-url'] })).toBe(false);
+  });
 });
 
 describe('frames', () => {
@@ -255,6 +263,39 @@ describe('a website opens without a prompt', () => {
   });
 });
 
+describe('which skills this machine can really carry out', () => {
+  it('offers the page opener with nothing but the switch', async () => {
+    const { controller } = setup({ settings: { enabled: true, allowedDirs: [] } });
+    expect(await controller.availableSkills()).toEqual(['open-url']);
+    expect(await controller.isAvailable()).toBe(true);
+  });
+
+  it('adds the file skills when Desktop Commander answers and a folder is allowed', async () => {
+    const { controller } = setup();
+    expect(await controller.availableSkills()).toEqual(['file-read', 'file-search', 'file-write', 'run-command', 'open-url']);
+  });
+
+  it('keeps the page opener when the commander is down or no folder is allowed', async () => {
+    const down = setup({ listTools: vi.fn(async () => { throw new Error('no commander'); }) });
+    expect(await down.controller.availableSkills()).toEqual(['open-url']);
+    const noDirs = setup({ settings: { ...DESKTOP, allowedDirs: [] } });
+    expect(await noDirs.controller.availableSkills()).toEqual(['open-url']);
+  });
+
+  it('offers nothing when the person turned it off', async () => {
+    const { controller } = setup({ settings: { ...DESKTOP, enabled: false } });
+    expect(await controller.availableSkills()).toEqual([]);
+    expect(await controller.isAvailable()).toBe(false);
+  });
+
+  it('does not ask Desktop Commander at all when no server is configured', async () => {
+    const listTools = vi.fn(async () => []);
+    const { controller } = setup({ settings: { enabled: true, allowedDirs: ['C:\\Users\\bo\\Documents'] }, listTools });
+    expect(await controller.availableSkills()).toEqual(['open-url']);
+    expect(listTools).not.toHaveBeenCalled();
+  });
+});
+
 describe('a write or command asks first', () => {
   it('shows a prompt with the full input and runs nothing yet', async () => {
     const { controller, tool, request } = setup();
@@ -424,12 +465,16 @@ describe('several actions, repeats and endings', () => {
 });
 
 describe('whether a turn may offer desktop', () => {
-  it('is false when switched off, without folders, or when Desktop Commander does not answer', async () => {
+  it('is false only when the person switched it off', async () => {
     expect(await setup({ settings: { ...DESKTOP, enabled: false } }).controller.isAvailable()).toBe(false);
-    expect(await setup({ settings: { ...DESKTOP, allowedDirs: [] } }).controller.isAvailable()).toBe(false);
-    expect(await setup({ settings: { ...DESKTOP, allowedDirs: ['  '] } }).controller.isAvailable()).toBe(false);
+  });
+
+  it('is still true without folders or without Desktop Commander — the page opener is built into the app', async () => {
+    expect(await setup({ settings: { ...DESKTOP, allowedDirs: [] } }).controller.isAvailable()).toBe(true);
+    expect(await setup({ settings: { ...DESKTOP, allowedDirs: ['  '] } }).controller.isAvailable()).toBe(true);
     const down = setup({ listTools: vi.fn(async () => { throw new Error('no'); }) });
-    expect(await down.controller.isAvailable()).toBe(false);
+    expect(await down.controller.isAvailable()).toBe(true);
+    expect(await down.controller.availableSkills()).toEqual(['open-url']);
   });
 
   it('is true when allowed and running, and does not start the server again straight away', async () => {
