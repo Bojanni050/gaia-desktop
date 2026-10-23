@@ -13,6 +13,7 @@
 //! is invisible to this shell.
 
 pub mod audio;
+pub mod browser;
 pub mod capture;
 pub mod communication;
 pub mod error;
@@ -271,6 +272,8 @@ pub fn run() {
             // instant name search through Everything (es.exe), when installed
             everything::everything_available,
             everything::everything_search,
+            // opening a web address in the person's own browser
+            browser::browser_open_url,
             // presence
             presence::presence_get,
             presence::presence_set_quiet,

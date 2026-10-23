@@ -10,6 +10,7 @@ import {
   indexResultText,
   readToolResult,
   truncateOutput,
+  openableUrl,
   createDesktopActions,
   MAX_OUTPUT_CHARS,
 } from './desktopActions';
@@ -33,9 +34,10 @@ const frame = (fields) => ({
   ...fields,
 });
 
-function setup({ settings = DESKTOP, callTool, listTools, getPlaces, searchIndex, indexAvailable } = {}) {
+function setup({ settings = DESKTOP, callTool, listTools, getPlaces, searchIndex, indexAvailable, openUrl } = {}) {
   const request = vi.fn(async () => ({ status: 204 }));
   const tool = callTool || vi.fn(async () => ({ content: [{ type: 'text', text: 'ok-output' }] }));
+  const opener = openUrl || vi.fn(async () => undefined);
   const controller = createDesktopActions({
     request,
     callTool: tool,
@@ -44,9 +46,10 @@ function setup({ settings = DESKTOP, callTool, listTools, getPlaces, searchIndex
     ...(getPlaces ? { getPlaces } : {}),
     ...(searchIndex ? { searchIndex } : {}),
     ...(indexAvailable ? { indexAvailable } : {}),
+    openUrl: opener,
   });
   const posts = () => request.mock.calls.map(([r]) => [r.path, r.body]);
-  return { controller, request, tool, posts };
+  return { controller, request, tool, openUrl: opener, posts };
 }
 
 describe('the turn body', () => {
@@ -106,6 +109,17 @@ describe('the person\u2019s limits', () => {
     expect(checkLimits('file-read', { path: 'C:\\Users\\bo\\Documents\\a.txt' }, DESKTOP).ok).toBe(true);
     expect(checkLimits('run-command', { command: 'npm test' }, DESKTOP).ok).toBe(true);
   });
+
+  it('lets a web address through without asking about folders, and refuses anything else', () => {
+    // The allowed folders are about files; opening a page has nothing to do with them.
+    const noFolders = { enabled: true, serverId: 'dc', allowedDirs: [] };
+    expect(checkLimits('open-url', { url: 'https://nu.nl' }, noFolders).ok).toBe(true);
+    for (const refused of ['javascript:alert(1)', 'file:///C:/secret.txt', 'ms-settings:privacy', 'data:text/html,hi', 'nu.nl', 'https://user:pw@example.com', '']) {
+      expect(checkLimits('open-url', { url: refused }, noFolders).ok).toBe(false);
+    }
+    expect(openableUrl('  https://nu.nl  ')).toBe('https://nu.nl/');
+    expect(openableUrl(undefined)).toBeNull();
+  });
 });
 
 describe('mapping skills onto Desktop Commander', () => {
@@ -114,6 +128,12 @@ describe('mapping skills onto Desktop Commander', () => {
     expect(toolCallsFor('file-write', { path: 'p', content: 'x' })[0].tool).toBe('write_file');
     expect(toolCallsFor('run-command', { command: 'ls' })[0].tool).toBe('start_process');
     expect(toolCallsFor('something-else', {})).toEqual([]);
+  });
+
+  it('opens a web address itself, with no tool server involved', () => {
+    expect(toolCallsFor('open-url', { url: ' https://nu.nl ' })).toEqual([
+      { native: 'open-url', args: { url: 'https://nu.nl/' } },
+    ]);
   });
 
   it('finds folders by listing a few levels and keeping matching folder names, as full paths', () => {
@@ -193,6 +213,45 @@ describe('a read runs without a prompt', () => {
     expect(path).toBe('desktop/actions/r2/result');
     expect(body.ok).toBe(false);
     expect(body.output).toMatch(/buiten de toegestane mappen/);
+  });
+});
+
+describe('a website opens without a prompt', () => {
+  const approved = (fields) =>
+    frame({ id: 'w1', skill: 'open-url', policy: 'auto', status: 'approved', summary: 'Open website: https://nu.nl/', input: { url: 'https://nu.nl/' }, ...fields });
+
+  it('opens it with the app\u2019s own opener and reports that it did', async () => {
+    const { controller, tool, openUrl, posts } = setup();
+    await controller.handleFrame(approved());
+    expect(controller.getSnapshot().prompts).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith('https://nu.nl/');
+    expect(tool).not.toHaveBeenCalled();
+    expect(posts()).toEqual([['desktop/actions/w1/result', { ok: true, output: 'Geopend in je browser: https://nu.nl/' }]]);
+  });
+
+  it('needs no Desktop Commander at all', async () => {
+    const { controller, openUrl, posts } = setup({ settings: { enabled: true, allowedDirs: [] } });
+    await controller.handleFrame(approved({ id: 'w2' }));
+    expect(openUrl).toHaveBeenCalledWith('https://nu.nl/');
+    expect(posts()[0][1].ok).toBe(true);
+  });
+
+  it('refuses a link that is not a web address, and opens nothing', async () => {
+    const { controller, openUrl, posts } = setup();
+    await controller.handleFrame(approved({ id: 'w3', input: { url: 'javascript:alert(1)' } }));
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(posts()).toEqual([
+      ['desktop/actions/w3/result', { ok: false, output: 'Dat is geen volledig webadres (http of https); ik open niets anders.' }],
+    ]);
+  });
+
+  it('says so when the browser would not start', async () => {
+    const failing = vi.fn(async () => {
+      throw new Error('no shell');
+    });
+    const { controller, posts } = setup({ openUrl: failing });
+    await controller.handleFrame(approved({ id: 'w4' }));
+    expect(posts()).toEqual([['desktop/actions/w4/result', { ok: false, output: 'Die pagina kon ik niet openen.' }]]);
   });
 });
 

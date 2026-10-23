@@ -108,6 +108,12 @@ export const desktopApi = {
   // Everything (es.exe): instant name search over every drive, folders included.
   everythingAvailable: () => invoke('everything_available'),
   everythingSearch: (query, kind, path, max) => invoke('everything_search', { query, kind, path, max }),
+  /**
+   * Opens a web address in the person's own browser. Rust checks it is an ordinary
+   * `http(s)` address (again — Gaia Cloud already refused anything else) and hands it to
+   * Windows' shell handler. Resolves with nothing; rejects when it could not be opened.
+   */
+  openUrl: (url) => invoke('browser_open_url', { url }),
 };
 
 export const mcpApi = {

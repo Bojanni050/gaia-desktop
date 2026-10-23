@@ -20,7 +20,7 @@
 export const MAX_OUTPUT_CHARS = 8000;
 
 const TERMINAL = new Set(['denied', 'expired', 'completed', 'failed']);
-const KNOWN_SKILLS = new Set(['file-read', 'file-search', 'file-write', 'run-command']);
+const KNOWN_SKILLS = new Set(['file-read', 'file-search', 'file-write', 'run-command', 'open-url']);
 
 // How long an availability probe is trusted, so a turn does not start Desktop
 // Commander every time. A failure is remembered for a shorter while.
@@ -103,6 +103,30 @@ export function blockedCommandHit(command, blocklist) {
 }
 
 /**
+ * Whether this is an address we are willing to open: an ordinary web address and
+ * nothing else. The same rule as the server's (`desktopBroker.openableUrl`) — a
+ * `file:` or `javascript:` address is a local operation wearing a URL, and an
+ * app link belongs to an app. Re-checked here because this is the step that
+ * really opens it.
+ */
+export function openableUrl(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 2048) return null;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch (_) {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (parsed.username || parsed.password) return null;
+  if (!parsed.hostname) return null;
+  return parsed.href;
+}
+
+/**
  * Whether this device's own limits allow an action. `{ ok: true }` or
  * `{ ok: false, reason }` with a short reason for Gaia (and the person).
  * An unknown skill is never allowed: there is nothing to run.
@@ -111,6 +135,14 @@ export function checkLimits(skill, input, desktopSettings) {
   const settings = desktopSettings || {};
   const i = input && typeof input === 'object' ? input : {};
   if (!KNOWN_SKILLS.has(skill)) return { ok: false, reason: `Onbekende vaardigheid: ${skill}` };
+  if (skill === 'open-url') {
+    // No folder involved, so the allowed folders do not apply: this opens a page in
+    // the browser the person already uses.
+    if (!openableUrl(i.url)) {
+      return { ok: false, reason: 'Dat is geen volledig webadres (http of https); ik open niets anders.' };
+    }
+    return { ok: true };
+  }
   if (skill === 'run-command') {
     if (typeof i.command !== 'string' || !i.command.trim()) {
       return { ok: false, reason: 'Er is geen commando opgegeven.' };
@@ -212,6 +244,9 @@ export function toolCallsFor(skill, input) {
       return [{ tool: 'write_file', args: { path: i.path, content: String(i.content ?? ''), mode: 'rewrite' } }];
     case 'run-command':
       return [{ tool: 'start_process', args: { command: i.command, timeout_ms: 15000 } }];
+    case 'open-url':
+      // Not Desktop Commander: the app opens it itself, with the person's default browser.
+      return [{ native: 'open-url', args: { url: openableUrl(i.url) } }];
     default:
       return [];
   }
@@ -242,6 +277,8 @@ export function truncateOutput(text, max = MAX_OUTPUT_CHARS) {
  * `callTool` – mcpApi.callTool(serverId, tool, args)
  * `listTools`– mcpApi.listTools(serverId), used only to see whether it runs
  * `getSettings` – settingsApi.get
+ * `openUrl`  – the app's own browser opener (Rust's `browser_open_url`); the one
+ *              native step that needs no tool server
  */
 export function createDesktopActions({
   request,
@@ -253,6 +290,9 @@ export function createDesktopActions({
     throw new Error('no index');
   },
   indexAvailable = async () => false,
+  openUrl = async () => {
+    throw new Error('no browser');
+  },
   now = Date.now,
 }) {
   // id → 'prompted' | 'decided' | 'running' | 'done'. A frame for an id that is
@@ -324,7 +364,9 @@ export function createDesktopActions({
     if (!limits.ok) return finish(false, limits.reason);
     const calls = toolCallsFor(skill, input);
     if (calls.length === 0) return finish(false, 'Er viel niets uit te voeren met deze invoer.');
-    if (!settings.enabled || !settings.serverId) {
+    // Only the skills that run here need Desktop Commander; opening a web address does not.
+    const needsCommander = calls.some((call) => !call.native);
+    if (!settings.enabled || (needsCommander && !settings.serverId)) {
       return finish(false, 'Werken op deze computer staat uit.');
     }
 
@@ -332,6 +374,16 @@ export function createDesktopActions({
       const outputs = [];
       for (const { tool, args, transform, native } of calls) {
         if (run.aborted) return finish(false, 'Afgebroken.');
+        if (native === 'open-url') {
+          // The app's own capability: no tool server, no "not reachable" notice.
+          try {
+            await withTimeout(openUrl(args.url), INDEX_TIMEOUT_MS);
+          } catch (_) {
+            return finish(false, 'Die pagina kon ik niet openen.');
+          }
+          outputs.push(`Geopend in je browser: ${args.url}`);
+          continue;
+        }
         if (native === 'index') {
           // Not Desktop Commander: no probe reset or "not reachable" notice if this one fails.
           let paths;

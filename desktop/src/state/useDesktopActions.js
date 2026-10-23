@@ -19,6 +19,7 @@ export function useDesktopActions() {
         getPlaces: desktopApi.knownPlaces,
         searchIndex: desktopApi.everythingSearch,
         indexAvailable: desktopApi.everythingAvailable,
+        openUrl: desktopApi.openUrl,
       }),
     []
   );
