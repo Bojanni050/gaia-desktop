@@ -20,6 +20,7 @@ function fakeApi({ micEnabled = true, reports = [], finish } = {}) {
     setMicEnabled: vi.fn(async () => ({ micEnabled: true, state: 'listening' })),
     onState: vi.fn(async () => () => {}),
     onLevel: vi.fn(async () => () => {}),
+    onGate: vi.fn(async () => () => {}),
     onError: vi.fn(async () => () => {}),
     wakeEnrollRecord: vi.fn(async () => queue.shift()),
     wakeEnrollFinish: vi.fn(finish || (async () => ({ enrolled: true, sensitivity: 0.5 }))),

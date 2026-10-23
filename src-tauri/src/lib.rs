@@ -74,11 +74,15 @@ pub fn run() {
                         audio::VoiceEvent::State(s) => handle.emit(audio::VOICE_STATE_EVENT, s),
                         audio::VoiceEvent::Error(e) => handle.emit(audio::VOICE_ERROR_EVENT, e),
                         audio::VoiceEvent::Level(l) => handle.emit(audio::VOICE_LEVEL_EVENT, l),
+                        audio::VoiceEvent::Gate(g) => handle.emit(audio::VOICE_GATE_EVENT, g),
                     };
                 }),
                 audio::Timing::default(),
             );
             app.manage(mic.clone());
+            // The noise gate applies from the first stream: it lives in the capture sink, not on the
+            // consumer side, so push-to-talk and hands-free hear exactly the same microphone.
+            mic.set_gate(loaded.voice.gate_enabled, loaded.voice.gate_level);
 
             // Push-to-talk: record one utterance, have Gaia Cloud transcribe it, emit the text. The
             // desktop never interprets it; the UI sends it as an ordinary turn.
@@ -226,6 +230,8 @@ pub fn run() {
             audio::voice_get_status,
             audio::voice_list_devices,
             audio::voice_set_mic_enabled,
+            audio::voice_set_gate,
+            audio::voice_set_gate_level,
             audio::voice_select_device,
             audio::ptt::voice_ptt_start,
             audio::ptt::voice_ptt_stop,

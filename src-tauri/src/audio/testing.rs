@@ -121,6 +121,8 @@ impl CaptureBackend for Fake {
                     };
                     let chunk = if is_loud { &loud } else { &quiet };
                     sink.push(480, if is_loud { 0.3 } else { 0.0 });
+                    let sum_sq = chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32;
+                    sink.observe(sum_sq, 480);
                     sink.offer_mono(chunk);
                     n += 1;
                 }

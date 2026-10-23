@@ -148,6 +148,16 @@ export const voiceApi = {
   onError: (handler) => listen('voice://error', (event) => handler(event.payload)),
   /** Peak input level 0..1, a few times a second while listening. */
   onLevel: (handler) => listen('voice://level', (event) => handler(event.payload)),
+  /**
+   * The noise gate, for the meter in settings: `{ enabled, level, threshold, open }`. `level` and
+   * `threshold` are rms-like (0..1) on the same scale — not the peak `onLevel` reports — so the bar and
+   * the marker can be compared directly.
+   */
+  onGate: (handler) => listen('voice://gate', (event) => handler(event.payload)),
+  /** Below the gate's threshold the microphone is silent to everything that records it. Persisted. */
+  setGate: (enabled) => invoke('voice_set_gate', { enabled }),
+  /** The gate's threshold (rms-like level, 0.002 to 0.2). Persisted. */
+  setGateLevel: (level) => invoke('voice_set_gate_level', { level }),
 
   // Push-to-talk: Rust records one utterance (in memory only), trims it to the speech, has Gaia Cloud
   // transcribe it, and reports through events. Silence is never uploaded. `pttStart` rejects with

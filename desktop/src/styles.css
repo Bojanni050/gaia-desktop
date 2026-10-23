@@ -802,6 +802,12 @@ body {
 .token-toggle:hover { color: var(--text); }
 .mic-level { height: 6px; border-radius: 3px; background: var(--border, rgba(127,127,127,0.25)); overflow: hidden; margin: 6px 0 4px; }
 .mic-level-fill { height: 100%; background: var(--accent); transition: width 120ms linear; }
+/* The gate meter: a calibrated (dBFS) bar with the threshold drawn on it, so the user can see whether a
+   normal voice clears the gate before they record anything. */
+.gate-meter { position: relative; height: 10px; border-radius: 5px; background: var(--border, rgba(127,127,127,0.25)); overflow: hidden; margin: 6px 0 4px; }
+.gate-meter-fill { height: 100%; background: var(--accent); transition: width 90ms linear; }
+.gate-meter-shut .gate-meter-fill { background: var(--text-faint); }
+.gate-meter-threshold { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: 0.85; }
 .mic-note { color: var(--text); }
 .capability-line { font-size: 0.9rem; line-height: 1.4; color: var(--text-faint); margin: 4px 0; font-family: var(--sans); }
 .test-result { font-size: 0.86rem; color: var(--text-faint); font-family: var(--sans); }

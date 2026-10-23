@@ -37,6 +37,9 @@ use serde::{Deserialize, Serialize};
 pub const VOICE_STATE_EVENT: &str = "voice://state";
 pub const VOICE_ERROR_EVENT: &str = "voice://error";
 pub const VOICE_LEVEL_EVENT: &str = "voice://level";
+/// The noise gate, for the test meter in settings: the level it hears, where it is set, and whether it is
+/// letting sound through.
+pub const VOICE_GATE_EVENT: &str = "voice://gate";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +107,19 @@ pub enum VoiceEvent {
     Error(VoiceError),
     /// Peak input level 0..1 since the previous level event.
     Level(f32),
+    /// The noise gate's view of the input, for the meter in settings.
+    Gate(GateStatus),
+}
+
+/// What the settings meter draws: the level the gate hears, its threshold on the same scale, and whether
+/// audio is getting through. `level` and `threshold` are rms-like (0..1), not peak.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GateStatus {
+    pub enabled: bool,
+    pub level: f32,
+    pub threshold: f32,
+    pub open: bool,
 }
 
 /// Timing knobs (shortened in tests).
@@ -143,6 +159,9 @@ struct Shared {
     device: Option<AudioDeviceInfo>,
     permission: AudioPermission,
     error: Option<VoiceError>,
+    /// The noise gate as configured (also applied to every stream opened from now on).
+    gate_enabled: bool,
+    gate_level: f32,
     restarts: VecDeque<Instant>,
 }
 
@@ -175,6 +194,8 @@ impl MicController {
                     device: None,
                     permission: AudioPermission::Unknown,
                     error: None,
+                    gate_enabled: false,
+                    gate_level: capture::DEFAULT_GATE_LEVEL,
                     restarts: VecDeque::new(),
                 }),
             }),
@@ -232,6 +253,28 @@ impl MicController {
         } else {
             self.status()
         }
+    }
+
+    /// Sets the noise gate: below `level` (rms-like, 0..1) the microphone is silent to everything that
+    /// records it. Clamped to a sane range; takes effect within a moment, also on the current stream.
+    pub fn set_gate(&self, enabled: bool, level: f32) {
+        let (lo, hi) = capture::GATE_LEVEL_RANGE;
+        let level = if level.is_finite() { level.clamp(lo, hi) } else { capture::DEFAULT_GATE_LEVEL };
+        let sink = {
+            let mut sh = self.inner.shared.lock().expect("mic state poisoned");
+            sh.gate_enabled = enabled;
+            sh.gate_level = level;
+            sh.sink.clone()
+        };
+        if let Some(sink) = sink {
+            sink.set_gate(enabled, level);
+        }
+    }
+
+    /// The gate as configured.
+    pub fn gate(&self) -> (bool, f32) {
+        let sh = self.inner.shared.lock().expect("mic state poisoned");
+        (sh.gate_enabled, sh.gate_level)
     }
 
     /// The live capture sink while the microphone is on and healthy; `None` when it is off or failed.
@@ -301,6 +344,7 @@ impl Inner {
                 sh.sink = Some(sink.clone());
                 sh.device = Some(info);
                 sh.error = None;
+                sink.set_gate(sh.gate_enabled, sh.gate_level);
                 let generation = sh.generation;
                 let inner = self.clone();
                 std::thread::Builder::new()
@@ -349,6 +393,12 @@ impl Inner {
                     }
                 }
                 events.push(VoiceEvent::Level(sink.take_peak()));
+                events.push(VoiceEvent::Gate(GateStatus {
+                    enabled: sink.gate_enabled(),
+                    level: sink.level(),
+                    threshold: sink.gate_threshold(),
+                    open: sink.gate_open(),
+                }));
 
                 if sink.has_failed() {
                     // The device changed or vanished: drop the dead stream, then try again on the
@@ -478,6 +528,40 @@ pub fn voice_select_device(
     Ok(mic.select_device(id))
 }
 
+/// The noise gate on the microphone input: below the threshold the microphone is silent to everything that
+/// records it. Saved at once (unlike the master switch) and applied to the live stream.
+#[tauri::command]
+pub fn voice_set_gate(
+    mic: tauri::State<'_, MicController>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    enabled: bool,
+) -> Result<(), crate::error::DesktopError> {
+    settings
+        .update(|s| s.voice.gate_enabled = enabled)
+        .map_err(crate::error::DesktopError::Settings)?;
+    let (_, level) = mic.gate();
+    mic.set_gate(enabled, level);
+    Ok(())
+}
+
+/// The gate's threshold (rms-like level, 0.002 to 0.2). Clamped here as well as in the controller, so a bad
+/// value can never end up in the settings file.
+#[tauri::command]
+pub fn voice_set_gate_level(
+    mic: tauri::State<'_, MicController>,
+    settings: tauri::State<'_, crate::settings::SettingsState>,
+    level: f32,
+) -> Result<(), crate::error::DesktopError> {
+    let (lo, hi) = capture::GATE_LEVEL_RANGE;
+    let level = if level.is_finite() { level.clamp(lo, hi) } else { capture::DEFAULT_GATE_LEVEL };
+    settings
+        .update(|s| s.voice.gate_level = level)
+        .map_err(crate::error::DesktopError::Settings)?;
+    let (enabled, _) = mic.gate();
+    mic.set_gate(enabled, level);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::testing::{Fake, Mode};
@@ -568,6 +652,21 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|e| matches!(e, VoiceEvent::Level(l) if *l > 0.2))
+        });
+        c.set_enabled(false, None);
+    }
+
+    #[test]
+    fn the_gate_and_the_level_it_hears_are_reported_while_listening() {
+        let fake = Fake::new(Mode::Frames);
+        let (c, log) = controller(&fake);
+        c.set_gate(true, 0.01);
+        c.set_enabled(true, None);
+        wait_until("a gate event with sound getting through", || {
+            log.lock().unwrap().iter().any(|e| {
+                matches!(e, VoiceEvent::Gate(g)
+                    if g.enabled && g.open && (g.threshold - 0.01).abs() < 1e-6 && g.level > 0.1)
+            })
         });
         c.set_enabled(false, None);
     }

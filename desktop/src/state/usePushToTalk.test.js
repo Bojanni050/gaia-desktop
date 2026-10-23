@@ -21,6 +21,7 @@ function fakeApi({ status = off, pttStart } = {}) {
     onState: sub('state'),
     onError: sub('error'),
     onLevel: sub('level'),
+    onGate: sub('gate'),
     pttStart: pttStart || vi.fn(async () => {}),
     pttStop: vi.fn(async () => {}),
     pttCancel: vi.fn(async () => {}),

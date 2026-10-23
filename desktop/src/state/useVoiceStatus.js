@@ -11,6 +11,7 @@ import { voiceApi } from '../server/api';
 export function useVoiceStatus(api = voiceApi) {
   const [status, setStatus] = useState(null);
   const [level, setLevel] = useState(0);
+  const [gate, setGate] = useState(null);
   const [devices, setDevices] = useState([]);
   // The latest failure or notice from `voice://error` (cleared when the mic is switched on again).
   const [notice, setNotice] = useState(null);
@@ -30,6 +31,7 @@ export function useVoiceStatus(api = voiceApi) {
     api.listDevices().then((d) => active && setDevices(d || [])).catch(() => {});
     keep(api.onState((s) => active && setStatus(s)));
     keep(api.onLevel((l) => active && setLevel(Number(l) || 0)));
+    keep(api.onGate((g) => active && setGate(g || null)));
     keep(api.onError((e) => active && setNotice(e)));
     return () => {
       active = false;
@@ -66,5 +68,15 @@ export function useVoiceStatus(api = voiceApi) {
     [api]
   );
 
-  return { status, level: status && status.state === 'listening' ? level : 0, devices, notice, setEnabled, selectDevice, refreshDevices };
+  return {
+    status,
+    level: status && status.state === 'listening' ? level : 0,
+    // The gate's view of the input only while the microphone is listening; no stream, no level to show.
+    gate: status && status.state === 'listening' ? gate : null,
+    devices,
+    notice,
+    setEnabled,
+    selectDevice,
+    refreshDevices,
+  };
 }

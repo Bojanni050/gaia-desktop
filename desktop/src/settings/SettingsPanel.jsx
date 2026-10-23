@@ -15,8 +15,21 @@ import { useWakeWord } from '../state/useWakeWord';
 import WakeEnrollment from './WakeEnrollment';
 import { L } from '../lib/lexicon';
 
-/** The one sentence (if any) explaining the microphone's current problem or notice. */
-function micMessage(voice) {
+/**
+ * Where a gate level sits on the meter: 0..100 across -60..0 dBFS. A linear bar would barely move for a
+ * normal voice (rms 0.03 to 0.1), and then "does the gate let enough through" could not be read off it.
+ */
+function gatePercent(level) {
+  const db = 20 * Math.log10(Math.max(Number(level) || 0, 1e-5));
+  return Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+}
+
+/** The same level in dBFS, for the number next to the slider. */
+function gateDb(level) {
+  return Math.round(20 * Math.log10(Math.max(Number(level) || 0, 1e-5)));
+}
+
+/** The one sentence (if any) explaining the microphone's current problem or notice. */function micMessage(voice) {
   const error = voice.status && voice.status.error;
   if (error) {
     return (
@@ -192,6 +205,26 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
   const commitPauseMs = async () => {
     try {
       await voiceApi.setPauseMs(pauseMs);
+    } catch (_) {
+      /* ignored: the next successful change wins */
+    }
+  };
+
+  // The noise gate on the input. Same pattern as the interruption gate: the slider shows the new value at
+  // once and the shell hears it when the drag ends. The gate itself runs on the capture stream in Rust,
+  // so it filters push-to-talk and hands-free alike.
+  const gateLevel = settings.voice?.gateLevel ?? 0.006;
+  const setGate = async (checked) => {
+    patch({ voice: { ...settings.voice, gateEnabled: checked } });
+    try {
+      await voiceApi.setGate(checked);
+    } catch (_) {
+      /* ignored: the next successful change wins */
+    }
+  };
+  const commitGateLevel = async () => {
+    try {
+      await voiceApi.setGateLevel(gateLevel);
     } catch (_) {
       /* ignored: the next successful change wins */
     }
@@ -592,14 +625,61 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                   <p className="capability-line">{L.settingsBargeInLevelHint}</p>
                 </>
               )}
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.voice?.gateEnabled ?? true}
+                  onChange={(e) => setGate(e.target.checked)}
+                />
+                <span>{L.settingsGate}</span>
+              </label>
+              <p className="capability-line">{L.settingsGateHint}</p>
+              {(settings.voice?.gateEnabled ?? true) && (
+                <>
+                  <label className="field">
+                    <span>{L.settingsGateLevel}</span>
+                    <div className="volume-row">
+                      <span className="capability-line">{L.settingsGateQuiet}</span>
+                      <input
+                        type="range"
+                        aria-label={L.settingsGateLevel}
+                        min="0.002"
+                        max="0.06"
+                        step="0.001"
+                        value={gateLevel}
+                        onChange={(e) => patch({ voice: { ...settings.voice, gateLevel: Number(e.target.value) } })}
+                        onMouseUp={commitGateLevel}
+                        onKeyUp={commitGateLevel}
+                        onBlur={commitGateLevel}
+                      />
+                      <span className="capability-line">{L.settingsGateLoud}</span>
+                    </div>
+                  </label>
+                  <p className="capability-line">
+                    {L.settingsGateLevelHint} ({gateDb(gateLevel)} dB)
+                  </p>
+                </>
+              )}
               {voice.status && voice.status.state === 'listening' && (
                 <>
                   <p className="capability-line">
                     {L.settingsMicListening} {voice.status.device ? voice.status.device.name : ''}
                   </p>
-                  <div className="mic-level" aria-hidden="true">
-                    <div className="mic-level-fill" style={{ width: `${Math.min(100, Math.round(voice.level * 140))}%` }} />
+                  <div
+                    className={`gate-meter${voice.gate && voice.gate.enabled && !voice.gate.open ? ' gate-meter-shut' : ''}`}
+                    aria-hidden="true"
+                  >
+                    <div className="gate-meter-fill" style={{ width: `${gatePercent(voice.gate && voice.gate.level)}%` }} />
+                    {voice.gate && (
+                      <span className="gate-meter-threshold" style={{ left: `${gatePercent(voice.gate.threshold)}%` }} />
+                    )}
                   </div>
+                  {voice.gate && (
+                    <p className="capability-line mic-note">
+                      {L.settingsGateMeter}:{' '}
+                      {!voice.gate.enabled ? L.settingsGateOff : voice.gate.open ? L.settingsGateOpen : L.settingsGateClosed}
+                    </p>
+                  )}
                 </>
               )}
               {voice.status && voice.status.state === 'off' && (

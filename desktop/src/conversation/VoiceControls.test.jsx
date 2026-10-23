@@ -23,6 +23,7 @@ function fakeApi({ micEnabled = false } = {}) {
     continuousSet: vi.fn(async () => true),
     onState: vi.fn(async () => () => {}),
     onLevel: vi.fn(async () => () => {}),
+    onGate: vi.fn(async () => () => {}),
     onError: vi.fn(async () => () => {}),
   };
 }

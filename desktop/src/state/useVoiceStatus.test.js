@@ -28,6 +28,7 @@ function fakeApi(overrides = {}) {
     onState: subscribe('state'),
     onError: subscribe('error'),
     onLevel: subscribe('level'),
+    onGate: subscribe('gate'),
     ...overrides,
   };
   return { api, handlers };
@@ -71,8 +72,23 @@ describe('useVoiceStatus', () => {
     expect(result.current.level).toBe(0);
   });
 
-  it('keeps the latest notice and clears it when the microphone is switched on again', async () => {
+  it('reports the gate only while the microphone is listening', async () => {
     const { api, handlers } = fakeApi();
+    const { result } = renderHook(() => useVoiceStatus(api));
+    await waitFor(() => expect(handlers.gate).toBeTypeOf('function'));
+    const gate = { enabled: true, level: 0.05, threshold: 0.006, open: true };
+    act(() => handlers.gate(gate));
+    expect(result.current.gate).toBeNull(); // off: nothing is being captured
+    act(() => handlers.state(listening));
+    act(() => handlers.gate(gate));
+    expect(result.current.gate).toEqual(gate);
+    act(() => handlers.gate({ ...gate, level: 0.001, open: false }));
+    expect(result.current.gate.open).toBe(false);
+    act(() => handlers.state(off));
+    expect(result.current.gate).toBeNull();
+  });
+
+  it('keeps the latest notice and clears it when the microphone is switched on again', async () => {    const { api, handlers } = fakeApi();
     const { result } = renderHook(() => useVoiceStatus(api));
     await waitFor(() => expect(handlers.error).toBeTypeOf('function'));
     act(() => handlers.error({ code: 'device_fallback', message: 'gone' }));

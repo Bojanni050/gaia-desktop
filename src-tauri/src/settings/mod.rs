@@ -149,6 +149,10 @@ pub struct VoiceSettings {
     pub barge_in_level: f32,
     /// How long a pause (ms, 400 to 3000) ends what you are saying, in continuous conversation.
     pub pause_ms: u32,
+    /// The noise gate on the microphone input: below `gate_level` the microphone is silent.
+    pub gate_enabled: bool,
+    /// The gate's threshold (rms-like level, 0.002 to 0.2). Same scale as the meter in settings.
+    pub gate_level: f32,
 }
 
 impl Default for VoiceSettings {
@@ -163,6 +167,10 @@ impl Default for VoiceSettings {
             barge_in_enabled: true,
             barge_in_level: 0.04,
             pause_ms: 1200,
+            // On by default at the quiet end: it removes the hiss of an idle room without eating a soft
+            // voice, and the settings meter shows at once whether it lets enough through.
+            gate_enabled: true,
+            gate_level: 0.006,
         }
     }
 }
@@ -337,6 +345,8 @@ mod tests {
         assert!(voice.barge_in_enabled);
         assert!((voice.barge_in_level - 0.04).abs() < f32::EPSILON);
         assert_eq!(voice.pause_ms, 1200);
+        assert!(voice.gate_enabled);
+        assert!((voice.gate_level - 0.006).abs() < f32::EPSILON);
         assert!((voice.wake_sensitivity - 0.55).abs() < f32::EPSILON);
     }
 
