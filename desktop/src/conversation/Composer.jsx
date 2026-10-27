@@ -4,6 +4,7 @@ import { libraryApi } from '../server/api';
 import { usePushToTalk } from '../state/usePushToTalk';
 import VoiceControls from './VoiceControls';
 import { L } from '../lib/lexicon';
+import { parseSlashCommand, matchCommands, dispatchSlashCommand } from '../lib/slashCommands';
 
 /**
  * Composer — the web's pill, ported: Enter sends, Shift+Enter is a newline,
@@ -12,8 +13,8 @@ import { L } from '../lib/lexicon';
  * Attaching a file uploads it to the library immediately (same path as the
  * Library panel's own upload) — by the time it's sent as context, it's
  * already durable in Gaia Cloud, not a pending local blob riding along
- * with the message. Pasting works the same way: an image (or any file) on the
- * clipboard becomes a chip, and pasted text stays text.
+ * with the message. Pasting works the same way: an image (or any file) on
+ * the clipboard becomes a chip, and pasted text stays text.
  *
  * The mic button is push-to-talk: with the microphone off a click switches it on, then one click
  * starts a recording and the next ends it. What was said arrives as text, which is sent exactly like
@@ -23,12 +24,20 @@ import { L } from '../lib/lexicon';
  * While a turn runs the send arrow becomes a stop button: the same place, one meaning — where you
  * would say something, you can now cut her off. `onStop` is the caller's cancel (the desktop closes
  * the stream through Rust); without it the arrow simply stays disabled.
+ *
+ * Slash commands: typing `/` opens an autocomplete dropdown of available commands. Commands are
+ * dispatched locally (never sent to Gaia Cloud) and the input is cleared. `onCommand` receives the
+ * callbacks needed for action commands (new, stop, retry, undo).
  */
-export default function Composer({ onSend, onStop, busy, onDraftChange, listenState = 'off' }) {
+export default function Composer({ onSend, onStop, busy, onDraftChange, listenState = 'off', onCommand }) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attaching, setAttaching] = useState(false);
   const [pasteFailed, setPasteFailed] = useState(false);
+  const [commandNote, setCommandNote] = useState(null);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
   const taRef = useRef(null);
   // The transcript handler needs the freshest draft/busy without re-subscribing to events.
   const latest = useRef({});
@@ -39,9 +48,32 @@ export default function Composer({ onSend, onStop, busy, onDraftChange, listenSt
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   };
 
+  // Slash command autocomplete: matches the text after `/` until a space.
+  const slashMatches = slashOpen ? matchCommands(slashQuery) : [];
+  const showSlashDropdown = slashOpen && slashMatches.length > 0;
+
   const submit = () => {
     const t = text.trim();
     if (!t || busy) return;
+
+    // Slash command? Dispatch locally, never send to Gaia Cloud.
+    const parsed = parseSlashCommand(t);
+    if (parsed) {
+      const result = dispatchSlashCommand(parsed, onCommand || {}, { busy });
+      if (result.handled) {
+        setText('');
+        setAttachments([]);
+        setSlashOpen(false);
+        setSlashQuery('');
+        if (taRef.current) taRef.current.style.height = 'auto';
+        if (result.message) {
+          setCommandNote(result.message);
+          setTimeout(() => setCommandNote(null), 4000);
+        }
+        return;
+      }
+    }
+
     onSend(t, attachments);
     setText('');
     setAttachments([]);
@@ -70,9 +102,64 @@ export default function Composer({ onSend, onStop, busy, onDraftChange, listenSt
   const ptt = usePushToTalk({ onTranscript });
 
   const onKey = (e) => {
+    // Autocomplete navigation: ArrowUp/Down cycles, Tab completes, Escape closes.
+    if (showSlashDropdown) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % slashMatches.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const cmd = slashMatches[slashIndex];
+        if (cmd) {
+          setText(`/${cmd.name} `);
+          setSlashOpen(false);
+          setSlashQuery('');
+          requestAnimationFrame(() => taRef.current && taRef.current.focus());
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSlashOpen(false);
+        setSlashQuery('');
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submit();
+    }
+  };
+
+  const onTextChange = (value) => {
+    setText(value);
+    if (onDraftChange) onDraftChange(value.trim().length > 0);
+
+    // Detect slash command typing: `/` at start, no space yet (or first word is a command).
+    const trimmed = value.trimStart();
+    if (trimmed.startsWith('/')) {
+      const afterSlash = trimmed.slice(1);
+      const spaceIndex = afterSlash.indexOf(' ');
+      if (spaceIndex === -1) {
+        // Still typing the command name — show autocomplete.
+        setSlashOpen(true);
+        setSlashQuery(afterSlash.toLowerCase());
+        setSlashIndex(0);
+      } else {
+        // Has arguments — close autocomplete.
+        setSlashOpen(false);
+        setSlashQuery('');
+      }
+    } else {
+      setSlashOpen(false);
+      setSlashQuery('');
     }
   };
 
@@ -131,6 +218,14 @@ export default function Composer({ onSend, onStop, busy, onDraftChange, listenSt
         ? L.micTranscribing
         : L.micTalk;
 
+  // Click a command in the dropdown: fill it in and focus.
+  const pickCommand = (cmd) => {
+    setText(`/${cmd.name} `);
+    setSlashOpen(false);
+    setSlashQuery('');
+    requestAnimationFrame(() => taRef.current && taRef.current.focus());
+  };
+
   return (
     <div className="composer-wrap">
       {attachments.length > 0 && (
@@ -150,6 +245,35 @@ export default function Composer({ onSend, onStop, busy, onDraftChange, listenSt
           ))}
         </div>
       )}
+
+      {/* Slash command autocomplete dropdown */}
+      {showSlashDropdown && (
+        <div className="slash-dropdown" role="listbox">
+          {slashMatches.map((cmd, i) => (
+            <button
+              key={cmd.name}
+              className={`slash-item${i === slashIndex ? ' is-active' : ''}`}
+              role="option"
+              aria-selected={i === slashIndex}
+              onClick={() => pickCommand(cmd)}
+              onMouseEnter={() => setSlashIndex(i)}
+              type="button"
+            >
+              <span className="slash-item-name">
+                /{cmd.name}
+                {cmd.aliases.length > 0 && (
+                  <span className="slash-item-aliases">
+                    {cmd.aliases.map((a) => `, /${a}`).join('')}
+                  </span>
+                )}
+              </span>
+              <span className="slash-item-hint">{cmd.hint()}</span>
+            </button>
+          ))}
+          <div className="slash-dropdown-footer">{L.slashAutocompleteHint}</div>
+        </div>
+      )}
+
       <div className="composer">
         <button
           className="composer-attach"
@@ -184,9 +308,8 @@ export default function Composer({ onSend, onStop, busy, onDraftChange, listenSt
           placeholder={busy ? '…' : ptt.phase === 'recording' ? L.micListeningPlaceholder : L.composerPlaceholder}
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
+            onTextChange(e.target.value);
             grow(e.target);
-            if (onDraftChange) onDraftChange(e.target.value.trim().length > 0);
           }}
           onKeyDown={onKey}
           onPaste={onPaste}
@@ -213,6 +336,11 @@ export default function Composer({ onSend, onStop, busy, onDraftChange, listenSt
           </button>
         )}
       </div>
+      {commandNote && (
+        <p className="composer-note slash-note" role="status">
+          {commandNote}
+        </p>
+      )}
       {(ptt.phase === 'noSpeech' || ptt.phase === 'failed') && (
         <p className="composer-note" role="status">
           {ptt.phase === 'noSpeech' ? L.micNoSpeech : micErrorText(ptt.error)}

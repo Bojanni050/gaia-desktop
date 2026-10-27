@@ -366,21 +366,79 @@ export function useConversation(server, desktop) {
     [active, busy, runTurn, cancel]
   );
 
-  /** Retry a failed assistant message: drop it and everything after, resend. */
+  /**
+   * Retry a message: drop it and everything after it, then resend the
+   * history that came before it. Works for any assistant message — failed
+   * or successful — so the person can ask for a different version of any
+   * reply, not just a failed one.
+   */
   const retry = useCallback(
     (messageId) => {
       const thread = threads.find((t) => t.id === activeId);
-      if (!thread || busy) return;
+      if (!thread || busy) return { ok: false };
       const index = thread.messages.findIndex((m) => m.id === messageId);
-      if (index === -1) return;
+      if (index === -1) return { ok: false };
       const history = thread.messages.slice(0, index);
-      if (!history.some((m) => m.role === 'user')) return;
+      if (!history.some((m) => m.role === 'user')) return { ok: false };
 
       setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, messages: history } : t)));
-      return runTurn(thread.id, history);
+      runTurn(thread.id, history);
+      return { ok: true };
     },
     [threads, activeId, busy, runTurn]
   );
 
-  return { threads, active, activeId, busy, streaming, progress, newThread, openThread, deleteThread, hydrateThread, send, retry, cancel };
+  /**
+   * Retry the LAST assistant message in the active thread — the slash
+   * command `/retry` path. Finds the last assistant message, drops it,
+   * and resends the history before it.
+   */
+  const retryLast = useCallback(() => {
+    const thread = threads.find((t) => t.id === activeId);
+    if (!thread || busy) return { ok: false };
+    // Find the last assistant message.
+    let lastAssistantIndex = -1;
+    for (let i = thread.messages.length - 1; i >= 0; i--) {
+      if (thread.messages[i].role === 'assistant') {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+    if (lastAssistantIndex === -1) return { ok: false };
+    const history = thread.messages.slice(0, lastAssistantIndex);
+    if (!history.some((m) => m.role === 'user')) return { ok: false };
+
+    setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, messages: history } : t)));
+    runTurn(thread.id, history);
+    return { ok: true };
+  }, [threads, activeId, busy, runTurn]);
+
+  /**
+   * Undo the last turn: remove the last user message and everything after
+   * it (the assistant reply, any retries, etc.). The thread goes back to
+   * the state before that user message was sent.
+   */
+  const undoLast = useCallback(() => {
+    const thread = threads.find((t) => t.id === activeId);
+    if (!thread || busy) return { ok: false };
+    // Find the last user message.
+    let lastUserIndex = -1;
+    for (let i = thread.messages.length - 1; i >= 0; i--) {
+      if (thread.messages[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    if (lastUserIndex === -1) return { ok: false };
+
+    const history = thread.messages.slice(0, lastUserIndex);
+    setThreads((prev) => prev.map((t) => (t.id === thread.id ? { ...t, messages: history } : t)));
+    return { ok: true };
+  }, [threads, activeId, busy]);
+
+  return {
+    threads, active, activeId, busy, streaming, progress,
+    newThread, openThread, deleteThread, hydrateThread,
+    send, retry, retryLast, undoLast, cancel,
+  };
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from './shell/Sidebar';
 import ConnectionNotice from './shell/ConnectionNotice';
 import Conversation from './conversation/Conversation';
@@ -33,6 +33,18 @@ export default function App() {
   const [lang, setLang] = useState(localStorage.getItem('gaia.lang') || 'nl');
   const desktop = useDesktopActions();
   const conversation = useConversation(serverApi, desktop.controller);
+  // Slash command callbacks: the composer dispatches these locally; they
+  // never reach Gaia Cloud. Each returns { ok, message? } so the composer
+  // can show calm feedback (e.g. /stop with nothing running).
+  const slashCommands = useMemo(() => ({
+    newThread: () => { conversation.newThread(); return { ok: true }; },
+    cancel: () => {
+      const stopped = conversation.cancel();
+      return { ok: stopped };
+    },
+    retryLast: () => conversation.retryLast(),
+    undoLast: () => conversation.undoLast(),
+  }), [conversation]);
   // Hands-free: turns what Rust hears into conversation (and interruptions into cancelled turns).
   const voiceSession = useVoiceSession({ conversation });
 
@@ -179,6 +191,7 @@ export default function App() {
           onStop={conversation.cancel}
           onRetry={conversation.retry}
           onRetract={handleRetract}
+          onCommand={slashCommands}
           research={research}
           desktop={desktop}
           onOpenResearchConversation={handleOpenResearchConversation}

@@ -151,8 +151,13 @@ export default function MessageView({ message, onRetry, onDelete, onRetract }) {
               {copied ? <Check size={13} /> : <Copy size={13} />}
             </button>
           )}
+          {!isUser && message.content && !message.failed && onRetry && (
+            <button className="msg-action" onClick={() => onRetry(message.id)} aria-label={L.retry} title={L.retry}>
+              <RotateCw size={13} />
+            </button>
+          )}
           {message.failed && onRetry && (
-            <button className="msg-action" onClick={() => onRetry(message.id)} aria-label="Retry">
+            <button className="msg-action" onClick={() => onRetry(message.id)} aria-label={L.retry}>
               <RotateCw size={13} />
               <span>{L.retry}</span>
             </button>

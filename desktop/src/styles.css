@@ -639,7 +639,7 @@ body {
   padding: 14px 0 22px;
 }
 .dock-presence { display: flex; justify-content: center; padding: 0 0 12px; }
-.composer-wrap { width: 100%; }
+.composer-wrap { width: 100%; position: relative; }
 .composer {
   display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px;
   background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 20px;
@@ -675,6 +675,30 @@ body {
 .wake-dot.is-done { background: var(--accent); }
 .wake-ok { color: var(--accent); }
 .composer-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--text-faint); font-family: var(--sans); }
+.slash-note { color: var(--accent); white-space: pre-line; }
+
+/* Slash command autocomplete dropdown */
+.slash-dropdown {
+  position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 14px;
+  padding: 6px; max-height: 280px; overflow-y: auto; z-index: 50;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.slash-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 8px 10px; border: none; border-radius: 8px;
+  background: none; cursor: pointer; text-align: left; font-family: var(--sans);
+  color: var(--text); transition: background-color 0.15s ease;
+}
+.slash-item:hover, .slash-item.is-active { background: var(--accent-soft); }
+.slash-item-name { font-family: var(--mono); font-size: 0.85rem; color: var(--accent); white-space: nowrap; }
+.slash-item-aliases { color: var(--text-faint); font-size: 0.75rem; margin-left: 4px; }
+.slash-item-hint { font-size: 0.8rem; color: var(--text-muted); flex: 1; text-align: right; }
+.slash-dropdown-footer {
+  padding: 6px 10px 2px; font-size: 0.7rem; color: var(--text-faint);
+  border-top: 1px solid var(--border); margin-top: 4px;
+}
+.composer-wrap { position: relative; }
 @media (prefers-reduced-motion: reduce) {
   .composer-mic.is-recording { animation: none; }
   .composer-mic .spin { animation-duration: 3s; }
