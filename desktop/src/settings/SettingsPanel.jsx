@@ -473,6 +473,17 @@ export default function SettingsPanel({ onClose, quiet, onQuietChange, listenSta
                 <span>{L.settingsSpeakReplies}</span>
               </label>
               <p className="capability-line">{L.settingsSpeakRepliesHint}</p>
+              <label className="field field-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.audio?.speakFirstTwoSentences ?? false}
+                  onChange={(e) =>
+                    patch({ audio: { ...settings.audio, speakFirstTwoSentences: e.target.checked } })
+                  }
+                />
+                <span>{L.settingsSpeakFirstTwo}</span>
+              </label>
+              <p className="capability-line">{L.settingsSpeakFirstTwoHint}</p>
               <label className="field">
                 <span>{L.settingsOutputDevice}</span>
                 <select

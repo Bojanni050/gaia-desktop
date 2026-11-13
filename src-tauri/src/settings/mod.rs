@@ -105,6 +105,9 @@ pub struct AudioSettings {
     /// (so nothing is synthesised and no text-to-speech provider is called), unlike `muted`, which
     /// still fetches the audio and only silences it.
     pub speak_replies: bool,
+    /// Whether a reply longer than two sentences is spoken as its first two
+    /// sentences only. The full reply stays on screen; this trims only the audio.
+    pub speak_first_two_sentences: bool,
     /// Output device id (`DeviceId` string) Gaia's voice plays through; `None` = system default.
     /// An id that no longer exists falls back to the default device.
     pub output_device: Option<String>,
@@ -118,6 +121,7 @@ impl Default for AudioSettings {
             volume: 1.0,
             muted: false,
             speak_replies: true,
+            speak_first_two_sentences: false,
         }
     }
 }
@@ -323,6 +327,19 @@ mod tests {
         assert_eq!(audio.volume, 1.0);
         assert!(!audio.muted);
         assert!(audio.speak_replies, "she speaks unless switched off");
+        assert!(!audio.speak_first_two_sentences, "the whole reply is spoken by default");
+    }
+
+    #[test]
+    fn the_two_sentence_trim_is_remembered_and_off_by_default() {
+        let old: AudioSettings = serde_json::from_str(r#"{"volume":0.5,"muted":true}"#).unwrap();
+        assert!(!old.speak_first_two_sentences);
+        let trimmed: AudioSettings =
+            serde_json::from_str(r#"{"speakFirstTwoSentences":true}"#).unwrap();
+        assert!(trimmed.speak_first_two_sentences);
+        // And it round-trips under the camelCase name the UI writes.
+        let json = serde_json::to_string(&trimmed).unwrap();
+        assert!(json.contains("\"speakFirstTwoSentences\":true"), "{json}");
     }
 
     #[test]

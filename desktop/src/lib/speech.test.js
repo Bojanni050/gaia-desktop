@@ -10,12 +10,12 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { playSpeech, stopSpeech, setSpeechGain, speechSilenced, speaksReplies, SPEECH_FADE_MS } from './speech';
+import { playSpeech, stopSpeech, setSpeechGain, speechSilenced, speaksReplies, speaksFirstTwoSentences, SPEECH_FADE_MS } from './speech';
 
 beforeEach(() => {
   invoke.mockReset();
   invoke.mockResolvedValue({ outcome: 'ended' });
-  setSpeechGain({ volume: 1, muted: false });
+  setSpeechGain({ volume: 1, muted: false, speakFirstTwoSentences: false });
   invoke.mockClear();
 });
 
@@ -69,6 +69,34 @@ describe('speaksReplies', () => {
     expect(speaksReplies()).toBe(false);
     setSpeechGain({ speakReplies: true });
     expect(speaksReplies()).toBe(true);
+  });
+});
+
+describe('speaksFirstTwoSentences', () => {
+  it('is off until switched on, and speaks long replies whole', async () => {
+    expect(speaksFirstTwoSentences()).toBe(false);
+    await playSpeech('One. Two. Three. Four.');
+    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'One. Two. Three. Four.', language: null });
+  });
+
+  it('speaks only the first two sentences of a longer reply when switched on', async () => {
+    setSpeechGain({ speakFirstTwoSentences: true });
+    expect(speaksFirstTwoSentences()).toBe(true);
+    await playSpeech('One. Two. Three. Four.', 'en');
+    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'One. Two.', language: 'en' });
+  });
+
+  it('leaves a reply of two sentences or fewer untouched when switched on', async () => {
+    setSpeechGain({ speakFirstTwoSentences: true });
+    await playSpeech('Eerste zin. Tweede zin.', 'nl');
+    expect(invoke).toHaveBeenCalledWith('speech_play', { text: 'Eerste zin. Tweede zin.', language: 'nl' });
+  });
+
+  it('is a speaking setting only: the volume switch stays where it was', () => {
+    setSpeechGain({ speakReplies: true, volume: 0.5 });
+    setSpeechGain({ speakFirstTwoSentences: true });
+    expect(speaksReplies()).toBe(true);
+    expect(speechSilenced()).toBe(false);
   });
 });
 

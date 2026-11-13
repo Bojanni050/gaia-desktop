@@ -9,6 +9,7 @@
  * ask whether playback would be silent.
  */
 import { speechApi } from '../server/api';
+import { firstSentences } from './sentences';
 
 /**
  * How long an interrupted reply takes to ease out, in ms. Short enough to read as instant, long enough
@@ -24,11 +25,17 @@ let gain = { volume: 1, muted: false };
 // Whether she speaks her replies at all. Off means no speech is requested (nothing reaches the
 // text-to-speech provider); `muted` only silences audio that was still fetched.
 let speakReplies = true;
+// Whether a reply longer than two sentences is spoken as its first two sentences only. A reading
+// preference, not a cognitive one: the whole reply stays on screen, only the audio is shortened.
+let speakFirstTwoSentences = false;
 
 /** Sets the playback gain. `volume` is clamped to 0..1; unknown fields keep their current value. */
 export function setSpeechGain(next = {}) {
   if (next.speakReplies !== undefined) {
     speakReplies = !!next.speakReplies;
+  }
+  if (next.speakFirstTwoSentences !== undefined) {
+    speakFirstTwoSentences = !!next.speakFirstTwoSentences;
   }
   if (next.volume !== undefined) {
     gain.volume = Math.min(1, Math.max(0, Number(next.volume)));
@@ -44,6 +51,11 @@ export function setSpeechGain(next = {}) {
 /** Whether she speaks her replies at all (the switch in Settings). */
 export function speaksReplies() {
   return speakReplies;
+}
+
+/** Whether a longer reply is spoken as its first two sentences only (the switch in Settings). */
+export function speaksFirstTwoSentences() {
+  return speakFirstTwoSentences;
 }
 
 /** Whether playback would be silent right now (muted or zero volume). */
@@ -65,12 +77,17 @@ export function stopSpeech() {
  * soon as the provider has synthesized the first of it; this resolves when the reply ends or is
  * stopped, and rejects if it could not be spoken.
  *
+ * When "speak only the first two sentences" is on, a longer reply is trimmed here — the full
+ * text stays on screen, only the audio is shorter. The language is still the reply's own, so the
+ * voice does not change with the trim.
+ *
  * @param {string} text
  * @param {'nl'|'en'|null} [language] detected language of the reply; picks the matching voice
  * @returns {Promise<void>}
  */
 export async function playSpeech(text, language) {
-  const result = await speechApi.play(text, language);
+  const spoken = speakFirstTwoSentences ? firstSentences(text, 2) : text;
+  const result = await speechApi.play(spoken, language);
   if (result && result.outcome === 'failed') {
     throw new Error(result.message || 'speech playback failed');
   }
