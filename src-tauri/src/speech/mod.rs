@@ -17,6 +17,7 @@
 //! showing — this command's `text` argument is that already-received
 //! reply, not a fresh prompt.
 
+mod dump;
 mod playback;
 mod stream;
 pub mod stt;
@@ -116,7 +117,11 @@ pub async fn speech_synthesize(
     if !settings.get().audio.speak_replies {
         return Err(DesktopError::Message("speaking replies is switched off".into()));
     }
-    fetch_speech(&link, &text, language.as_deref()).await
+    let audio = fetch_speech(&link, &text, language.as_deref()).await?;
+    if let Some(dump) = dump::SpeechDump::from_env(&text, language.as_deref()) {
+        dump.write_clip(&audio.audio, &audio.mime_type);
+    }
+    Ok(audio)
 }
 
 /// Synthesizes `text` and plays it through the speakers, starting as soon as the provider has
@@ -140,10 +145,16 @@ pub async fn speech_play(
     let epoch = playback.begin();
     // Anything still speaking is superseded by this reply.
     playback.stop_current(DEFAULT_FADE_MS);
+    // Opt-in (`GAIA_SPEECH_DUMP`) capture of the reply, so a level problem can be traced to the
+    // provider or to this app instead of guessed at.
+    let dump = dump::SpeechDump::from_env(&text, language.as_deref());
     match stream::request_speech(&link, &text, language.as_deref()).await? {
         SpeechResponse::Clip(speech) => {
             if !playback.is_current(epoch) {
                 return Ok(PlayOutcome::Stopped);
+            }
+            if let Some(dump) = &dump {
+                dump.write_clip(&speech.audio, &speech.mime_type);
             }
             Ok(playback.play(speech.audio).await)
         }
@@ -151,7 +162,7 @@ pub async fn speech_play(
             if !playback.is_current(epoch) {
                 return Ok(PlayOutcome::Stopped);
             }
-            play_stream(&playback, epoch, speech).await
+            play_stream(&playback, epoch, speech, dump.as_ref()).await
         }
     }
 }
@@ -163,20 +174,28 @@ async fn play_stream(
     playback: &PlaybackEngine,
     epoch: u64,
     speech: SpeechStream,
+    dump: Option<&dump::SpeechDump>,
 ) -> Result<PlayOutcome, DesktopError> {
-    let handle = match playback.stream(speech.sample_rate).await {
+    let rate = speech.sample_rate;
+    let channels = speech.channels;
+    let handle = match playback.stream(rate).await {
         Ok(handle) => handle,
         // No output device (or no playback thread): the reply cannot be spoken at all.
         Err(outcome) => return Ok(outcome),
     };
-    let mut pcm = Pcm16::new(speech.channels);
+    let mut pcm = Pcm16::new(channels);
     let mut response = speech.response;
+    // Only filled when dumping: the wire bytes and the samples the player was handed, so the two
+    // can be compared afterwards.
+    let mut source = Vec::new();
+    let mut played = Vec::new();
     loop {
         if !playback.is_current(epoch) {
             // Stopped or superseded. Finishing the reply here and dropping the response ends what is
             // left locally *and* hangs the provider request up, so it stops synthesizing a sentence
             // nobody will hear.
             handle.finish();
+            write_dump(dump, &source, &played, rate, channels, "stopped");
             return Ok(PlayOutcome::Stopped);
         }
         let chunk = match response.chunk().await {
@@ -187,15 +206,38 @@ async fn play_stream(
                 // so what is playing runs out and the failure is reported after it.
                 handle.finish();
                 let _ = handle.wait().await;
+                write_dump(dump, &source, &played, rate, channels, &format!("failed: {e}"));
                 return Err(DesktopError::Message(format!("speech stream failed: {e}")));
             }
         };
+        if dump.is_some() {
+            source.extend_from_slice(&chunk);
+        }
         let mut samples = Vec::new();
         pcm.push(&chunk, &mut samples);
+        if dump.is_some() {
+            played.extend_from_slice(&samples);
+        }
         handle.push(samples);
     }
     handle.finish();
-    Ok(handle.wait().await)
+    let outcome = handle.wait().await;
+    write_dump(dump, &source, &played, rate, channels, &format!("{outcome:?}"));
+    Ok(outcome)
+}
+
+/// Writes the streamed reply's capture, if dumping is on. A failed write is not a playback failure.
+fn write_dump(
+    dump: Option<&dump::SpeechDump>,
+    source: &[u8],
+    played: &[f32],
+    sample_rate: u32,
+    channels: u16,
+    outcome: &str,
+) {
+    if let Some(dump) = dump {
+        dump.write_stream(source, played, sample_rate, channels, outcome);
+    }
 }
 
 /// Stops the current reply (easing it out over `fade_ms`, default 150) and cancels any reply still
