@@ -25,3 +25,7 @@ src-tauri/Cargo.toml
 
 # OpenChamber locally generated screenshots — dev artifacts, never committed
 .openchamber/
+
+# Local throwaway spikes, kept on disk but never published: they contain the
+# owner's voice recordings (wake-word samples, echo tests) and build output.
+spikes/
