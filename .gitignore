@@ -29,3 +29,5 @@ src-tauri/Cargo.toml
 # Local throwaway spikes, kept on disk but never published: they contain the
 # owner's voice recordings (wake-word samples, echo tests) and build output.
 spikes/
+audio-record.bat
+src-tauri/icons/128x128@2x - kopie.png
