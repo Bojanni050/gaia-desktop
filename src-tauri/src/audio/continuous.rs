@@ -86,8 +86,15 @@ const HALF_DUPLEX_COOLDOWN_BLOCKS: u32 = 40;
 /// Whether speech beginning now is probably her own voice: it begins in the first or last moments of a reply
 /// (or in the tail after it), where the echo canceller is least sure. `remaining` is what is left of the
 /// reply to play and `played` what has been played of it, both in 16 kHz samples.
-fn in_echo_zone(speaking: bool, playing: bool, remaining: usize, played: usize) -> bool {
-    speaking && (remaining < ECHO_END_ZONE_SAMPLES || (playing && played < ECHO_START_ZONE_SAMPLES))
+///
+/// The end zone only applies once nothing more is coming (`final_audio`). A streamed reply reports its
+/// reference as it plays, so a short queue there means the provider is still synthesizing — while she
+/// talks the queue is a few blocks deep, and reading that as "the reply is ending" made every attempt
+/// to talk over her look like her own last words.
+fn in_echo_zone(speaking: bool, playing: bool, final_audio: bool, remaining: usize, played: usize) -> bool {
+    speaking
+        && ((final_audio && remaining < ECHO_END_ZONE_SAMPLES)
+            || (playing && played < ECHO_START_ZONE_SAMPLES))
 }
 
 /// What Gaia is playing, as the listener needs it: the reference for the echo canceller.
@@ -101,6 +108,10 @@ pub enum RenderCmd {
     Append(Arc<Vec<f32>>),
     /// The reply was stopped: only the next `keep_ms` of it will still be heard (the fade-out).
     Stop { keep_ms: u32 },
+    /// The reply that was still arriving has been fully handed over: no `Append` follows. Until this
+    /// arrives, a short reference queue means the player is waiting for the provider, not that the
+    /// reply is ending — see `in_echo_zone`.
+    Done,
 }
 
 pub type RenderSink = Arc<dyn Fn(RenderCmd) + Send + Sync>;
@@ -493,6 +504,9 @@ fn run(
     let mut render_half: Vec<f32> = Vec::new(); // what was played over the 20 ms frame being assembled
     let mut reply_pos = 0usize; // samples of the current reply played so far
     let mut onset_in_echo_zone = false; // the utterance in progress began while her voice was ending
+    // Whether nothing more of the reply is coming: a clip from the start, a streamed reply only once it says
+    // Done. A short reference queue in between means the provider is thinking, not that she is finishing.
+    let mut final_audio = true;
     let mut barged = false;
     // Where in the utterance in progress the wake phrase ended (samples from its start): that much of it is
     // "Hey Gaia", which is a signal to her and not something the user said to her.
@@ -566,7 +580,11 @@ fn run(
                 }
                 // The next piece of a reply that is still arriving: it continues the queue's
                 // timeline, so it goes after what is queued rather than at the current position.
-                RenderCmd::Append(samples) => render_queue.extend(samples.iter().copied()),
+                RenderCmd::Append(samples) => {
+                    final_audio = false;
+                    render_queue.extend(samples.iter().copied());
+                }
+                RenderCmd::Done => final_audio = true,
                 RenderCmd::Stop { keep_ms } => render_queue.truncate(keep_ms as usize * 16),
             }
         }
@@ -662,7 +680,7 @@ fn run(
             }
             match event {
                 Some(SegEvent::Started) => {
-                    onset_in_echo_zone = in_echo_zone(speaking, playing, render_queue.len(), reply_pos);
+                    onset_in_echo_zone = in_echo_zone(speaking, playing, final_audio, render_queue.len(), reply_pos);
                     hearing = true;
                     (inner.emit)(ContinuousEvent::State(ListenState::Hearing));
                 }
@@ -951,12 +969,23 @@ mod tests {
 
     #[test]
     fn speech_in_the_first_or_last_moments_of_a_reply_is_her_echo_the_middle_is_not() {
-        let at = |remaining: usize, played: usize| in_echo_zone(true, remaining > 0, remaining, played);
+        let at = |remaining: usize, played: usize| in_echo_zone(true, remaining > 0, true, remaining, played);
         assert!(at(100_000, 4_000), "just after a reply began");
         assert!(at(5_000, 100_000), "as it is ending");
         assert!(at(0, 100_000), "in the tail after it");
         assert!(!at(100_000, 100_000), "in the middle of it");
-        assert!(!in_echo_zone(false, false, 0, 0), "nothing is playing");
+        assert!(!in_echo_zone(false, false, true, 0, 0), "nothing is playing");
+    }
+
+    #[test]
+    fn a_short_queue_while_more_is_still_arriving_is_not_the_end_of_the_reply() {
+        // A streamed reply reports its reference as it plays, so between two chunks the queue is only a
+        // few blocks deep. Reading that as "she is almost done" made every attempt to talk over her count
+        // as her own echo, and interruption was never possible at all.
+        let at = |final_audio: bool, remaining: usize| in_echo_zone(true, true, final_audio, remaining, 100_000);
+        assert!(!at(false, 256), "the provider is still synthesizing");
+        assert!(at(true, 256), "the last words are still playing");
+        assert!(!at(true, 100_000), "plenty of audio still queued");
     }
 
     #[test]

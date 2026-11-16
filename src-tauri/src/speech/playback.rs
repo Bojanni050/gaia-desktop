@@ -469,9 +469,13 @@ pub fn reference_16k(audio: &[u8]) -> Option<Vec<f32>> {
 
 /// Ends a reply that was still arriving: it will not grow any further, so the player ends after what
 /// is already queued has played.
-fn end_stream(stream: &mut Option<Arc<StreamQueue>>) {
+fn end_stream(stream: &mut Option<Arc<StreamQueue>>, report: &Arc<dyn Fn(RenderCmd) + Send + Sync>) {
     if let Some(queue) = stream.take() {
         queue.finish();
+        // The reply will not grow any further. The listener needs to hear that: a short reference queue
+        // means "waiting for the provider" until this arrives, and reading it as the end of the reply
+        // made talking over her impossible.
+        report(RenderCmd::Done);
     }
 }
 
@@ -510,7 +514,7 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
     loop {
         match rx.recv_timeout(TICK) {
             Ok(Cmd::Play { audio, done }) => {
-                end_stream(&mut stream);
+                end_stream(&mut stream, &report);
                 if let Some(old) = current.take() {
                     start_fade(old, DEFAULT_FADE_MS, gain, &mut fading);
                 }
@@ -550,7 +554,7 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
                 done,
             }) => {
                 // A reply that is still arriving takes over from whatever is playing now.
-                end_stream(&mut stream);
+                end_stream(&mut stream, &report);
                 if let Some(old) = current.take() {
                     start_fade(old, DEFAULT_FADE_MS, gain, &mut fading);
                 }
@@ -583,10 +587,10 @@ fn run(rx: mpsc::Receiver<Cmd>, volume: f32, muted: bool, render: SharedRender) 
                 }
             }
             Ok(Cmd::StreamEnd) => {
-                end_stream(&mut stream);
+                end_stream(&mut stream, &report);
             }
             Ok(Cmd::Stop { fade_ms }) => {
-                end_stream(&mut stream);
+                end_stream(&mut stream, &report);
                 if let Some(p) = current.take() {
                     start_fade(p, fade_ms, gain, &mut fading);
                 }
@@ -680,7 +684,7 @@ mod tests {
             .iter()
             .map(|cmd| match cmd {
                 RenderCmd::Start(samples) | RenderCmd::Append(samples) => samples.len(),
-                RenderCmd::Stop { .. } => 0,
+                RenderCmd::Stop { .. } | RenderCmd::Done => 0,
             })
             .sum()
     }
